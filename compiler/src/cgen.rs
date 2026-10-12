@@ -111,6 +111,8 @@ pub struct CGen<'a> {
     tls: bool,
     wants_interrupt: bool,
     pkey: bool,
+    // built for wasm-server (`--target wasm-server`)
+    wasm: bool,
 }
 
 fn c_str(s: &str) -> String {
@@ -192,6 +194,7 @@ impl<'a> CGen<'a> {
             tls: false,
             wants_interrupt: false,
             pkey: false,
+            wasm: false,
         }
     }
 
@@ -1854,7 +1857,7 @@ static {rsc} lt_http_response_from(lt_http_out *o) {{
   if (o->headers) lt_free(o->headers, sizeof(lt_texts) + sizeof(lt_text *) * (size_t)o->headers->cap);
   return ({rsc}){{ o->status, o->body, h, lt_text_from("", 0), (lt_fn){{0}}, lt_http_timing_value(o->timing, o->reused) }};
 }}
-#ifdef LT_THREADS
+#if defined(LT_THREADS) || defined(LT_WASM)
 static void lt_http_dispatch(lt_fn handler, const lt_http_raw *r, lt_http_out *out) {{
   {mc} headers = {mc}_new(r->nheaders);
   for (int64_t i = 0; i < r->nheaders; i++) lt_hdr_add(&headers, lt_text_from_input(r->hname[i], r->hname_len[i]), lt_text_from_input(r->hvalue[i], r->hvalue_len[i]));
@@ -1882,6 +1885,14 @@ static void lt_http_dispatch(lt_fn handler, const lt_http_raw *r, lt_http_out *o
   out->headers = hs;
   drop_{rs}(resp);
 }}
+#endif
+#ifdef LT_WASM
+// a panic traps: the host answers 500 and the instance is gone anyway
+static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
+  return ((lt_err (*)(lt_env *, {rqc}, {rsc} *))handler.fn)(handler.env, *req, resp);
+}}
+#endif
+#ifdef LT_THREADS
 // calls the handler; a panic inside it ends only this request
 static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
   lt_task *t = lt_current();
@@ -1900,8 +1911,8 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
             tmc = tmc
         );
         let _ = writeln!(self.protos, "static {} lt_http_response_from(lt_http_out *o);", rsc);
-        if self.threads {
-            let _ = writeln!(self.protos, "#ifdef LT_THREADS\nstatic lt_err lt_http_call(lt_fn handler, {} *req, {} *resp);\n#endif", rqc, rsc);
+        if self.threads || self.wasm {
+            let _ = writeln!(self.protos, "#if defined(LT_THREADS) || defined(LT_WASM)\nstatic lt_err lt_http_call(lt_fn handler, {} *req, {} *resp);\n#endif", rqc, rsc);
         }
     }
 
@@ -3476,12 +3487,12 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
                 }
             }
             "http.__serve" => {
-                self.threads = true;
+                self.threads |= !self.wasm;
                 self.gen_http_glue();
                 format!("lt_http_serve({}, {})", a[0], a[1])
             }
             "http.__serve_on" => {
-                self.threads = true;
+                self.threads |= !self.wasm;
                 self.gen_http_glue();
                 format!("lt_http_serve_on({}, {}, {}, {}, {}, {}, {})", a[0], a[1], a[2], a[3], a[4], a[5], a[6])
             }
@@ -3895,7 +3906,23 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
 
     // ================= whole program =================
 
-    pub fn generate(mut self, tests: bool) -> String {
+    // The C for wasm-server: Err names what the program uses that a wasm
+    // instance doesn't have.
+    pub fn generate_wasm(mut self) -> Result<String, String> {
+        self.wasm = true;
+        let c = self.generate_c(false);
+        if c.1.is_empty() {
+            Ok(c.0)
+        } else {
+            Err(c.1)
+        }
+    }
+
+    pub fn generate(self, tests: bool) -> String {
+        self.generate_c(tests).0
+    }
+
+    fn generate_c(mut self, tests: bool) -> (String, String) {
         let mut fns = String::new();
         for fi in 0..self.m.funcs.len() {
             self.gen_function(fi, &mut fns);
@@ -3995,6 +4022,11 @@ static void lt_panic_error(lt_err e, int line) { lt_text *m = lt_error_message(e
             } else {
                 main += "int main(void) {\n  lt_init();\n  lt_tests_run(NULL);\n  fflush(stdout);\n  return lt_tests_failed ? 1 : 0;\n}\n";
             }
+        } else if let (true, Some(m)) = (self.wasm, self.m.main) {
+            // wasm-server calls the component's HTTP handler, which runs main
+            let f = &self.m.funcs[m];
+            let call = if f.throws { format!("return {}();", f.name) } else { format!("{}(); return (lt_err){{0}};", f.name) };
+            let _ = writeln!(main, "static lt_err lt_program_main(void) {{\n  lt_init();\n  {}\n}}", call);
         } else if let Some(m) = self.m.main {
             let f = &self.m.funcs[m];
             let call = if f.throws { format!("lt_err e = {}();", f.name) } else { format!("{}(); lt_err e = {{0}};", f.name) };
@@ -4010,6 +4042,25 @@ static void lt_panic_error(lt_err e, int line) { lt_text *m = lt_error_message(e
         }
         let types = self.emit_types();
         let mut out = String::new();
+        // what a wasm instance doesn't have
+        let mut missing = vec![];
+        if self.wasm {
+            for (used, what) in [
+                (self.threads, "tasks (spawn, Shared, Channel, parallel_map)"),
+                (self.curl, "the HTTP client (http.get, http.send)"),
+                (self.net, "net (sockets)"),
+                (self.tls, "TLS"),
+                (self.zlib, "zlib (compression)"),
+                (self.pkey, "crypto's public keys"),
+            ] {
+                if used {
+                    missing.push(what);
+                }
+            }
+            out += "#define LT_WASM 1\n";
+            out += include_str!("runtime/wasi.h");
+            out += include_str!("runtime/wasm/guest.h");
+        }
         if self.threads {
             out += "#define LT_THREADS 1\n";
         }
@@ -4033,11 +4084,16 @@ static void lt_panic_error(lt_err e, int line) { lt_text *m = lt_error_message(e
                 out = format!("#define LT_CURL 1\n// link: -lcurl\n{}", out);
             }
             out += include_str!("runtime/http.h");
+            if self.wasm {
+                out += &include_str!("runtime/http_wasm.h").replace("#include \"guest.h\"\n", "");
+            }
         }
         if self.net {
             out += include_str!("runtime/net.h");
         }
-        if self.sqlite {
+        if self.sqlite && self.wasm {
+            out += include_str!("runtime/db_wasm.h");
+        } else if self.sqlite {
             out = format!("// link: -lsqlite3\n{}", out);
             out += include_str!("runtime/db.h");
         }
@@ -4087,7 +4143,8 @@ static void lt_panic_error(lt_err e, int line) { lt_text *m = lt_error_message(e
         let names: Vec<String> = self.m.file_names.iter().map(|n| c_str(n)).collect();
         let _ = writeln!(out, "static const char *lt_files_init[] = {{ {}NULL }};", names.iter().map(|n| format!("{}, ", n)).collect::<String>());
         out += &main.replacen("int main(void) {", "int main(int argc, char **argv) {\n  lt_argc = argc;\n  lt_argv = argv;", 1).replacen("lt_init();", &format!("lt_init(); lt_file = lt_file_init; lt_files = lt_files_init; lt_nfiles = {};", names.len()), 1);
-        out
+        let missing = if missing.is_empty() { String::new() } else { format!("this program uses what a wasm-server app doesn't have: {}", missing.join(", ")) };
+        (out, missing)
     }
 }
 

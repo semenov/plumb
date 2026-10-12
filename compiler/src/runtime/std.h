@@ -3,11 +3,13 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifndef __wasi__
 #include <sys/wait.h>
+#include <spawn.h>
+#endif
 #include <dirent.h>
 #include <fcntl.h>
 #include <poll.h>
-#include <spawn.h>
 #include <unistd.h>
 
 extern char **environ;

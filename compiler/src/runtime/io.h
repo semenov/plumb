@@ -9,11 +9,13 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+#ifndef __wasi__
 #include <signal.h>
+#endif
 #include <sys/uio.h>
 #if defined(__APPLE__)
 #include <sys/uio.h>
-#else
+#elif !defined(__wasi__)
 #include <sys/sendfile.h>
 #endif
 
@@ -660,7 +662,9 @@ static const char *lt_ca_file(void) {
 
 // ---- the terminal
 
+#ifndef __wasi__
 #include <termios.h>
+#endif
 
 static int lt_color_on = -1;
 

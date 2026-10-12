@@ -11,16 +11,20 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <pthread.h>
+#ifndef __wasi__
 #include <signal.h>
+#endif
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
 #include <errno.h>
+#ifndef __wasi__
 #include <sys/mman.h>
 #include <dlfcn.h>
 #include <sys/resource.h>
+#endif
 
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
@@ -53,6 +57,9 @@ static const char *lt_fn_name(void *start);
 // pointers link the frames, and dladdr gives each return address's
 // function. After the panic's message, so a broken chain costs nothing.
 static void lt_print_stack(void) {
+#ifdef __wasi__
+    // wasm has no frame pointers to follow: the host shows the trap's stack
+#else
     void **fp = (void **)__builtin_frame_address(0);
     const char *last = NULL;
     for (int i = 0; i < 64 && fp; i++) {
@@ -68,6 +75,7 @@ static void lt_print_stack(void) {
         if (next <= fp || (char *)next - (char *)fp > (1 << 22) || ((uintptr_t)next & 7)) break;
         fp = next;
     }
+#endif
 }
 
 // "file.plumb:12" for a line number (0: none)
@@ -228,6 +236,22 @@ LT_NOINLINE void lt_oom(void) {
 // list can then extend without copying.
 typedef struct { size_t mapped; size_t pad; } lt_big_hdr;
 LT_INLINE size_t lt_round_page(size_t n) { return (n + LT_PAGE - 1) & ~(LT_PAGE - 1); }
+#ifdef __wasi__
+// no mmap in wasm: the C allocator
+LT_NOINLINE void *lt_big_alloc(size_t n) {
+    void *p = malloc(n);
+    if (!p) lt_oom();
+    return p;
+}
+LT_NOINLINE void *lt_big_map(size_t reserve) { return lt_big_alloc(reserve); }
+LT_NOINLINE void lt_big_free(void *p, size_t n) { (void)n; free(p); }
+LT_NOINLINE void *lt_big_realloc(void *p, size_t old, size_t n) {
+    (void)old;
+    void *r = realloc(p, n);
+    if (!r) lt_oom();
+    return r;
+}
+#else
 LT_NOINLINE void *lt_big_map(size_t reserve) {
     size_t m = lt_round_page(reserve + sizeof(lt_big_hdr));
     void *p = mmap(NULL, m, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -257,6 +281,7 @@ LT_NOINLINE void *lt_big_realloc(void *p, size_t old, size_t n) {
     munmap(h, h->mapped);
     return r;
 }
+#endif
 
 LT_NOINLINE void *lt_arena_refill(lt_heap *h, size_t n) {
     size_t chunk = 1 << 20;
@@ -1638,6 +1663,17 @@ static void lt_on_interrupt(int sig) {
     }
 }
 
+#ifdef __wasi__
+// In wasm there are no signals, and a stack overflow or a crash traps: the
+// host reports it.
+static void lt_catch_interrupts(void) {}
+static void lt_catch_overflow(void) {}
+static void lt_alt_stack(void) {}
+static void lt_write_err(const char *s) {
+    ssize_t r = write(2, s, strlen(s));
+    (void)r;
+}
+#else
 // A signal the parent set to be ignored stays ignored (background jobs,
 // nohup), as Go does.
 static void lt_catch_interrupts(void) {
@@ -1728,6 +1764,8 @@ static void lt_catch_overflow(void) {
     sigaction(SIGBUS, &sa, NULL);
 #endif
 }
+
+#endif
 
 static void lt_init(void) {
     lt_catch_overflow();

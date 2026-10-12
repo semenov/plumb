@@ -530,6 +530,35 @@ test "discount never goes below zero" {
 see private functions. `plumb test` runs the tests of every file in the
 project (`plumb test app.plumb`: one file's).
 
+## Building for wasm-server
+
+`plumb build --target wasm-server app.plumb` makes `app.wasm`, a
+WebAssembly component for wasm-server (it needs wasi-sdk: `WASI_SDK`,
+`/opt/wasi-sdk` or `~/wasi-sdk`). The host starts a fresh instance for
+every request and runs `main`; `http.serve` answers that one request
+and returns. So the same file also runs as an ordinary server:
+
+```
+fn main() throws {
+  with conn = try db.open("notes") {        // a database granted to the app
+    var router = http.Router()
+    router.get("/notes", req => http.json(200, try conn.query<Note>("select id, text from notes", [])))
+    try http.serve(router, port: 8080)      // the port is ignored there
+  }
+}
+```
+
+- `db.open(name)` takes the name of a database the host grants the app
+  (SQLite or Postgres on the host), not a file. SQL, `query<T>`,
+  `insert` and `transaction` work as usual.
+- Nothing stays in memory between requests: keep state in the database.
+- Not available (a compile error names them): `spawn`, `Shared`,
+  `Channel`, `parallel_map`, the HTTP client, `net`, `zlib`, public-key
+  crypto. `http.file` and `http.stream` give a 500: the host serves the
+  app's static files itself. No processes.
+- A panic prints its message and line to the host's log, and the request
+  gets a 500.
+
 ## Common compiler errors and their fixes
 
 | error | fix |

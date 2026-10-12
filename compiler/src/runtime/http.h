@@ -3,11 +3,13 @@
 // the language's `http.Request`, calls the handler and turns the
 // `http.Response` back into raw parts.
 
+#ifndef __wasi__
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#endif
 #include <ctype.h>
 
 typedef struct {

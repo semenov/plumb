@@ -1,0 +1,9 @@
+package plumb:wasm-server;
+
+/// A Plumb program built with `plumb build --target wasm-server`: an HTTP
+/// handler with the platform's databases and cache.
+world guest {
+    import platform:sdk/sql@0.1.0;
+    import platform:sdk/cache@0.1.0;
+    export wasi:http/incoming-handler@0.2.12;
+}
