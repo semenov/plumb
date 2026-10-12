@@ -1,0 +1,46 @@
+// The notes app of wasm-server's guests-c/notes and guests/notes-rs, in
+// Plumb: the same routes and responses, except the view count (Plumb has
+// no cache API yet).
+//
+//   GET  /pnotes   latest notes (JSON)
+//   POST /pnotes   add a note; the body is its text
+import db
+import http
+import time
+
+type Note {
+  id: Int
+  text: String
+  at: Int
+}
+
+type Id {
+  id: Int
+}
+
+type Notes {
+  notes: List<Note>
+}
+
+fn list(conn: db.Connection) throws -> http.Response {
+  let notes = try conn.query<Note>("SELECT id, text, at FROM notes ORDER BY id DESC LIMIT 20", [])
+  return http.json(200, Notes(notes: notes))
+}
+
+fn add(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let text = req.text()
+  if text.is_empty() {
+    return http.json(422, {"error": "empty note"})
+  }
+  let ids = try conn.query<Id>("INSERT INTO notes (text, at) VALUES (?, ?) RETURNING id", [text, time.utc_now().to_unix()])
+  return http.json(201, ids[0])
+}
+
+fn main() throws {
+  with conn = try db.open("notes") {
+    var router = http.Router()
+    router.get("/pnotes", req => try list(conn))
+    router.post("/pnotes", req => try add(req, conn: conn))
+    try http.serve(router, port: 8080)
+  }
+}

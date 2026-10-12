@@ -284,7 +284,12 @@ LT_NOINLINE void *lt_big_realloc(void *p, size_t old, size_t n) {
 #endif
 
 LT_NOINLINE void *lt_arena_refill(lt_heap *h, size_t n) {
+#ifdef __wasi__
+    // an instance lives for one request: a big chunk would only grow its memory
+    size_t chunk = n > (64 << 10) ? n : (64 << 10);
+#else
     size_t chunk = 1 << 20;
+#endif
     char *p = (char *)malloc(chunk);
     if (!p) lt_oom();
     h->cur = p + n;
