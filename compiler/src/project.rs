@@ -184,70 +184,173 @@ pub fn write_manifest(root: &Path, m: &Manifest) -> Result<(), String> {
     std::fs::write(root.join("plumb.toml"), s).map_err(|e| e.to_string())
 }
 
-/// `[app]` and `[deploy]` of plumb.toml: what `plumb deploy` and `plumb dev`
-/// run, and where.
+/// What `plumb deploy` and `plumb dev` run, and where: a project of one or
+/// more apps sharing domains, databases and secrets.
 ///
-///     [app]
-///     name = "notes"
-///     main = "main.plumb"
-///     domains = ["notes.example.com"]
+///     [project]
+///     name = "shop"
+///     domains = ["shop.example.com"]
 ///     databases = ["main"]
 ///     schema = "schema.sql"           # for the first database
 ///     outbound = ["api.stripe.com"]   # left out: any public host
 ///
-///     [app.schema]                    # or one per database
+///     [project.schema]                # or one per database
 ///     main = "schema.sql"
+///
+///     [apps.web]
+///     main = "web/main.plumb"         # path left out: all of the domains
+///
+///     [apps.api]
+///     main = "api/main.plumb"
+///     path = "/api"                   # /api and below; the longest path wins
+///     outbound = ["api.stripe.com"]   # this app's own list
 ///
 ///     [deploy]
 ///     server = "https://my-server.example.com"
+///
+/// A project of one app can be written as `[app]` with all of these keys
+/// (and `main`, `websocket`) in it.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectConfig {
+    pub name: String,
+    pub domains: Vec<String>,
+    pub databases: Vec<String>,
+    pub outbound: Option<Vec<String>>,
+    /// database → schema file, relative to the project
+    pub schema: BTreeMap<String, String>,
+    pub server: Option<String>,
+    /// by name
+    pub apps: Vec<AppConfig>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AppConfig {
     pub name: String,
     pub main: String,
-    pub domains: Vec<String>,
-    pub databases: Vec<String>,
-    pub outbound: Option<Vec<String>>,
+    pub path: Option<String>,
     pub websocket: Option<String>,
-    /// database → schema file, relative to the project
-    pub schema: BTreeMap<String, String>,
-    pub server: Option<String>,
+    pub outbound: Option<Vec<String>>,
 }
 
-pub fn read_app(root: &Path) -> Result<AppConfig, String> {
+impl ProjectConfig {
+    /// The server's name for one of the apps: the project's for the app
+    /// named like it, `project.app` for the others.
+    pub fn server_name(&self, app: &AppConfig) -> String {
+        if app.name == self.name {
+            self.name.clone()
+        } else {
+            format!("{}.{}", self.name, app.name)
+        }
+    }
+}
+
+fn valid_name(name: &str) -> bool {
+    let b = name.as_bytes();
+    !b.is_empty() && b.len() <= 63 && b[0].is_ascii_lowercase() && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
+}
+
+pub fn read_project(root: &Path) -> Result<ProjectConfig, String> {
     let path = root.join("plumb.toml");
     let text = std::fs::read_to_string(&path).map_err(|_| format!("there is no plumb.toml in {}; make the directory a project with `plumb init`", root.display()))?;
     let t = parse_toml(&text).map_err(|e| format!("{}: {}", path.display(), e))?;
-    let app = t.get("app").ok_or_else(|| format!("{}: there is no [app] section; add one:\n\n[app]\nname = \"myapp\"\nmain = \"main.plumb\"\ndatabases = [\"main\"]\nschema = \"schema.sql\"", path.display()))?;
-    let s = |k: &str| match app.get(k) {
+    let file = path.display();
+    let (section, single) = match (t.get("project"), t.get("app")) {
+        (Some(p), None) => (p, false),
+        (None, Some(a)) => (a, true),
+        (Some(_), Some(_)) => return Err(format!("{}: [app] is for a project of one app; with [project], write it as [apps.NAME]", file)),
+        (None, None) => {
+            return Err(format!(
+                "{}: there is no [app] section; add one:\n\n[app]\nname = \"myapp\"\nmain = \"main.plumb\"\ndatabases = [\"main\"]\nschema = \"schema.sql\"",
+                file
+            ))
+        }
+    };
+    let table = if single { "app" } else { "project" };
+    let s = |tbl: &BTreeMap<String, TomlValue>, at: &str, k: &str| match tbl.get(k) {
         Some(TomlValue::Str(v)) => Ok(Some(v.clone())),
         None => Ok(None),
-        Some(_) => Err(format!("{}: [app] {} must be text: {} = \"...\"", path.display(), k, k)),
+        Some(_) => Err(format!("{}: [{}] {} must be text: {} = \"...\"", file, at, k, k)),
     };
-    let list = |k: &str| match app.get(k) {
+    let list = |tbl: &BTreeMap<String, TomlValue>, at: &str, k: &str| match tbl.get(k) {
         Some(TomlValue::List(v)) => Ok(Some(v.clone())),
         None => Ok(None),
-        Some(_) => Err(format!("{}: [app] {} must be a list: {} = [\"...\"]", path.display(), k, k)),
+        Some(_) => Err(format!("{}: [{}] {} must be a list: {} = [\"...\"]", file, at, k, k)),
     };
-    let mut c = AppConfig {
-        name: s("name")?.ok_or_else(|| format!("{}: [app] needs a name: name = \"myapp\"", path.display()))?,
-        main: s("main")?.unwrap_or_else(|| "main.plumb".into()),
-        domains: list("domains")?.unwrap_or_default(),
-        databases: list("databases")?.unwrap_or_default(),
-        outbound: list("outbound")?,
-        websocket: s("websocket")?,
+    let allowed: &[&str] = if single {
+        &["name", "main", "domains", "databases", "schema", "outbound", "websocket"]
+    } else {
+        &["name", "domains", "databases", "schema", "outbound"]
+    };
+    if let Some(k) = section.keys().find(|k| !allowed.contains(&k.as_str())) {
+        let hint = if single { "" } else { " (an app's settings go in [apps.NAME])" };
+        return Err(format!("{}: [{}] has no `{}`{}", file, table, k, hint));
+    }
+    let name = s(section, table, "name")?.ok_or_else(|| format!("{}: [{}] needs a name: name = \"myapp\"", file, table))?;
+    if !valid_name(&name) {
+        return Err(format!("{}: [{}] name {:?}: lower-case letters, digits and -, starting with a letter", file, table, name));
+    }
+    let mut c = ProjectConfig {
+        name: name.clone(),
+        domains: list(section, table, "domains")?.unwrap_or_default(),
+        databases: list(section, table, "databases")?.unwrap_or_default(),
+        outbound: list(section, table, "outbound")?,
         ..Default::default()
     };
-    if let Some(file) = s("schema")? {
-        let first = c.databases.first().ok_or_else(|| format!("{}: [app] schema is for the first database, and there are none: databases = [\"main\"]", path.display()))?;
-        c.schema.insert(first.clone(), file);
+    if single {
+        c.apps.push(AppConfig {
+            name,
+            main: s(section, table, "main")?.unwrap_or_else(|| "main.plumb".into()),
+            websocket: s(section, table, "websocket")?,
+            ..Default::default()
+        });
+    } else {
+        for (tname, tbl) in &t {
+            let Some(app) = tname.strip_prefix("apps.") else { continue };
+            let at = tname.as_str();
+            if !valid_name(app) {
+                return Err(format!("{}: [{}]: an app's name is lower-case letters, digits and -, starting with a letter", file, at));
+            }
+            if let Some(k) = tbl.keys().find(|k| !["main", "path", "websocket", "outbound"].contains(&k.as_str())) {
+                let hint = if ["domains", "databases", "schema"].contains(&k.as_str()) { " (the project's apps share it: put it in [project])" } else { "" };
+                return Err(format!("{}: [{}] has no `{}`{}", file, at, k, hint));
+            }
+            let path = s(tbl, at, "path")?;
+            if let Some(p) = &path {
+                let ok = p == "/" || (p.starts_with('/') && !p.ends_with('/') && !p.contains("//") && !p.contains(['?', '#', ' ']));
+                if !ok {
+                    return Err(format!("{}: [{}] path {:?} must start with / and not end with one: path = \"/api\"", file, at, p));
+                }
+                if c.apps.iter().any(|a| a.path.as_deref().unwrap_or("/") == p) {
+                    return Err(format!("{}: two apps have path {:?}", file, p));
+                }
+            }
+            c.apps.push(AppConfig {
+                name: app.to_string(),
+                main: s(tbl, at, "main")?.ok_or_else(|| format!("{}: [{}] needs main = \"{}/main.plumb\"", file, at, app))?,
+                path,
+                websocket: s(tbl, at, "websocket")?,
+                outbound: list(tbl, at, "outbound")?,
+            });
+        }
+        if c.apps.is_empty() {
+            return Err(format!("{}: the project has no apps; add one:\n\n[apps.web]\nmain = \"main.plumb\"", file));
+        }
+        if c.apps.iter().filter(|a| a.path.as_deref().unwrap_or("/") == "/").count() > 1 {
+            return Err(format!("{}: more than one app serves the whole domain: give all but one a path = \"/...\"", file));
+        }
     }
-    if let Some(tbl) = t.get("app.schema") {
+    if let Some(f) = s(section, table, "schema")? {
+        let first = c.databases.first().ok_or_else(|| format!("{}: [{}] schema is for the first database, and there are none: databases = [\"main\"]", file, table))?;
+        c.schema.insert(first.clone(), f);
+    }
+    if let Some(tbl) = t.get(&format!("{}.schema", table)) {
         for (db, v) in tbl {
             match v {
-                TomlValue::Str(file) => {
-                    c.schema.insert(db.clone(), file.clone());
+                TomlValue::Str(f) if c.databases.contains(db) => {
+                    c.schema.insert(db.clone(), f.clone());
                 }
-                _ => return Err(format!("{}: [app.schema] {} = \"file.sql\"", path.display(), db)),
+                TomlValue::Str(_) => return Err(format!("{}: [{}.schema] {}: there is no database {:?} in databases", file, table, db, db)),
+                _ => return Err(format!("{}: [{}.schema] {} = \"file.sql\"", file, table, db)),
             }
         }
     }
@@ -419,4 +522,31 @@ pub fn resolve(root: &Path, update: bool) -> Result<BTreeMap<String, PathBuf>, S
         write_lock(root, &lock)?;
     }
     Ok(dirs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_project;
+
+    fn read(toml: &str) -> Result<super::ProjectConfig, String> {
+        let dir = std::env::temp_dir().join(format!("plumb-project-test-{}-{}", std::process::id(), toml.len()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("plumb.toml"), toml).unwrap();
+        let r = read_project(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        r
+    }
+
+    #[test]
+    fn projects() {
+        let p = read("[project]\nname = \"shop\"\ndatabases = [\"main\"]\nschema = \"s.sql\"\n\n[apps.web]\nmain = \"web.plumb\"\n\n[apps.api]\nmain = \"api.plumb\"\npath = \"/api\"\n").unwrap();
+        assert_eq!(p.apps.iter().map(|a| p.server_name(a)).collect::<Vec<_>>(), ["shop.api", "shop.web"]);
+        assert_eq!(p.schema["main"], "s.sql");
+        let one = read("[app]\nname = \"notes\"\ndomains = [\"n.example.com\"]\n").unwrap();
+        assert_eq!((one.apps.len(), one.server_name(&one.apps[0]), one.apps[0].main.as_str()), (1, "notes".to_string(), "main.plumb"));
+        assert!(read("[project]\nname = \"shop\"\n").unwrap_err().contains("no apps"));
+        assert!(read("[project]\nname = \"shop\"\n[apps.a]\nmain = \"a.plumb\"\n[apps.b]\nmain = \"b.plumb\"\n").unwrap_err().contains("whole domain"));
+        assert!(read("[project]\nname = \"shop\"\n[apps.a]\nmain = \"a.plumb\"\ndatabases = [\"x\"]\n").unwrap_err().contains("put it in [project]"));
+        assert!(read("[project]\nname = \"shop\"\n[apps.a]\nmain = \"a.plumb\"\npath = \"/api/\"\n").unwrap_err().contains("must start with /"));
+    }
 }

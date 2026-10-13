@@ -40,12 +40,12 @@ Programs:
   plumb lsp                         the language server for editors (editors/vscode for VS Code)
 
 Apps on wasm-server ([app] in plumb.toml):
-  plumb dev [--port N]              run the app locally as the server would; rebuilt on changes
+  plumb dev [--port N]              run the project's apps locally as the server would; rebuilt on changes
   plumb login <server URL>          keep the server's admin token
-  plumb deploy [--to <server URL>]  build the app and put it live, without downtime
-  plumb secret set KEY=VALUE...     the app's secrets (environment variables); also unset, list
-  plumb logs [-n N] [-f]            the app's log on its server (-f: keep following it)
-  plumb stats [--range 24h]         requests, errors, response times and where they go (1h 6h 24h 7d 30d)
+  plumb deploy [--to <server URL>]  build the project's apps and put them live together, without downtime
+  plumb secret set KEY=VALUE...     the project's secrets (environment variables); also unset, list
+  plumb logs [APP] [-n N] [-f]      the apps' log on their server (-f: keep following it)
+  plumb stats [APP] [--range 24h]   requests, errors, response times and where they go (1h 6h 24h 7d 30d)
 
 Projects and packages:
   plumb init [name]                 make this directory a project (plumb.toml, main.plumb)

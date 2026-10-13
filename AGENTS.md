@@ -550,12 +550,33 @@ outbound = ["api.stripe.com"]   # hosts it may call; left out: any public host
 server = "https://my-server.example.com"
 ```
 
+Several apps on one domain (a site and its API, say) make a project:
+they share its domains, databases and secrets, and deploy together.
+
+```
+[project]
+name = "shop"
+domains = ["shop.example.com"]
+databases = ["main"]
+schema = "schema.sql"
+
+[apps.web]
+main = "web/main.plumb"         # no path: everything the others don't take
+
+[apps.api]
+main = "api/main.plumb"
+path = "/api"                   # /api and below; routes keep it: router.post("/api/orders", ...)
+```
+
 - `plumb dev`: runs it on a local wasm-server as the server will, with
   secrets from `.env`, rebuilt on every change (http://localhost:8080).
 - `plumb login <server>` once, then `plumb deploy`: live without downtime;
-  a version that doesn't start is refused and the old one stays.
+  if any app doesn't start, the deploy is refused and the old version of
+  every app stays.
 - `plumb secret set KEY=VALUE`: environment variables kept on the server,
   never in the project.
+- `plumb logs [APP] [-f]` and `plumb stats [APP]`: the project's apps
+  together, or one.
 
 `plumb build --target wasm-server app.plumb` makes the component itself
 (it needs wasi-sdk: `WASI_SDK`, `/opt/wasi-sdk` or `~/wasi-sdk`). The host

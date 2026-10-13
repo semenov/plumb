@@ -1,12 +1,13 @@
-// `plumb login`, `plumb deploy`, `plumb secret`: a project's app on a
+// `plumb login`, `plumb deploy`, `plumb secret`: a project's apps on a
 // wasm-server, through its admin API (/_platform/). What runs and how comes
-// from plumb.toml's [app] (project::read_app); the server's admin token is
+// from plumb.toml's [project] and [apps.*], or [app] (project::read_project);
+// the server's admin token is
 // kept per server in ~/.config/plumb/servers, readable by the owner only,
 // or comes from PLUMB_TOKEN. Requests go through curl, which every system
 // we build on has; the token goes to curl on its standard input, never on
 // the command line.
 
-use crate::project::{self, AppConfig};
+use crate::project::{self, AppConfig, ProjectConfig};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -121,14 +122,53 @@ fn fail(msg: String) -> ExitCode {
     ExitCode::from(1)
 }
 
-fn project_app() -> Result<(PathBuf, AppConfig), String> {
+fn project_app() -> Result<(PathBuf, ProjectConfig), String> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let root = project::find_root(&cwd.join("x.plumb"));
-    let app = project::read_app(&root)?;
+    let app = project::read_project(&root)?;
     Ok((root, app))
 }
 
-fn server_of(app: &AppConfig, args: &[String]) -> Result<String, String> {
+/// The project's apps named in `args` (words not starting with `-` and not
+/// a flag's value), or all of them.
+fn chosen_apps<'a>(p: &'a ProjectConfig, args: &[String], flags_with_value: &[&str]) -> Result<Vec<&'a AppConfig>, String> {
+    let mut names = vec![];
+    let mut i = 0;
+    while i < args.len() {
+        if flags_with_value.contains(&args[i].as_str()) {
+            i += 2;
+            continue;
+        }
+        if !args[i].starts_with('-') {
+            names.push(args[i].clone());
+        }
+        i += 1;
+    }
+    if names.is_empty() {
+        return Ok(p.apps.iter().collect());
+    }
+    names
+        .iter()
+        .map(|n| {
+            p.apps.iter().find(|a| &a.name == n).ok_or_else(|| {
+                let all: Vec<&str> = p.apps.iter().map(|a| a.name.as_str()).collect();
+                format!("the project has no app {:?}; its apps: {}", n, all.join(", "))
+            })
+        })
+        .collect()
+}
+
+/// Where an app answers: its domain and path, or `base` with its name.
+fn place(p: &ProjectConfig, app: &AppConfig, base: &str, local: bool) -> String {
+    let path = app.path.as_deref().unwrap_or("/");
+    match p.domains.first() {
+        Some(d) if !local => format!("https://{}{}", d, path),
+        _ if local => format!("{}{}", base, path),
+        _ => format!("{}/{}", base, p.server_name(app)),
+    }
+}
+
+fn server_of(app: &ProjectConfig, args: &[String]) -> Result<String, String> {
     if let Some(i) = args.iter().position(|a| a == "--to") {
         return args.get(i + 1).map(|s| s.trim_end_matches('/').to_string()).ok_or_else(|| "--to needs the server's URL".to_string());
     }
@@ -161,36 +201,59 @@ pub fn login(args: &[String]) -> ExitCode {
     }
 }
 
-/// The deploy request for the project's app, in a temporary file, and the
-/// component's size. Err(""): the build failed and said why.
-fn deploy_body(root: &Path, app: &AppConfig, build: &dyn Fn(&Path, &Path) -> bool) -> Result<(PathBuf, usize), String> {
-    let main = root.join(&app.main);
-    let wasm = std::env::temp_dir().join(format!("plumb-deploy-{}-{}.wasm", app.name, std::process::id()));
-    if !build(&main, &wasm) {
-        return Err(String::new());
+/// The deploy request for the project's apps, in a temporary file, and
+/// the components' total size; `extra_domains` are served too (`plumb dev`:
+/// localhost). Err(""): a build failed and said why.
+fn deploy_body(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &dyn Fn(&Path, &Path) -> bool) -> Result<(PathBuf, usize), String> {
+    let mut components = vec![];
+    let mut apps = vec![];
+    let mut size = 0;
+    for app in &p.apps {
+        let main = root.join(&app.main);
+        let wasm = std::env::temp_dir().join(format!("plumb-deploy-{}-{}-{}.wasm", p.name, app.name, std::process::id()));
+        if p.apps.len() > 1 {
+            eprintln!("building {}", app.name);
+        }
+        if !build(&main, &wasm) {
+            return Err(String::new());
+        }
+        let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
+        let _ = std::fs::remove_file(&wasm);
+        size += component.len();
+        components.push(format!("{}:\"{}\"", json_str(&app.name), base64(&component)));
+        let mut settings = vec![];
+        if let Some(path) = &app.path {
+            settings.push(format!("\"path\":{}", json_str(path)));
+        }
+        if let Some(w) = &app.websocket {
+            settings.push(format!("\"websocket\":{}", json_str(w)));
+        }
+        if let Some(o) = &app.outbound {
+            settings.push(format!("\"outbound\":{}", json_list(o)));
+        }
+        apps.push(format!("{}:{{{}}}", json_str(&app.name), settings.join(",")));
     }
-    let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
-    let _ = std::fs::remove_file(&wasm);
     let mut schema = vec![];
-    for (db, file) in &app.schema {
+    for (db, file) in &p.schema {
         let sql = std::fs::read_to_string(root.join(file)).map_err(|e| format!("the schema of {}: {}: {}", db, root.join(file).display(), e))?;
         schema.push(format!("{}:{}", json_str(db), json_str(&sql)));
     }
-    let mut settings = vec![format!("\"domains\":{}", json_list(&app.domains)), format!("\"databases\":{}", json_list(&app.databases))];
-    if let Some(o) = &app.outbound {
+    let mut domains = p.domains.clone();
+    domains.extend(extra_domains.iter().map(|d| d.to_string()));
+    let mut settings = vec![format!("\"domains\":{}", json_list(&domains)), format!("\"databases\":{}", json_list(&p.databases))];
+    if let Some(o) = &p.outbound {
         settings.push(format!("\"outbound\":{}", json_list(o)));
     }
-    if let Some(w) = &app.websocket {
-        settings.push(format!("\"websocket\":{}", json_str(w)));
-    }
-    let body = format!("{{\"settings\":{{{}}},\"schema\":{{{}}},\"component\":\"{}\"}}", settings.join(","), schema.join(","), base64(&component));
-    let body_file = std::env::temp_dir().join(format!("plumb-deploy-{}-{}.json", app.name, std::process::id()));
+    settings.push(format!("\"apps\":{{{}}}", apps.join(",")));
+    let body = format!("{{\"settings\":{{{}}},\"schema\":{{{}}},\"components\":{{{}}}}}", settings.join(","), schema.join(","), components.join(","));
+    let body_file = std::env::temp_dir().join(format!("plumb-deploy-{}-{}.json", p.name, std::process::id()));
     std::fs::write(&body_file, body).map_err(|e| format!("{}: {}", body_file.display(), e))?;
-    Ok((body_file, component.len()))
+    Ok((body_file, size))
 }
 
-/// `plumb deploy [--to URL]`: builds the app for wasm-server and sends it
-/// with its settings and schema; the server switches without downtime.
+/// `plumb deploy [--to URL]`: builds the project's apps for wasm-server and
+/// sends them with their settings and schema; the server switches to all of
+/// them at once, without downtime, or (if one doesn't start) to none.
 pub fn deploy(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
     let (root, app) = match project_app() {
         Ok(x) => x,
@@ -204,21 +267,24 @@ pub fn deploy(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode
         Ok(t) => t,
         Err(e) => return fail(e),
     };
-    let (body_file, size) = match deploy_body(&root, &app, build) {
+    let (body_file, size) = match deploy_body(&root, &app, &[], build) {
         Ok(x) => x,
         Err(e) if e.is_empty() => return ExitCode::from(1),
         Err(e) => return fail(e),
     };
     eprintln!("deploying {} ({} KB) to {}", app.name, size.div_ceil(1024), server);
-    let result = request("POST", &format!("{}/_platform/apps/{}/deploy", server, app.name), &token, Some(&body_file));
+    let result = request("POST", &format!("{}/_platform/projects/{}/deploy", server, app.name), &token, Some(&body_file));
     let _ = std::fs::remove_file(&body_file);
     match result {
         Ok((200, _)) => {
-            let place = match app.domains.first() {
-                Some(d) => format!("https://{}", d),
-                None => format!("{}/{}", server, app.name),
-            };
-            println!("deployed {}: {}", app.name, place);
+            if let [one] = app.apps.as_slice() {
+                println!("deployed {}: {}", app.name, place(&app, one, &server, false));
+            } else {
+                println!("deployed {}:", app.name);
+                for a in &app.apps {
+                    println!("  {:<12} {}", a.name, place(&app, a, &server, false));
+                }
+            }
             ExitCode::SUCCESS
         }
         Ok((code, body)) => fail(format!("the server refused the deploy ({}): {}", code, server_error(&body))),
@@ -253,7 +319,7 @@ pub fn secret(args: &[String]) -> ExitCode {
         Ok(t) => t,
         Err(e) => return fail(e),
     };
-    let url = format!("{}/_platform/apps/{}/secrets", server, app.name);
+    let url = format!("{}/_platform/projects/{}/secrets", server, app.name);
     let changes: Vec<String> = match args.first().map(String::as_str) {
         Some("list") => {
             return match request("GET", &url, &token, None) {
@@ -299,7 +365,7 @@ pub fn secret(args: &[String]) -> ExitCode {
     let _ = std::fs::remove_file(&body_file);
     match result {
         Ok((200, _)) => {
-            println!("done; {} restarted with them", app.name);
+            println!("done; {} restarted with them", if app.apps.len() > 1 { format!("{}'s apps", app.name) } else { app.name.clone() });
             ExitCode::SUCCESS
         }
         Ok((code, body)) => fail(format!("{} ({})", server_error(&body), code)),
@@ -377,8 +443,9 @@ fn newest_change(root: &Path) -> std::time::SystemTime {
     newest
 }
 
-/// `plumb dev [--port N]`: the app on a local wasm-server, deployed the way
-/// `plumb deploy` does it (same settings, schema, databases and limits),
+/// `plumb dev [--port N]`: the project on a local wasm-server, deployed the
+/// way `plumb deploy` does it (same settings, schema, databases, paths and
+/// limits; localhost is one more domain),
 /// with secrets from `.env`; rebuilt and redeployed when a file changes.
 /// Its data stays in `.plumb/dev`.
 pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
@@ -428,21 +495,21 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
             seen = changed;
             if !first {
                 eprintln!("\n-- changed: rebuilding");
-                match project::read_app(&root) {
+                match project::read_project(&root) {
                     Ok(a) => app = a,
                     Err(e) => eprintln!("error: {}", e),
                 }
             }
-            match deploy_body(&root, &app, build) {
+            match deploy_body(&root, &app, &["localhost", "127.0.0.1"], build) {
                 Ok((body, _)) => {
-                    let r = request("POST", &format!("{}/_platform/apps/{}/deploy", base, app.name), &token, Some(&body));
+                    let r = request("POST", &format!("{}/_platform/projects/{}/deploy", base, app.name), &token, Some(&body));
                     let _ = std::fs::remove_file(&body);
                     match r {
                         Ok((200, _)) => {
                             if let Some(env) = dotenv_json(&root) {
                                 let file = root.join(".plumb").join("dev").join("env.json");
                                 if std::fs::write(&file, env).is_ok() {
-                                    if let Ok((code, b)) = request("PUT", &format!("{}/_platform/apps/{}/secrets", base, app.name), &token, Some(&file)) {
+                                    if let Ok((code, b)) = request("PUT", &format!("{}/_platform/projects/{}/secrets", base, app.name), &token, Some(&file)) {
                                         if code != 200 {
                                             eprintln!("error: .env: {}", server_error(&b));
                                         }
@@ -451,7 +518,15 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
                                 }
                             }
                             if first {
-                                eprintln!("{} is running on {} (data in {}); Ctrl-C stops it", app.name, base, data.display());
+                                let local = format!("http://localhost:{}", port);
+                                if let [one] = app.apps.as_slice() {
+                                    eprintln!("{} is running on {} (data in {}); Ctrl-C stops it", app.name, place(&app, one, &local, true), data.display());
+                                } else {
+                                    eprintln!("{} is running (data in {}); Ctrl-C stops it", app.name, data.display());
+                                    for a in &app.apps {
+                                        eprintln!("  {:<12} {}", a.name, place(&app, a, &local, true));
+                                    }
+                                }
                             } else {
                                 eprintln!("-- {} is running the new version", app.name);
                             }
@@ -474,14 +549,19 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
 
 // ---- plumb logs, plumb stats
 
-/// `plumb logs [-n N] [-f]`: the app's log on its server; -f keeps
-/// printing what comes.
+/// `plumb logs [APP...] [-n N] [-f]`: the log of the project's apps (or
+/// the ones named) on their server, merged by time, each line marked with
+/// its app when there are several; -f keeps printing what comes.
 pub fn logs(args: &[String]) -> ExitCode {
-    let (_, app) = match project_app() {
+    let (_, project) = match project_app() {
         Ok(x) => x,
         Err(e) => return fail(e),
     };
-    let server = match server_of(&app, args) {
+    let apps = match chosen_apps(&project, args, &["-n", "--to"]) {
+        Ok(a) => a,
+        Err(e) => return fail(e),
+    };
+    let server = match server_of(&project, args) {
         Ok(s) => s,
         Err(e) => return fail(e),
     };
@@ -489,31 +569,61 @@ pub fn logs(args: &[String]) -> ExitCode {
         Ok(t) => t,
         Err(e) => return fail(e),
     };
-    let lines = args.iter().position(|a| a == "-n").and_then(|i| args.get(i + 1)).and_then(|n| n.parse::<u64>().ok()).unwrap_or(100);
+    let lines = args.iter().position(|a| a == "-n").and_then(|i| args.get(i + 1)).and_then(|n| n.parse::<usize>().ok()).unwrap_or(100);
     let follow = args.iter().any(|a| a == "-f" || a == "--follow");
-    let base = format!("{}/_platform/apps/{}/logs", server, app.name);
-    let mut url = format!("{}?lines={}", base, lines);
+    let mark = apps.len() > 1;
+    let width = apps.iter().map(|a| a.name.len()).max().unwrap_or(0);
+    let mut offsets: Vec<Option<u64>> = vec![None; apps.len()];
     loop {
-        let headers = std::env::temp_dir().join(format!("plumb-logs-{}.headers", std::process::id()));
-        let result = request_saving_headers(&url, &token, &headers);
-        let offset = std::fs::read_to_string(&headers).ok().and_then(|h| {
-            h.lines().find_map(|l| {
-                let (k, v) = l.split_once(':')?;
-                k.trim().eq_ignore_ascii_case("x-log-offset").then(|| v.trim().parse::<u64>().ok())?
-            })
-        });
-        let _ = std::fs::remove_file(&headers);
-        match result {
-            Ok((200, body)) => print!("{}", body),
-            Ok((code, body)) => return fail(format!("{} ({})", server_error(&body), code)),
-            Err(e) => return fail(e),
+        let mut out: Vec<String> = vec![];
+        for (i, app) in apps.iter().enumerate() {
+            let base = format!("{}/_platform/apps/{}/logs", server, project.server_name(app));
+            let url = match offsets[i] {
+                Some(o) => format!("{}?since={}", base, o),
+                None => format!("{}?lines={}", base, lines),
+            };
+            let headers = std::env::temp_dir().join(format!("plumb-logs-{}.headers", std::process::id()));
+            let result = request_saving_headers(&url, &token, &headers);
+            let offset = std::fs::read_to_string(&headers).ok().and_then(|h| {
+                h.lines().find_map(|l| {
+                    let (k, v) = l.split_once(':')?;
+                    k.trim().eq_ignore_ascii_case("x-log-offset").then(|| v.trim().parse::<u64>().ok())?
+                })
+            });
+            let _ = std::fs::remove_file(&headers);
+            match result {
+                Ok((200, body)) => {
+                    for line in body.lines() {
+                        out.push(if mark { mark_line(line, &app.name, width) } else { line.to_string() });
+                    }
+                }
+                Ok((code, body)) => return fail(format!("{} ({})", server_error(&body), code)),
+                Err(e) => return fail(e),
+            }
+            offsets[i] = Some(offset.unwrap_or(0));
+        }
+        // lines start with their time (2026-10-13T08:15:02...): merge by the
+        // second, keeping each app's order within it
+        if mark {
+            out.sort_by(|a, b| a.get(..19).unwrap_or(a).cmp(b.get(..19).unwrap_or(b)));
+        }
+        let skip = if follow && offsets.iter().all(Option::is_some) && out.len() <= lines { 0 } else { out.len().saturating_sub(lines) };
+        for line in &out[skip..] {
+            println!("{}", line);
         }
         if !follow {
             return ExitCode::SUCCESS;
         }
         let _ = std::io::stdout().flush();
         std::thread::sleep(std::time::Duration::from_secs(1));
-        url = format!("{}?since={}", base, offset.unwrap_or(0));
+    }
+}
+
+/// A log line with its app's name after its time: `TIME api   | text`.
+fn mark_line(line: &str, app: &str, width: usize) -> String {
+    match line.split_once(' ') {
+        Some((time, rest)) if time.len() > 10 && time.as_bytes()[10] == b'T' => format!("{} {:<w$} | {}", time, app, rest, w = width),
+        _ => format!("{:<w$} | {}", app, line, w = width),
     }
 }
 
@@ -543,14 +653,19 @@ fn json_number(obj: &str, key: &str) -> Option<f64> {
     rest[..end].trim().parse().ok()
 }
 
-/// `plumb stats [--range 1h|6h|24h|7d|30d]`: requests, errors, response
-/// times and where they go, from the server's metrics.
+/// `plumb stats [APP] [--range 1h|6h|24h|7d|30d]`: requests, errors,
+/// response times and where they go, from the server's metrics: the whole
+/// project's, then each app's in a line (or one app's).
 pub fn stats(args: &[String]) -> ExitCode {
-    let (_, app) = match project_app() {
+    let (_, project) = match project_app() {
         Ok(x) => x,
         Err(e) => return fail(e),
     };
-    let server = match server_of(&app, args) {
+    let chosen = match chosen_apps(&project, args, &["--range", "--to"]) {
+        Ok(a) => a,
+        Err(e) => return fail(e),
+    };
+    let server = match server_of(&project, args) {
         Ok(s) => s,
         Err(e) => return fail(e),
     };
@@ -559,32 +674,59 @@ pub fn stats(args: &[String]) -> ExitCode {
         Err(e) => return fail(e),
     };
     let range = args.iter().position(|a| a == "--range").and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| "24h".into());
-    let body = match request("GET", &format!("{}/_platform/metrics?app={}&range={}", server, app.name, range), &token, None) {
-        Ok((200, b)) => b,
-        Ok((code, b)) => return fail(format!("{} ({})", server_error(&b), code)),
+    let fetch = |what: &str| -> Result<String, String> {
+        match request("GET", &format!("{}/_platform/metrics?{}&range={}", server, what, range), &token, None) {
+            Ok((200, b)) => b.split("\"summary\":").nth(1).and_then(|s| s.split('}').next()).map(str::to_string).ok_or_else(|| "the server's answer has no summary".to_string()),
+            Ok((code, b)) => Err(format!("{} ({})", server_error(&b), code)),
+            Err(e) => Err(e),
+        }
+    };
+    let whole = chosen.len() == project.apps.len() && project.apps.len() > 1;
+    let (title, query) = if whole || chosen.len() > 1 {
+        (project.name.clone(), format!("project={}", project.name))
+    } else {
+        (project.server_name(chosen[0]), format!("app={}", project.server_name(chosen[0])))
+    };
+    let summary = match fetch(&query) {
+        Ok(s) => s,
         Err(e) => return fail(e),
     };
-    let Some(summary) = body.split("\"summary\":").nth(1).and_then(|s| s.split('}').next()) else {
-        return fail("the server's answer has no summary".into());
-    };
-    let n = |k: &str| json_number(summary, k).unwrap_or(0.0);
-    let ms = |k: &str| match json_number(summary, k) {
+    let n = |s: &str, k: &str| json_number(s, k).unwrap_or(0.0);
+    let ms = |s: &str, k: &str| match json_number(s, k) {
         Some(v) if v >= 1000.0 => format!("{:.2} s", v / 1000.0),
         Some(v) if v >= 10.0 => format!("{:.0} ms", v),
         Some(v) => format!("{:.1} ms", v),
         None => "–".into(),
     };
-    let requests = n("requests");
-    println!("{} on {}, last {}", app.name, server, range);
-    if requests == 0.0 && n("events") == 0.0 {
+    let summary = summary.as_str();
+    let requests = n(summary, "requests");
+    println!("{} on {}, last {}", title, server, range);
+    if requests == 0.0 && n(summary, "events") == 0.0 {
         println!("  no requests");
         return ExitCode::SUCCESS;
     }
-    println!("  requests      {:.0} ({:.2}/s)", requests, n("rps"));
-    println!("  failed        {:.0} ({:.2}%: 5xx answers and timeouts)", n("errors"), 100.0 * n("errors") / requests.max(1.0));
-    println!("  response time p50 {}  p95 {}  p99 {}", ms("p50_ms"), ms("p95_ms"), ms("p99_ms"));
-    println!("  on average    {} = cpu {} + database {} + outgoing http {} + other {}", ms("avg_ms"), ms("cpu_ms"), ms("db_ms"), ms("http_ms"), ms("other_ms"));
-    println!("  per request   {:.1} database queries, {:.2} outgoing requests", n("db_queries") / requests.max(1.0), n("outbound_requests") / requests.max(1.0));
-    println!("charts: {}/_platform/requests?app={}", server, app.name);
+    println!("  requests      {:.0} ({:.2}/s)", requests, n(summary, "rps"));
+    println!("  failed        {:.0} ({:.2}%: 5xx answers and timeouts)", n(summary, "errors"), 100.0 * n(summary, "errors") / requests.max(1.0));
+    println!("  response time p50 {}  p95 {}  p99 {}", ms(summary, "p50_ms"), ms(summary, "p95_ms"), ms(summary, "p99_ms"));
+    println!(
+        "  on average    {} = cpu {} + database {} + outgoing http {} + other {}",
+        ms(summary, "avg_ms"),
+        ms(summary, "cpu_ms"),
+        ms(summary, "db_ms"),
+        ms(summary, "http_ms"),
+        ms(summary, "other_ms")
+    );
+    println!("  per request   {:.1} database queries, {:.2} outgoing requests", n(summary, "db_queries") / requests.max(1.0), n(summary, "outbound_requests") / requests.max(1.0));
+    if chosen.len() > 1 {
+        println!("  by app        requests   failed      p95  avg");
+        for app in &chosen {
+            match fetch(&format!("app={}", project.server_name(app))) {
+                Ok(s) => println!("    {:<12}{:>9.0}{:>9.0}{:>9}  {}", app.name, n(&s, "requests"), n(&s, "errors"), ms(&s, "p95_ms"), ms(&s, "avg_ms")),
+                Err(e) => println!("    {:<12}{}", app.name, e),
+            }
+        }
+    }
+    let first = project.server_name(chosen[0]);
+    println!("charts: {}/_platform/requests?app={}", server, first);
     ExitCode::SUCCESS
 }
