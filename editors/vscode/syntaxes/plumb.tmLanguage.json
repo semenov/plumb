@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Plumb",
+  "scopeName": "source.plumb",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#declaration" },
+    { "include": "#test" },
+    { "include": "#string-block" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#keyword" },
+    { "include": "#constant" },
+    { "include": "#type" },
+    { "include": "#call" },
+    { "include": "#operator" }
+  ],
+  "repository": {
+    "comment": { "name": "comment.line.double-slash.plumb", "match": "//.*$" },
+    "declaration": {
+      "patterns": [
+        {
+          "match": "\\b(fn)\\s+([a-z_][A-Za-z0-9_]*)",
+          "captures": { "1": { "name": "keyword.declaration.function.plumb" }, "2": { "name": "entity.name.function.plumb" } }
+        },
+        {
+          "match": "\\b(type|enum|interface)\\s+([A-Z][A-Za-z0-9_]*)",
+          "captures": { "1": { "name": "keyword.declaration.type.plumb" }, "2": { "name": "entity.name.type.plumb" } }
+        },
+        {
+          "match": "\\b(import)\\s+([a-z_][A-Za-z0-9_.]*)",
+          "captures": { "1": { "name": "keyword.control.import.plumb" }, "2": { "name": "entity.name.namespace.plumb" } }
+        }
+      ]
+    },
+    "test": {
+      "match": "^\\s*(test)\\s+(?=\")",
+      "captures": { "1": { "name": "keyword.other.test.plumb" } }
+    },
+    "string-block": {
+      "name": "string.quoted.triple.plumb",
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
+      "patterns": [{ "include": "#escape" }, { "include": "#interpolation" }]
+    },
+    "string": {
+      "name": "string.quoted.double.plumb",
+      "begin": "\"",
+      "end": "\"|$",
+      "patterns": [{ "include": "#escape" }, { "include": "#interpolation" }]
+    },
+    "escape": { "name": "constant.character.escape.plumb", "match": "\\\\(u\\{[0-9A-Fa-f]+\\}|[nt\"\\\\$r0])" },
+    "interpolation": {
+      "name": "meta.interpolation.plumb",
+      "begin": "\\$\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.plumb" } },
+      "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.plumb" } },
+      "patterns": [{ "include": "#string" }, { "include": "#number" }, { "include": "#keyword" }, { "include": "#constant" }, { "include": "#type" }, { "include": "#call" }, { "include": "#operator" }]
+    },
+    "number": {
+      "patterns": [
+        { "name": "constant.numeric.hex.plumb", "match": "\\b0x[0-9A-Fa-f_]+\\b" },
+        { "name": "constant.numeric.binary.plumb", "match": "\\b0b[01_]+\\b" },
+        { "name": "constant.numeric.octal.plumb", "match": "\\b0o[0-7_]+\\b" },
+        { "name": "constant.numeric.decimal.plumb", "match": "\\b\\d[\\d_]*(\\.\\d[\\d_]*)?([eE][+-]?\\d+)?\\b" }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        { "name": "keyword.control.plumb", "match": "\\b(if|else|for|in|while|match|return|break|continue|try|catch|throw|with|spawn|expect)\\b" },
+        { "name": "keyword.operator.word.plumb", "match": "\\b(and|or|not|is)\\b" },
+        { "name": "storage.type.plumb", "match": "\\b(let|var|fn|type|enum|interface|implements|import|pub|throws|mutating|test|builtin)\\b" },
+        { "name": "variable.language.self.plumb", "match": "\\bself\\b" }
+      ]
+    },
+    "constant": { "name": "constant.language.plumb", "match": "\\b(true|false|none|some)\\b" },
+    "type": { "name": "entity.name.type.plumb", "match": "\\b[A-Z][A-Za-z0-9_]*\\b" },
+    "call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=(<[A-Za-z0-9_<>, ?]*>)?\\()",
+      "captures": { "1": { "name": "entity.name.function.call.plumb" } }
+    },
+    "operator": {
+      "patterns": [
+        { "name": "keyword.operator.arrow.plumb", "match": "=>|->" },
+        { "name": "keyword.operator.range.plumb", "match": "\\.\\.<|\\.\\.=" },
+        { "name": "keyword.operator.plumb", "match": "\\?\\?|\\?\\.|==|!=|<=|>=|\\+=|-=|\\*=|[-+*/%<>=|]" }
+      ]
+    }
+  }
+}

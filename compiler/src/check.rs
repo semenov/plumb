@@ -24,6 +24,8 @@ struct LambdaCtx {
 }
 
 struct FnCtx {
+    // where this function's expressions start in `record`
+    record_from: usize,
     locals: Vec<LocalDef>,
     level: Vec<usize>, // lambda nesting level where each local was declared
     scopes: Vec<HashMap<String, LocalId>>,
@@ -91,6 +93,8 @@ pub struct Checker {
     fn_asts: Vec<Option<(ast::FnDecl, usize)>>,
     // top-level `let`s: 1 while being checked (to find cycles), 2 when done
     const_state: HashMap<FnId, u8>,
+    // for an editor (`plumb lsp`): every expression's span and type
+    pub record: Option<Vec<(Span, Ty)>>,
 }
 
 fn levenshtein(a: &str, b: &str) -> usize {
@@ -162,6 +166,7 @@ impl Checker {
             f: None,
             fn_asts: vec![],
             const_state: HashMap::new(),
+            record: None,
         }
     }
 
@@ -904,7 +909,9 @@ impl Checker {
     // ================= function bodies =================
 
     fn begin_fn(&mut self, generics: Vec<String>, ret: Ty, throws_ok: bool, md: usize) {
+        let record_from = self.record.as_ref().map_or(0, |r| r.len());
         self.f = Some(FnCtx {
+            record_from,
             locals: vec![],
             level: vec![],
             scopes: vec![HashMap::new()],
@@ -1024,6 +1031,14 @@ impl Checker {
             self.err_help(sp, "can't figure out the type here", "add a type: `let xs: List<Int> = []`");
         }
         let params = vec![];
+        // the recorded types as inference left them, while its variables exist
+        if let Some(mut r) = self.record.take() {
+            let from = self.fcx().record_from;
+            for (_, t) in r.iter_mut().skip(from) {
+                *t = self.zonk_ty(t, &mut None);
+            }
+            self.record = Some(r);
+        }
         self.f = None;
         TBody { locals, params, block }
     }
@@ -2144,6 +2159,14 @@ impl Checker {
     }
 
     pub fn expr(&mut self, e: &Expr, expected: Option<&Ty>) -> TExpr {
+        let t = self.expr_unrecorded(e, expected);
+        if let Some(r) = &mut self.record {
+            r.push((e.span, t.ty.clone()));
+        }
+        t
+    }
+
+    fn expr_unrecorded(&mut self, e: &Expr, expected: Option<&Ty>) -> TExpr {
         let span = e.span;
         let mk = |kind, ty| TExpr { kind, ty, span };
         // `try` applies only to the call right below it

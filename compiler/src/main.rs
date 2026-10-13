@@ -7,6 +7,7 @@ mod doc;
 mod fmt;
 mod lexer;
 mod lower;
+mod lsp;
 mod mir;
 mod parser;
 mod split;
@@ -16,6 +17,7 @@ mod regex_check;
 mod types;
 
 use diag::Sources;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -35,6 +37,7 @@ Programs:
   plumb build <file.plumb> [-o out] compile an optimized binary
   plumb test [file.plumb or dir]    run the `test` blocks: of one file, or of every file in the project
   plumb check <file.plumb>          only check for errors (fast)
+  plumb lsp                         the language server for editors (editors/vscode for VS Code)
 
 Apps on wasm-server ([app] in plumb.toml):
   plumb dev [--port N]              run the app locally as the server would; rebuilt on changes
@@ -85,6 +88,7 @@ fn learn_command(args: &[String]) -> Option<ExitCode> {
             Some(ExitCode::SUCCESS)
         }
         "doc" => Some(doc_command(&args[1..])),
+        "lsp" => Some(lsp::run()),
         "login" => Some(deploy::login(&args[1..])),
         "secret" => Some(deploy::secret(&args[1..])),
         "logs" => Some(deploy::logs(&args[1..])),
@@ -489,12 +493,53 @@ struct Base {
 // Parses and checks the program; prints errors. Modules are found in this
 // order: the standard library, the project's packages, the project's files.
 fn front_end(path: &str, sources: &mut Sources) -> Option<(types::Program, u32)> {
+    match analyze(path, sources, &HashMap::new(), false) {
+        Err(Some(ds)) => {
+            for d in &ds {
+                eprint!("{}", sources.render(d));
+            }
+            None
+        }
+        Err(None) => None,
+        Ok((c, uf)) => {
+            if !c.diags.is_empty() {
+                let ds = checked_diags(&c);
+                for d in &ds {
+                    eprint!("{}", sources.render(d));
+                }
+                eprintln!("{} error(s)", ds.len());
+                return None;
+            }
+            Some((c.prog, uf))
+        }
+    }
+}
+
+// The checker's errors, merged and in the order of the source.
+fn checked_diags(c: &check::Checker) -> Vec<diag::Diag> {
+    let mut ds = merge_can_fail(c.diags.clone(), &c.source_texts);
+    ds.sort_by_key(|d| (d.span.file, d.span.lo));
+    ds
+}
+
+// The program checked, errors and all (`plumb check`, `plumb lsp`): files in
+// `overrides` are read from there instead of the disk (an editor's unsaved
+// buffers); `record` keeps every expression's type. Err: it couldn't be
+// read or parsed (with the errors, or None when already printed).
+fn analyze(path: &str, sources: &mut Sources, overrides: &HashMap<PathBuf, String>, record: bool) -> Result<(check::Checker, u32), Option<Vec<diag::Diag>>> {
+    let read = |p: &Path| -> std::io::Result<String> {
+        let abs = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        match overrides.get(&abs).or_else(|| overrides.get(p)) {
+            Some(t) => Ok(t.clone()),
+            None => std::fs::read_to_string(p),
+        }
+    };
     let entry = PathBuf::from(path);
-    let text = match std::fs::read_to_string(&entry) {
+    let text = match read(&entry) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("error: can't read {}: {}", path, e);
-            return None;
+            return Err(None);
         }
     };
     let root = project::find_root(&entry);
@@ -502,16 +547,17 @@ fn front_end(path: &str, sources: &mut Sources) -> Option<(types::Program, u32)>
         Ok(d) => d,
         Err(e) => {
             eprintln!("error: {}", e);
-            return None;
+            return Err(None);
         }
     };
-    let parse = |sources: &mut Sources, name: &str, src: &str, privileged: bool| -> Option<ast::Module> {
+    let mut errors: Vec<diag::Diag> = vec![];
+    let parse = |sources: &mut Sources, name: &str, src: &str, privileged: bool| -> Result<ast::Module, diag::Diag> {
         let f = sources.add(name.to_string(), src.to_string());
-        lexer::lex(src, f).and_then(|t| parser::parse_module(t, privileged)).map_err(|d| eprint!("{}", sources.render(&d))).ok()
+        lexer::lex(src, f).and_then(|t| parser::parse_module(t, privileged))
     };
-    let prelude = parse(sources, "<prelude>", include_str!("prelude.plumb"), true)?;
+    let prelude = parse(sources, "<prelude>", include_str!("prelude.plumb"), true).map_err(|d| Some(vec![d]))?;
     let uf = sources.files.len() as u32;
-    let mut user = parse(sources, path, &text, false)?;
+    let mut user = parse(sources, path, &text, false).map_err(|d| Some(vec![d]))?;
     let abs_entry = std::fs::canonicalize(&entry).unwrap_or(entry.clone());
     let entry_key = abs_entry
         .strip_prefix(&root)
@@ -527,7 +573,7 @@ fn front_end(path: &str, sources: &mut Sources) -> Option<(types::Program, u32)>
     // resolves the imports of `m` (seen from `base`) and queues new modules
     let mut queue: Vec<(ast::Module, Base, String, bool)> = vec![];
     let project_base = Base { root: root.clone(), prefix: String::new() };
-    let mut resolve_imports = |m: &mut ast::Module, base: &Base, from_key: &str, sources: &mut Sources, queue: &mut Vec<(ast::Module, Base, String, bool)>, known: &mut Vec<String>| -> bool {
+    let mut resolve_imports = |m: &mut ast::Module, base: &Base, from_key: &str, sources: &mut Sources, queue: &mut Vec<(ast::Module, Base, String, bool)>, known: &mut Vec<String>, errors: &mut Vec<diag::Diag>| -> bool {
         let mut ok = true;
         for imp in m.imports.iter_mut() {
             let dotted = imp.path.join(".");
@@ -544,7 +590,7 @@ fn front_end(path: &str, sources: &mut Sources) -> Option<(types::Program, u32)>
             graph.entry(from_key.to_string()).or_default().push((key.clone(), imp.span));
             if key == entry_key && base.prefix.is_empty() {
                 let d = diag::Diag::new(imp.span, "the main file can't be imported").help("move the shared code into its own file and import that");
-                eprint!("{}", sources.render(&d));
+                errors.push(d);
                 ok = false;
                 continue;
             }
@@ -554,13 +600,13 @@ fn front_end(path: &str, sources: &mut Sources) -> Option<(types::Program, u32)>
             known.push(key.clone());
             let (name, src) = match &file {
                 None => (format!("<{}>", dotted), std_module(&dotted).unwrap().to_string()),
-                Some(f) => match std::fs::read_to_string(f) {
+                Some(f) => match read(f) {
                     Ok(s) => (f.to_string_lossy().to_string(), s),
                     Err(_) => {
                         let shown = f.strip_prefix(&root).map(|p| p.to_path_buf()).unwrap_or(f.clone());
                         let d = diag::Diag::new(imp.span, format!("there is no module `{}`", dotted))
                             .help(format!("expected the file {}, a package in plumb.toml, or a standard module", shown.display()));
-                        eprint!("{}", sources.render(&d));
+                        errors.push(d);
                         ok = false;
                         continue;
                     }
@@ -570,7 +616,7 @@ fn front_end(path: &str, sources: &mut Sources) -> Option<(types::Program, u32)>
             match lexer::lex(&src, f).and_then(|t| parser::parse_module(t, privileged || file.is_none())) {
                 Ok(pm) => queue.push((pm, next_base, key, file.is_none())),
                 Err(d) => {
-                    eprint!("{}", sources.render(&d));
+                    errors.push(d);
                     ok = false;
                 }
             }
@@ -578,17 +624,17 @@ fn front_end(path: &str, sources: &mut Sources) -> Option<(types::Program, u32)>
         ok
     };
     let mut known: Vec<String> = vec![entry_key.clone()];
-    if !resolve_imports(&mut user, &project_base, &entry_key, sources, &mut queue, &mut known) {
+    if !resolve_imports(&mut user, &project_base, &entry_key, sources, &mut queue, &mut known, &mut errors) {
         failed = true;
     }
     while let Some((mut m, base, key, privileged)) = queue.pop() {
-        if !resolve_imports(&mut m, &base, &key, sources, &mut queue, &mut known) {
+        if !resolve_imports(&mut m, &base, &key, sources, &mut queue, &mut known, &mut errors) {
             failed = true;
         }
         loaded.push(Loaded { key, module: m, privileged });
     }
     if failed {
-        return None;
+        return Err(Some(errors));
     }
     // import cycles
     fn visit(k: &str, graph: &std::collections::HashMap<String, Vec<(String, diag::Span)>>, stack: &mut Vec<String>, done: &mut Vec<String>) -> Option<(Vec<String>, diag::Span)> {
@@ -612,24 +658,17 @@ fn front_end(path: &str, sources: &mut Sources) -> Option<(types::Program, u32)>
     }
     if let Some((cycle, sp)) = visit(&entry_key, &graph, &mut vec![], &mut vec![]) {
         let d = diag::Diag::new(sp, format!("modules import each other: {}", cycle.join(" → "))).help("move what they share into a third module that both import");
-        eprint!("{}", sources.render(&d));
-        return None;
+        return Err(Some(vec![d]));
     }
     let mut mods: Vec<(String, ast::Module, bool)> = loaded.into_iter().map(|l| (l.key, l.module, l.privileged)).collect();
     mods.push((entry_key, user, false));
     let mut c = check::Checker::new();
     c.source_texts = sources.files.iter().map(|f| f.text.clone()).collect();
-    c.check_program(&mods);
-    if !c.diags.is_empty() {
-        let mut ds = merge_can_fail(c.diags.clone(), &c.source_texts);
-        ds.sort_by_key(|d| (d.span.file, d.span.lo));
-        for d in &ds {
-            eprint!("{}", sources.render(d));
-        }
-        eprintln!("{} error(s)", ds.len());
-        return None;
+    if record {
+        c.record = Some(vec![]);
     }
-    Some((c.prog, uf))
+    c.check_program(&mods);
+    Ok((c, uf))
 }
 
 // Calls that can fail nested in one another (`json.decode<C>(files.read(p))`)

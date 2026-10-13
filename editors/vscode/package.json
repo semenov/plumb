@@ -1,0 +1,38 @@
+{
+  "name": "plumb",
+  "displayName": "Plumb",
+  "description": "The Plumb language: highlighting, errors as you type, completion, hover and go to definition (through `plumb lsp`).",
+  "version": "0.1.0",
+  "publisher": "plumb-lang",
+  "license": "MIT",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:plumb"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "plumb",
+        "aliases": ["Plumb", "plumb"],
+        "extensions": [".plumb"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      { "language": "plumb", "scopeName": "source.plumb", "path": "./syntaxes/plumb.tmLanguage.json" }
+    ],
+    "configuration": {
+      "title": "Plumb",
+      "properties": {
+        "plumb.path": {
+          "type": "string",
+          "default": "",
+          "description": "The plumb program. Empty: `plumb` on the PATH, then ~/.plumb/bin/plumb."
+        }
+      }
+    },
+    "commands": [
+      { "command": "plumb.restart", "title": "Plumb: Restart the language server" }
+    ]
+  }
+}
