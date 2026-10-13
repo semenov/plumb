@@ -1,0 +1,197 @@
+// notes-api: an HTTP JSON API for short notes, stored in SQLite.
+import db
+import env
+import http
+import json
+
+type Note {
+  id: Int
+  title: String
+  body: String
+  tag: String?
+}
+
+type NoteInput {
+  title: String
+  body: String? = ""
+  tag: String? = none
+}
+
+fn main() throws {
+  let port_str = env.get("PORT") ?? "8080"
+  let port = try port_str.to_int()
+  let db_path = env.get("DB_PATH") ?? "notes.db"
+
+  with conn = try db.open(db_path) {
+    try conn.execute("create table if not exists notes (id integer primary key autoincrement, title text not null, body text not null default '', tag text)", [])
+
+    let shared_conn = Shared<db.Connection>(conn)
+
+    var router = http.Router()
+    router.get("/notes", req => try list_notes(req, shared_conn))
+    router.get("/notes/:id", req => try get_note(req, shared_conn))
+    router.post("/notes", req => try create_note(req, shared_conn))
+    router.patch("/notes/:id", req => try update_note(req, shared_conn))
+    router.delete("/notes/:id", req => try delete_note(req, shared_conn))
+
+    // Catch-all for paths that don't match /notes or /notes/:id -> 404 JSON
+    router.any("/*rest", req => error_response(404, "not found"))
+
+    // Explicit 405 handlers for unregistered methods on /notes
+    router.add("PUT", pattern: "/notes", handler: req => error_response(405, "method not allowed"))
+    router.add("PATCH", pattern: "/notes", handler: req => error_response(405, "method not allowed"))
+    router.add("DELETE", pattern: "/notes", handler: req => error_response(405, "method not allowed"))
+
+    // Explicit 405 handlers for unregistered methods on /notes/:id
+    router.add("POST", pattern: "/notes/:id", handler: req => error_response(405, "method not allowed"))
+    router.add("PUT", pattern: "/notes/:id", handler: req => error_response(405, "method not allowed"))
+
+    try http.serve_with(router, options: http.ServerOptions(port: port, host: "127.0.0.1"))
+  }
+}
+
+fn error_response(status: Int, message: String) -> http.Response {
+  return http.json(status, {"error": message})
+}
+
+fn parse_id(req: http.Request) -> Int? {
+  let id_str = req.param("id") ?? ""
+  let id = try id_str.to_int() catch _ {
+    return none
+  }
+  if id <= 0 {
+    return none
+  }
+  return id
+}
+
+fn list_notes(req: http.Request, conn: Shared<db.Connection>) throws -> http.Response {
+  let q_raw = req.query("q")
+  with c = conn.read() {
+    let notes = if q_raw is some(q) {
+      if q.is_empty() {
+        try c.query<Note>("select id, title, body, tag from notes order by id", [])
+      } else {
+        // Escape SQL GLOB special characters: \, *, ?
+        let escaped = q.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
+        try c.query<Note>("select id, title, body, tag from notes where title glob '*' || ? || '*' escape '\\' or body glob '*' || ? || '*' escape '\\' order by id", [escaped, escaped])
+      }
+    } else {
+      try c.query<Note>("select id, title, body, tag from notes order by id", [])
+    }
+    return http.json(200, {"notes": notes})
+  }
+}
+
+fn get_note(req: http.Request, conn: Shared<db.Connection>) throws -> http.Response {
+  let id = parse_id(req)
+  if id is none {
+    return error_response(404, "not found")
+  }
+  with c = conn.read() {
+    let notes = try c.query<Note>("select id, title, body, tag from notes where id = ?", [id])
+    if notes.is_empty() {
+      return error_response(404, "not found")
+    }
+    return http.json(200, notes[0])
+  }
+}
+
+fn create_note(req: http.Request, conn: Shared<db.Connection>) throws -> http.Response {
+  let body_text = req.text()
+  let input = try json.decode<NoteInput>(body_text) catch err {
+    return error_response(400, "invalid JSON")
+  }
+
+  if input.title.is_empty() or input.title.length > 200 {
+    return error_response(400, "invalid field: title")
+  }
+
+  let title = input.title
+  let body = input.body ?? ""
+
+  with c = conn.lock() {
+    let id = try c.insert("insert into notes (title, body, tag) values (?, ?, ?)", [title, body, input.tag])
+    let note = Note(id: id, title: title, body: body, tag: input.tag)
+    return http.json(201, note)
+  }
+}
+
+fn update_note(req: http.Request, conn: Shared<db.Connection>) throws -> http.Response {
+  let id = parse_id(req)
+  if id is none {
+    return error_response(404, "not found")
+  }
+
+  let body_text = req.text()
+  let parsed = try json.parse(body_text) catch err {
+    return error_response(400, "invalid JSON")
+  }
+
+  let fields = match parsed {
+    json.Value.Object(fields) => fields
+    _ => { return error_response(400, "invalid JSON") }
+  }
+
+  // Validate fields: title and body may not be null
+  for entry in fields {
+    if entry.key == "title" {
+      if entry.value is json.Value.Null {
+        return error_response(400, "invalid field: title")
+      }
+      if entry.value is json.Value.String(s) and (s.is_empty() or s.length > 200) {
+        return error_response(400, "invalid field: title")
+      }
+    } else if entry.key == "body" {
+      if entry.value is json.Value.Null {
+        return error_response(400, "invalid field: body")
+      }
+    } else if entry.key == "tag" {
+      // tag can be null, that's fine
+    }
+    // other fields are ignored
+  }
+
+  with c = conn.lock() {
+    let notes = try c.query<Note>("select id, title, body, tag from notes where id = ?", [id])
+    if notes.is_empty() {
+      return error_response(404, "not found")
+    }
+
+    var existing = notes[0]
+
+    // Apply updates from the JSON fields
+    for entry in fields {
+      if entry.key == "title" and entry.value is json.Value.String(s) {
+        existing.title = s
+      } else if entry.key == "body" and entry.value is json.Value.String(s) {
+        existing.body = s
+      } else if entry.key == "tag" {
+        if entry.value is json.Value.Null {
+          existing.tag = none
+        } else if entry.value is json.Value.String(s) {
+          existing.tag = s
+        }
+      }
+    }
+
+    try c.execute("update notes set title = ?, body = ?, tag = ? where id = ?", [existing.title, existing.body, existing.tag, id])
+
+    return http.json(200, existing)
+  }
+}
+
+fn delete_note(req: http.Request, conn: Shared<db.Connection>) throws -> http.Response {
+  let id = parse_id(req)
+  if id is none {
+    return error_response(404, "not found")
+  }
+
+  with c = conn.lock() {
+    let count = try c.execute_counting("delete from notes where id = ?", [id])
+    if count == 0 {
+      return error_response(404, "not found")
+    }
+    return http.bytes(204, data: Bytes(), content_type: "application/json")
+  }
+}

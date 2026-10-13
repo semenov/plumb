@@ -1,0 +1,422 @@
+error: no `return` inside a lambda
+  --> main.plumb:81:7
+   |
+81 |       return make_error(400, "invalid JSON")
+   |       ^^^^^^
+   = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:81:14
+   |
+81 |       return make_error(400, "invalid JSON")
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: a name bound by `is` works only in an `if` condition, alone or joined with `and`
+  --> main.plumb:83:23
+   |
+83 |     if not (parsed is json.Value.Object(fields)) {
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: with `or` (or outside `if`) the name may not be set: test without a name, `x is some(_)`, or write `if x is some(v) { ... }`
+error: no `return` inside a lambda
+  --> main.plumb:84:7
+   |
+84 |       return make_error(400, "invalid JSON")
+   |       ^^^^^^
+   = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:84:14
+   |
+84 |       return make_error(400, "invalid JSON")
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `fields`
+  --> main.plumb:88:8
+   |
+88 |     if fields["title"] is none {
+   |        ^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:89:7
+   |
+89 |       return make_error(400, "invalid field: title")
+   |       ^^^^^^
+   = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:89:14
+   |
+89 |       return make_error(400, "invalid field: title")
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `fields`
+  --> main.plumb:91:21
+   |
+91 |     let title_val = fields["title"]
+   |                     ^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:93:7
+   |
+93 |       return make_error(400, "invalid field: title")
+   |       ^^^^^^
+   = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:93:14
+   |
+93 |       return make_error(400, "invalid field: title")
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `title_str`
+  --> main.plumb:95:8
+   |
+95 |     if title_str.length < 1 or title_str.length > 200 {
+   |        ^^^^^^^^^
+error: unknown name `title_str`
+  --> main.plumb:95:32
+   |
+95 |     if title_str.length < 1 or title_str.length > 200 {
+   |                                ^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:96:7
+   |
+96 |       return make_error(400, "invalid field: title")
+   |       ^^^^^^
+   = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:96:14
+   |
+96 |       return make_error(400, "invalid field: title")
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `fields`
+  --> main.plumb:101:8
+    |
+101 |     if fields["body"] is some(bv) {
+    |        ^^^^^^
+error: unknown name `bv`
+  --> main.plumb:102:15
+    |
+102 |       if not (bv is json.Value.String(bs)) {
+    |               ^^
+error: no `return` inside a lambda
+  --> main.plumb:103:9
+    |
+103 |         return make_error(400, "invalid field: body")
+    |         ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:103:16
+    |
+103 |         return make_error(400, "invalid field: body")
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `bs`
+  --> main.plumb:105:18
+    |
+105 |       body_str = bs
+    |                  ^^
+error: unknown name `fields`
+  --> main.plumb:110:8
+    |
+110 |     if fields["tag"] is some(tv) {
+    |        ^^^^^^
+error: unknown name `tv`
+  --> main.plumb:111:10
+    |
+111 |       if tv is json.Value.Null {
+    |          ^^
+error: unknown name `tv`
+  --> main.plumb:113:17
+    |
+113 |       } else if tv is json.Value.String(ts) {
+    |                 ^^
+error: unknown name `ts`
+  --> main.plumb:114:19
+    |
+114 |         tag_val = ts
+    |                   ^^
+error: no `return` inside a lambda
+  --> main.plumb:116:9
+    |
+116 |         return make_error(400, "invalid field: tag")
+    |         ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:116:16
+    |
+116 |         return make_error(400, "invalid field: tag")
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `title_str`
+  --> main.plumb:120:88
+    |
+120 |     let id = try conn.insert("INSERT INTO notes (title, body, tag) VALUES (?, ?, ?)", [title_str, body_str, tag_val])
+    |                                                                                        ^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:121:5
+    |
+121 |     return http.json(201, Note(id: id, title: title_str, body: body_str, tag: tag_val))
+    |     ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:121:12
+    |
+121 |     return http.json(201, Note(id: id, title: title_str, body: body_str, tag: tag_val))
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `title_str`
+  --> main.plumb:121:47
+    |
+121 |     return http.json(201, Note(id: id, title: title_str, body: body_str, tag: tag_val))
+    |                                               ^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:128:5
+    |
+128 |     return http.json(200, NotesList(notes: rows))
+    |     ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:128:12
+    |
+128 |     return http.json(200, NotesList(notes: rows))
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:135:7
+    |
+135 |       return make_error(404, "not found")
+    |       ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:135:14
+    |
+135 |       return make_error(404, "not found")
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:139:7
+    |
+139 |       return make_error(404, "not found")
+    |       ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:139:14
+    |
+139 |       return make_error(404, "not found")
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:141:5
+    |
+141 |     return http.json(200, rows[0])
+    |     ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:141:12
+    |
+141 |     return http.json(200, rows[0])
+    |            ^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:148:7
+    |
+148 |       return make_error(404, "not found")
+    |       ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:148:14
+    |
+148 |       return make_error(404, "not found")
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:153:7
+    |
+153 |       return make_error(400, "invalid JSON")
+    |       ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:153:14
+    |
+153 |       return make_error(400, "invalid JSON")
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: a name bound by `is` works only in an `if` condition, alone or joined with `and`
+  --> main.plumb:155:23
+    |
+155 |     if not (parsed is json.Value.Object(fields)) {
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: with `or` (or outside `if`) the name may not be set: test without a name, `x is some(_)`, or write `if x is some(v) { ... }`
+error: no `return` inside a lambda
+  --> main.plumb:156:7
+    |
+156 |       return make_error(400, "invalid JSON")
+    |       ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:156:14
+    |
+156 |       return make_error(400, "invalid JSON")
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `fields`
+  --> main.plumb:160:8
+    |
+160 |     if fields["title"] is some(tv) {
+    |        ^^^^^^
+error: unknown name `tv`
+  --> main.plumb:161:25
+    |
+161 |       if validate_title(tv) is none {
+    |                         ^^
+error: no `return` inside a lambda
+  --> main.plumb:162:9
+    |
+162 |         return make_error(400, "invalid field: title")
+    |         ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:162:16
+    |
+162 |         return make_error(400, "invalid field: title")
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `fields`
+  --> main.plumb:165:8
+    |
+165 |     if fields["body"] is some(bv) {
+    |        ^^^^^^
+error: unknown name `bv`
+  --> main.plumb:166:15
+    |
+166 |       if not (bv is json.Value.String(_)) {
+    |               ^^
+error: no `return` inside a lambda
+  --> main.plumb:167:9
+    |
+167 |         return make_error(400, "invalid field: body")
+    |         ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:167:16
+    |
+167 |         return make_error(400, "invalid field: body")
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `fields`
+  --> main.plumb:170:8
+    |
+170 |     if fields["tag"] is some(tv) {
+    |        ^^^^^^
+error: unknown name `tv`
+  --> main.plumb:171:15
+    |
+171 |       if not (tv is json.Value.Null) and not (tv is json.Value.String(_)) {
+    |               ^^
+error: unknown name `tv`
+  --> main.plumb:171:47
+    |
+171 |       if not (tv is json.Value.Null) and not (tv is json.Value.String(_)) {
+    |                                               ^^
+error: no `return` inside a lambda
+  --> main.plumb:172:9
+    |
+172 |         return make_error(400, "invalid field: tag")
+    |         ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:172:16
+    |
+172 |         return make_error(400, "invalid field: tag")
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:179:7
+    |
+179 |       return make_error(404, "not found")
+    |       ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:179:14
+    |
+179 |       return make_error(404, "not found")
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: unknown name `fields`
+  --> main.plumb:188:8
+    |
+188 |     if fields["title"] is some(tv) {
+    |        ^^^^^^
+error: unknown name `tv`
+  --> main.plumb:189:10
+    |
+189 |       if tv is json.Value.String(s) {
+    |          ^^
+error: unknown name `s`
+  --> main.plumb:190:21
+    |
+190 |         new_title = s
+    |                     ^
+error: unknown name `fields`
+  --> main.plumb:193:8
+    |
+193 |     if fields["body"] is some(bv) {
+    |        ^^^^^^
+error: unknown name `bv`
+  --> main.plumb:194:10
+    |
+194 |       if bv is json.Value.String(s) {
+    |          ^^
+error: unknown name `s`
+  --> main.plumb:195:20
+    |
+195 |         new_body = s
+    |                    ^
+error: unknown name `fields`
+  --> main.plumb:198:8
+    |
+198 |     if fields["tag"] is some(tv) {
+    |        ^^^^^^
+error: unknown name `tv`
+  --> main.plumb:199:10
+    |
+199 |       if tv is json.Value.Null {
+    |          ^^
+error: unknown name `tv`
+  --> main.plumb:201:17
+    |
+201 |       } else if tv is json.Value.String(s) {
+    |                 ^^
+error: unknown name `s`
+  --> main.plumb:202:19
+    |
+202 |         new_tag = s
+    |                   ^
+error: no `return` inside a lambda
+  --> main.plumb:207:5
+    |
+207 |     return http.json(200, Note(id: id, title: new_title, body: new_body, tag: new_tag))
+    |     ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:207:12
+    |
+207 |     return http.json(200, Note(id: id, title: new_title, body: new_body, tag: new_tag))
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:214:7
+    |
+214 |       return make_error(404, "not found")
+    |       ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:214:14
+    |
+214 |       return make_error(404, "not found")
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:219:7
+    |
+219 |       return make_error(404, "not found")
+    |       ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:219:14
+    |
+219 |       return make_error(404, "not found")
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:223:5
+    |
+223 |     return http.Response(status: 204, body: Bytes())
+    |     ^^^^^^
+    = help: the lambda's last line is its value
+error: expected `Router`, found `Response`
+  --> main.plumb:223:12
+    |
+223 |     return http.Response(status: 204, body: Bytes())
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: a `Connection` must be closed: get it with `with`
+  --> main.plumb:234:18
+    |
+234 |   let conn = try db.open(db_path)
+    |                  ^^^^^^^^^^^^^^^^
+    = help: write `with f = try ... { ... }`: it's closed at the end of the block, even on an error
+79 error(s)

@@ -1,0 +1,1 @@
+- 04:36: killed the agent's test server (pid 70854) after its test script hung for 5 min in `wait` on its own background server (pi's bash has no timeout)

@@ -1,0 +1,34 @@
+error: no `return` inside a lambda
+  --> main.plumb:40:9
+   |
+40 |         return http.json(404, ErrorResponse(error: "not found"))
+   |         ^^^^^^
+   = help: the lambda's last line is its value
+error: this function returns nothing (it has no `->`)
+  --> main.plumb:40:16
+   |
+40 |         return http.json(404, ErrorResponse(error: "not found"))
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:43:9
+   |
+43 |         return http.json(405, ErrorResponse(error: "method not allowed"))
+   |         ^^^^^^
+   = help: the lambda's last line is its value
+error: this function returns nothing (it has no `->`)
+  --> main.plumb:43:16
+   |
+43 |         return http.json(405, ErrorResponse(error: "method not allowed"))
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: no `return` inside a lambda
+  --> main.plumb:45:7
+   |
+45 |       return res
+   |       ^^^^^^
+   = help: the lambda's last line is its value
+error: this function returns nothing (it has no `->`)
+  --> main.plumb:45:14
+   |
+45 |       return res
+   |              ^^^
+6 error(s)

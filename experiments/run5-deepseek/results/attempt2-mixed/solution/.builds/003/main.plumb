@@ -1,0 +1,255 @@
+import http
+import json
+import db
+import env
+import url
+
+type Note {
+  id: Int
+  title: String
+  body: String
+  tag: String?
+}
+
+type ErrorBody {
+  error: String
+}
+
+type NotesList {
+  notes: List<Note>
+}
+
+fn make_error(status: Int, message: String) -> http.Response {
+  return http.json(status, ErrorBody(error: message))
+}
+
+fn get_id(req: http.Request) -> Int? {
+  let id_text = req.param("id")
+  if id_text is none {
+    return none
+  }
+  let id = try id_text.to_int() catch err {
+    return none
+  }
+  if id <= 0 {
+    return none
+  }
+  return id
+}
+
+// Parse the q parameter from the raw query string.
+// Replace + with space first (form-urlencoded convention), then percent-decode.
+fn parse_query_q(raw_query: String) -> String {
+  if raw_query.is_empty() {
+    return ""
+  }
+  for part in raw_query.split("&") {
+    if part.index_of("=") is some(eq_pos) {
+      let key = part.slice(0, eq_pos)
+      if key == "q" {
+        let val = part.slice(eq_pos + 1, part.length)
+        let spaced = val.replace("+", " ")
+        return try url.decode(spaced) catch err {
+          spaced
+        }
+      }
+    } else if part == "q" {
+      return ""
+    }
+  }
+  return ""
+}
+
+// POST /notes
+fn handle_post(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let body_text = req.text()
+  let parsed = try json.parse(body_text) catch err {
+    return make_error(400, "invalid JSON")
+  }
+  if parsed is json.Value.Object(fields) {
+    // title (required)
+    if fields["title"] is some(title_val) {
+      if title_val is json.Value.String(title_str) {
+        if title_str.length >= 1 and title_str.length <= 200 {
+          // body (default "")
+          var body_str = ""
+          if fields["body"] is some(bv) {
+            if bv is json.Value.String(bs) {
+              body_str = bs
+            } else {
+              return make_error(400, "invalid field: body")
+            }
+          }
+
+          // tag (default none/null)
+          var tag_val: String? = none
+          if fields["tag"] is some(tv) {
+            if tv is json.Value.Null {
+              tag_val = none
+            } else if tv is json.Value.String(ts) {
+              tag_val = ts
+            } else {
+              return make_error(400, "invalid field: tag")
+            }
+          }
+
+          let id = try conn.insert("INSERT INTO notes (title, body, tag) VALUES (?, ?, ?)", [title_str, body_str, tag_val])
+          return http.json(201, Note(id: id, title: title_str, body: body_str, tag: tag_val))
+        } else {
+          return make_error(400, "invalid field: title")
+        }
+      } else {
+        return make_error(400, "invalid field: title")
+      }
+    } else {
+      return make_error(400, "invalid field: title")
+    }
+  } else {
+    return make_error(400, "invalid JSON")
+  }
+}
+
+// GET /notes
+fn handle_list(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let search = parse_query_q(req.raw_query)
+  let rows = try conn.query<Note>("SELECT id, title, body, tag FROM notes WHERE instr(title, ?) > 0 OR instr(body, ?) > 0 OR ? = '' ORDER BY id", [search, search, search])
+  return http.json(200, NotesList(notes: rows))
+}
+
+// GET /notes/:id
+fn handle_get(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let id = get_id(req)
+  if id is none {
+    return make_error(404, "not found")
+  }
+  let rows = try conn.query<Note>("SELECT id, title, body, tag FROM notes WHERE id = ?", [id])
+  if rows.length == 0 {
+    return make_error(404, "not found")
+  }
+  return http.json(200, rows[0])
+}
+
+// PATCH /notes/:id
+fn handle_patch(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let id = get_id(req)
+  if id is none {
+    return make_error(404, "not found")
+  }
+
+  let body_text = req.text()
+  let parsed = try json.parse(body_text) catch err {
+    return make_error(400, "invalid JSON")
+  }
+
+  if parsed is json.Value.Object(fields) {
+    // Validate fields before making any changes
+    // Check title
+    if fields["title"] is some(title_val) {
+      if title_val is json.Value.String(s) {
+        if s.length < 1 or s.length > 200 {
+          return make_error(400, "invalid field: title")
+        }
+      } else {
+        return make_error(400, "invalid field: title")
+      }
+    }
+
+    // Check body
+    if fields["body"] is some(body_val) {
+      if body_val is json.Value.String(_) {
+        // ok
+      } else {
+        return make_error(400, "invalid field: body")
+      }
+    }
+
+    // Check tag
+    if fields["tag"] is some(tag_val) {
+      if tag_val is json.Value.Null {
+        // ok
+      } else if tag_val is json.Value.String(_) {
+        // ok
+      } else {
+        return make_error(400, "invalid field: tag")
+      }
+    }
+
+    // Fetch existing note
+    let rows = try conn.query<Note>("SELECT id, title, body, tag FROM notes WHERE id = ?", [id])
+    if rows.length == 0 {
+      return make_error(404, "not found")
+    }
+    let note = rows[0]
+
+    // Apply patches
+    var new_title = note.title
+    var new_body = note.body
+    var new_tag = note.tag
+
+    if fields["title"] is some(title_val) {
+      if title_val is json.Value.String(s) {
+        new_title = s
+      }
+    }
+    if fields["body"] is some(body_val) {
+      if body_val is json.Value.String(s) {
+        new_body = s
+      }
+    }
+    if fields["tag"] is some(tag_val) {
+      if tag_val is json.Value.Null {
+        new_tag = none
+      } else if tag_val is json.Value.String(s) {
+        new_tag = s
+      }
+    }
+
+    try conn.execute("UPDATE notes SET title = ?, body = ?, tag = ? WHERE id = ?", [new_title, new_body, new_tag, id])
+    return http.json(200, Note(id: id, title: new_title, body: new_body, tag: new_tag))
+  } else {
+    return make_error(400, "invalid JSON")
+  }
+}
+
+// DELETE /notes/:id
+fn handle_delete(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let id = get_id(req)
+  if id is none {
+    return make_error(404, "not found")
+  }
+
+  let rows = try conn.query<Note>("SELECT id FROM notes WHERE id = ?", [id])
+  if rows.length == 0 {
+    return make_error(404, "not found")
+  }
+
+  try conn.execute("DELETE FROM notes WHERE id = ?", [id])
+  return http.Response(status: 204, body: Bytes())
+}
+
+fn open_db(path: String) throws -> db.Connection {
+  with conn = try db.open(path) {
+    try conn.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL, tag TEXT)", [])
+    return conn
+  }
+}
+
+fn make_router(conn: db.Connection) -> http.Router {
+  var router = http.Router()
+  router.post("/notes", req => try handle_post(req, conn))
+  router.get("/notes", req => try handle_list(req, conn))
+  router.get("/notes/:id", req => try handle_get(req, conn))
+  router.patch("/notes/:id", req => try handle_patch(req, conn))
+  router.delete("/notes/:id", req => try handle_delete(req, conn))
+  return router
+}
+
+fn main() throws {
+  let port_text = env.get("PORT") ?? "8080"
+  let port = try port_text.to_int()
+  let db_path = env.get("DB_PATH") ?? "notes.db"
+
+  let conn = try open_db(db_path)
+  let router = make_router(conn)
+  try http.serve_with(router, options: http.ServerOptions(port: port, host: "127.0.0.1"))
+}

@@ -1,0 +1,31 @@
+error: `add` has 3 or more parameters: name every argument after the first
+  --> main.plumb:42:23
+   |
+42 |     router.add("PUT", "/notes", req => error_response(405, "method not allowed"))
+   |                       ^^^^^^^^
+   = help: write (…, pattern: …, handler: …)
+error: `add` has 3 or more parameters: name every argument after the first
+  --> main.plumb:43:25
+   |
+43 |     router.add("PATCH", "/notes", req => error_response(405, "method not allowed"))
+   |                         ^^^^^^^^
+   = help: write (…, pattern: …, handler: …)
+error: `add` has 3 or more parameters: name every argument after the first
+  --> main.plumb:44:26
+   |
+44 |     router.add("DELETE", "/notes", req => error_response(405, "method not allowed"))
+   |                          ^^^^^^^^
+   = help: write (…, pattern: …, handler: …)
+error: `add` has 3 or more parameters: name every argument after the first
+  --> main.plumb:47:24
+   |
+47 |     router.add("POST", "/notes/:id", req => error_response(405, "method not allowed"))
+   |                        ^^^^^^^^^^^^
+   = help: write (…, pattern: …, handler: …)
+error: `add` has 3 or more parameters: name every argument after the first
+  --> main.plumb:48:23
+   |
+48 |     router.add("PUT", "/notes/:id", req => error_response(405, "method not allowed"))
+   |                       ^^^^^^^^^^^^
+   = help: write (…, pattern: …, handler: …)
+5 error(s)

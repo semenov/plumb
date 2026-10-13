@@ -1,0 +1,45 @@
+error: `String` has no method `length`
+  --> main.plumb:64:12
+   |
+64 |   if title.length() < 1 or title.length() > 200 {
+   |            ^^^^^^
+error: `String` has no method `length`
+  --> main.plumb:64:34
+   |
+64 |   if title.length() < 1 or title.length() > 200 {
+   |                                  ^^^^^^
+error: `some(x)` is only a pattern
+  --> main.plumb:77:35
+   |
+77 |     some(json.Value.String(s)) => some(s)
+   |                                   ^^^^^^^
+   = help: a plain value is already accepted where `T?` is expected: write `x`
+error: can't figure out the type here
+  --> main.plumb:78:30
+   |
+78 |     some(json.Value.Null) => none
+   |                              ^^^^
+   = help: add a type: `let xs: List<Int> = []`
+error: `String` has no method `length`
+  --> main.plumb:162:12
+    |
+162 |       if s.length() < 1 or s.length() > 200 {
+    |            ^^^^^^
+error: `String` has no method `length`
+  --> main.plumb:162:30
+    |
+162 |       if s.length() < 1 or s.length() > 200 {
+    |                              ^^^^^^
+error: `some(x)` is only a pattern
+  --> main.plumb:178:35
+    |
+178 |     some(json.Value.String(s)) => some(s)
+    |                                   ^^^^^^^
+    = help: a plain value is already accepted where `T?` is expected: write `x`
+error: can't figure out the type here
+  --> main.plumb:179:30
+    |
+179 |     some(json.Value.Null) => none
+    |                              ^^^^
+    = help: add a type: `let xs: List<Int> = []`
+8 error(s)

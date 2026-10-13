@@ -1,0 +1,25 @@
+#!/bin/sh
+# run-pi <task> <lang> <model>: run pi on a task; after a provider error,
+# resume the same session (up to 10 times). Events go to results/pi.jsonl.
+E=$(cd "$(dirname "$0")/.." && pwd)
+task=$1 lang=$2 model=$3
+cd "$E/solutions/$task/$lang" || exit 1
+export PI_CODING_AGENT_DIR="$E/pi-agent"
+export OPENROUTER_API_KEY=$(tr -d '\n' < ~/.openrouter_token)
+sess="$E/results/sessions"
+msg=$(python3 "$E/bin/prompt" "$task" "$lang" | sed "s|run4-go-vs-plumb|run5-deepseek|g; s|contain the hidden tests.|contain the hidden tests. For the same reason, don't open anything else under \`/Users/semenov/Dev/plumb/experiments/\`.|")
+cont=""
+for i in 1 2 3 4 5 6 7 8 9 10 11; do
+  pi -p --mode json $cont --provider openrouter --model "$model" --session-dir "$sess" "$msg" < /dev/null >> "$E/results/pi.jsonl" 2>> "$E/results/pi.err"
+  last=$(tail -r "$E/results/pi.jsonl" | python3 -c "
+import sys,json
+for l in sys.stdin:
+    try: e=json.loads(l)
+    except: continue
+    m=e.get('message') or {}
+    if e.get('type')=='message_end' and m.get('role')=='assistant': print(m.get('stopReason')); break")
+  echo "attempt $i: $last"
+  [ "$last" = "error" ] || break
+  cont="--continue"
+  msg="Your last reply was cut off by a provider error. Continue the task where you left off."
+done

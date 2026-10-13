@@ -1,0 +1,221 @@
+import db
+import env
+import http
+import json
+
+type Note {
+  id: Int
+  title: String
+  body: String
+  tag: String?
+}
+
+type ErrorResponse {
+  error: String
+}
+
+type NotesResponse {
+  notes: List<Note>
+}
+
+fn main() throws {
+  let port_str = env.get("PORT") ?? "8080"
+  let port = try port_str.to_int()
+  let db_path = env.get("DB_PATH") ?? "notes.db"
+
+  with conn = try db.open(db_path) {
+    try conn.execute("""
+      create table if not exists notes (
+        id integer primary key autoincrement,
+        title text not null,
+        body text not null default '',
+        tag text
+      )
+    """, [])
+
+    var router = http.Router()
+    router.use((req, next) => {
+      let res = try next(req)
+      if res.status == 404 {
+        return http.json(404, ErrorResponse(error: "not found"))
+      }
+      if res.status == 405 {
+        return http.json(405, ErrorResponse(error: "method not allowed"))
+      }
+      return res
+    })
+    router.post("/notes", req => try handle_create(req, conn))
+    router.get("/notes", req => try handle_list(req, conn))
+    router.get("/notes/:id", req => try handle_get(req, conn))
+    router.patch("/notes/:id", req => try handle_update(req, conn))
+    router.delete("/notes/:id", req => try handle_delete(req, conn))
+
+    try http.serve_with(router, options: http.ServerOptions(port: port, host: "127.0.0.1"))
+  }
+}
+
+fn handle_create(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let body = req.text()
+  let parsed = try json.parse(body) catch _ {
+    return http.json(400, ErrorResponse(error: "invalid JSON"))
+  }
+
+  let obj = match parsed {
+    json.Value.Object(m) => m
+    _ => return http.json(400, ErrorResponse(error: "invalid JSON"))
+  }
+
+  // title is required
+  let title = match obj["title"] {
+    some(json.Value.String(s)) => s
+    _ => return http.json(400, ErrorResponse(error: "invalid field: title"))
+  }
+
+  if title.length < 1 or title.length > 200 {
+    return http.json(400, ErrorResponse(error: "invalid field: title"))
+  }
+
+  // body defaults to ""
+  let note_body = match obj["body"] {
+    some(json.Value.String(s)) => s
+    none => ""
+    some(_) => return http.json(400, ErrorResponse(error: "invalid field: body"))
+  }
+
+  // tag defaults to null
+  let note_tag: String? = match obj["tag"] {
+    some(json.Value.String(s)) => s
+    some(json.Value.Null) => none
+    none => none
+    some(_) => return http.json(400, ErrorResponse(error: "invalid field: tag"))
+  }
+
+  let id = try conn.insert(
+    "insert into notes (title, body, tag) values (?, ?, ?)",
+    [title, note_body, note_tag]
+  )
+
+  return http.json(201, Note(id: id, title: title, body: note_body, tag: note_tag))
+}
+
+fn handle_list(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let q = req.query("q")
+
+  let notes = if q is some(q_str) and not q_str.is_empty() {
+    try conn.query<Note>(
+      "select id, title, body, tag from notes where instr(title, ?) > 0 or instr(body, ?) > 0 order by id",
+      [q_str, q_str]
+    )
+  } else {
+    try conn.query<Note>(
+      "select id, title, body, tag from notes order by id",
+      []
+    )
+  }
+
+  return http.json(200, NotesResponse(notes: notes))
+}
+
+fn handle_get(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let id_str = req.param("id") ?? ""
+  let id = try id_str.to_int() catch _ {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+  if id <= 0 {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+
+  let notes = try conn.query<Note>(
+    "select id, title, body, tag from notes where id = ?",
+    [id]
+  )
+
+  if notes.is_empty() {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+
+  return http.json(200, notes[0])
+}
+
+fn handle_update(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let id_str = req.param("id") ?? ""
+  let id = try id_str.to_int() catch _ {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+  if id <= 0 {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+
+  let body = req.text()
+  let parsed = try json.parse(body) catch _ {
+    return http.json(400, ErrorResponse(error: "invalid JSON"))
+  }
+
+  let obj = match parsed {
+    json.Value.Object(m) => m
+    _ => return http.json(400, ErrorResponse(error: "invalid JSON"))
+  }
+
+  // First get the existing note
+  let existing = try conn.query<Note>(
+    "select id, title, body, tag from notes where id = ?",
+    [id]
+  )
+  if existing.is_empty() {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+  let note = existing[0]
+
+  // Apply updates
+  let new_title = match obj["title"] {
+    some(json.Value.String(s)) => {
+      if s.length < 1 or s.length > 200 {
+        return http.json(400, ErrorResponse(error: "invalid field: title"))
+      }
+      s
+    }
+    none => note.title
+    some(_) => return http.json(400, ErrorResponse(error: "invalid field: title"))
+  }
+
+  let new_body = match obj["body"] {
+    some(json.Value.String(s)) => s
+    none => note.body
+    some(_) => return http.json(400, ErrorResponse(error: "invalid field: body"))
+  }
+
+  let new_tag: String? = match obj["tag"] {
+    some(json.Value.String(s)) => s
+    some(json.Value.Null) => none
+    none => note.tag
+    some(_) => return http.json(400, ErrorResponse(error: "invalid field: tag"))
+  }
+
+  try conn.execute(
+    "update notes set title = ?, body = ?, tag = ? where id = ?",
+    [new_title, new_body, new_tag, id]
+  )
+
+  return http.json(200, Note(id: id, title: new_title, body: new_body, tag: new_tag))
+}
+
+fn handle_delete(req: http.Request, conn: db.Connection) throws -> http.Response {
+  let id_str = req.param("id") ?? ""
+  let id = try id_str.to_int() catch _ {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+  if id <= 0 {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+
+  let changed = try conn.execute_counting(
+    "delete from notes where id = ?",
+    [id]
+  )
+
+  if changed == 0 {
+    return http.json(404, ErrorResponse(error: "not found"))
+  }
+
+  return http.text(204, "")
+}
