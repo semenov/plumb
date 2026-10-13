@@ -568,6 +568,19 @@ main = "api/main.plumb"
 path = "/api"                   # /api and below; routes keep it: router.post("/api/orders", ...)
 ```
 
+The frontend is an app of files, on the same domain as the API (no CORS):
+
+```
+[apps.site]
+static = "frontend/dist"                    # served as they are, with caching
+build = "cd frontend && npm run build"      # run before every deploy
+spa = true                                  # /orders/42 gets index.html
+```
+
+An app with both `main` and `static` serves its files first and runs its
+program for everything else; under a `path`, its files are below that
+path (`/admin/style.css` is `style.css`).
+
 - `plumb dev`: runs it on a local wasm-server as the server will, with
   secrets from `.env`, rebuilt on every change (http://localhost:8080).
 - `plumb login <server>` once, then `plumb deploy`: live without downtime;

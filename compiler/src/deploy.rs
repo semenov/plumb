@@ -201,27 +201,90 @@ pub fn login(args: &[String]) -> ExitCode {
     }
 }
 
+/// Runs each app's `build` command (making its static files), in the
+/// project's directory. Err(""): one failed and said why.
+fn build_static(root: &Path, p: &ProjectConfig) -> Result<(), String> {
+    for app in &p.apps {
+        if let Some(cmd) = &app.build {
+            eprintln!("{}: {}", app.name, cmd);
+            let ok = Command::new("sh").arg("-c").arg(cmd).current_dir(root).status().map_err(|e| format!("can't run sh: {}", e))?.success();
+            if !ok {
+                eprintln!("error: {}: `{}` failed", app.name, cmd);
+                return Err(String::new());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The files of a static directory: (path inside it, absolute path),
+/// without dot files.
+fn static_files(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+        for e in entries.flatten() {
+            let path = e.path();
+            if e.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            if path.is_dir() {
+                walk(root, &path, out)?;
+            } else {
+                let rel = path.strip_prefix(root).unwrap().components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect::<Vec<_>>().join("/");
+                out.push((rel, path));
+            }
+        }
+        Ok(())
+    }
+    if !dir.is_dir() {
+        return Err(format!("{} isn't there: the static files of an app (did its build run?)", dir.display()));
+    }
+    let mut out = vec![];
+    walk(dir, dir, &mut out)?;
+    out.sort();
+    if out.is_empty() {
+        return Err(format!("{} has no files", dir.display()));
+    }
+    Ok(out)
+}
+
 /// The deploy request for the project's apps, in a temporary file, and
-/// the components' total size; `extra_domains` are served too (`plumb dev`:
-/// localhost). Err(""): a build failed and said why.
+/// its code and files' total size; `extra_domains` are served too (`plumb
+/// dev`: localhost). Err(""): a build failed and said why.
 fn deploy_body(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &dyn Fn(&Path, &Path) -> bool) -> Result<(PathBuf, usize), String> {
     let mut components = vec![];
+    let mut files = vec![];
     let mut apps = vec![];
     let mut size = 0;
     for app in &p.apps {
-        let main = root.join(&app.main);
-        let wasm = std::env::temp_dir().join(format!("plumb-deploy-{}-{}-{}.wasm", p.name, app.name, std::process::id()));
-        if p.apps.len() > 1 {
-            eprintln!("building {}", app.name);
+        if let Some(main) = &app.main {
+            let main = root.join(main);
+            let wasm = std::env::temp_dir().join(format!("plumb-deploy-{}-{}-{}.wasm", p.name, app.name, std::process::id()));
+            if p.apps.len() > 1 {
+                eprintln!("building {}", app.name);
+            }
+            if !build(&main, &wasm) {
+                return Err(String::new());
+            }
+            let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
+            let _ = std::fs::remove_file(&wasm);
+            size += component.len();
+            components.push(format!("{}:\"{}\"", json_str(&app.name), base64(&component)));
         }
-        if !build(&main, &wasm) {
-            return Err(String::new());
-        }
-        let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
-        let _ = std::fs::remove_file(&wasm);
-        size += component.len();
-        components.push(format!("{}:\"{}\"", json_str(&app.name), base64(&component)));
         let mut settings = vec![];
+        if let Some(dir) = &app.static_dir {
+            let mut list = vec![];
+            for (rel, path) in static_files(&root.join(dir))? {
+                let data = std::fs::read(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+                size += data.len();
+                list.push(format!("{}:\"{}\"", json_str(&rel), base64(&data)));
+            }
+            files.push(format!("{}:{{{}}}", json_str(&app.name), list.join(",")));
+            settings.push("\"static\":true".to_string());
+        }
+        if app.spa {
+            settings.push("\"spa\":true".to_string());
+        }
         if let Some(path) = &app.path {
             settings.push(format!("\"path\":{}", json_str(path)));
         }
@@ -245,7 +308,13 @@ fn deploy_body(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &d
         settings.push(format!("\"outbound\":{}", json_list(o)));
     }
     settings.push(format!("\"apps\":{{{}}}", apps.join(",")));
-    let body = format!("{{\"settings\":{{{}}},\"schema\":{{{}}},\"components\":{{{}}}}}", settings.join(","), schema.join(","), components.join(","));
+    let body = format!(
+        "{{\"settings\":{{{}}},\"schema\":{{{}}},\"components\":{{{}}},\"files\":{{{}}}}}",
+        settings.join(","),
+        schema.join(","),
+        components.join(","),
+        files.join(",")
+    );
     let body_file = std::env::temp_dir().join(format!("plumb-deploy-{}-{}.json", p.name, std::process::id()));
     std::fs::write(&body_file, body).map_err(|e| format!("{}: {}", body_file.display(), e))?;
     Ok((body_file, size))
@@ -267,6 +336,9 @@ pub fn deploy(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode
         Ok(t) => t,
         Err(e) => return fail(e),
     };
+    if let Err(e) = build_static(&root, &app) {
+        return if e.is_empty() { ExitCode::from(1) } else { fail(e) };
+    }
     let (body_file, size) = match deploy_body(&root, &app, &[], build) {
         Ok(x) => x,
         Err(e) if e.is_empty() => return ExitCode::from(1),
@@ -415,21 +487,22 @@ fn dotenv_json(root: &Path) -> Option<String> {
     Some(format!("{{{}}}", pairs.join(",")))
 }
 
-/// The newest change among the project's files: code, schema, settings.
-fn newest_change(root: &Path) -> std::time::SystemTime {
-    fn walk(dir: &Path, newest: &mut std::time::SystemTime, depth: u32) {
+/// The newest change among the project's files: code, schema, settings,
+/// and every file in the apps' static directories.
+fn newest_change(root: &Path, p: &ProjectConfig) -> std::time::SystemTime {
+    fn walk(dir: &Path, newest: &mut std::time::SystemTime, depth: u32, all: bool) {
         let Ok(entries) = std::fs::read_dir(dir) else { return };
         for e in entries.flatten() {
             let path = e.path();
             let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') && name != ".env" {
+            if (name.starts_with('.') && name != ".env") || name == "node_modules" {
                 continue;
             }
             if path.is_dir() {
-                if depth < 6 {
-                    walk(&path, newest, depth + 1);
+                if depth < 6 || all {
+                    walk(&path, newest, depth + 1, all);
                 }
-            } else if name.ends_with(".plumb") || name.ends_with(".sql") || name == "plumb.toml" || name == ".env" {
+            } else if all || name.ends_with(".plumb") || name.ends_with(".sql") || name == "plumb.toml" || name == ".env" {
                 if let Ok(t) = e.metadata().and_then(|m| m.modified()) {
                     if t > *newest {
                         *newest = t;
@@ -439,13 +512,17 @@ fn newest_change(root: &Path) -> std::time::SystemTime {
         }
     }
     let mut newest = std::time::SystemTime::UNIX_EPOCH;
-    walk(root, &mut newest, 0);
+    walk(root, &mut newest, 0, false);
+    for dir in p.apps.iter().filter_map(|a| a.static_dir.as_ref()) {
+        walk(&root.join(dir), &mut newest, 0, true);
+    }
     newest
 }
 
 /// `plumb dev [--port N]`: the project on a local wasm-server, deployed the
 /// way `plumb deploy` does it (same settings, schema, databases, paths and
-/// limits; localhost is one more domain),
+/// limits; localhost is one more domain; static files' `build` runs once,
+/// then the files are watched),
 /// with secrets from `.env`; rebuilt and redeployed when a file changes.
 /// Its data stays in `.plumb/dev`.
 pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
@@ -462,6 +539,11 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
         return fail(format!("{}: {}", data.display(), e));
     }
     let token = format!("dev-{:x}{:x}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    // the frontend's build runs once; after that its files are watched (run
+    // its own watcher, `vite build --watch`, to rebuild them on changes)
+    if let Err(e) = build_static(&root, &app) {
+        return if e.is_empty() { ExitCode::from(1) } else { fail(e) };
+    }
     let mut server = match Command::new(&bin)
         .args(["serve", "--listen", &format!("127.0.0.1:{}", port), "--workers", "2", "--admin-token", &token, "--data-dir"])
         .arg(&data)
@@ -490,7 +572,7 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
     let mut seen = std::time::SystemTime::UNIX_EPOCH;
     let mut first = true;
     loop {
-        let changed = newest_change(&root);
+        let changed = newest_change(&root, &app);
         if changed > seen {
             seen = changed;
             if !first {

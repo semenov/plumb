@@ -46,7 +46,7 @@ pub struct Locked {
 }
 
 // ---- a small TOML subset: [tables], key = "string", key = ["a", "b"],
-// key = { k = "v", ... }
+// key = { k = "v", ... }, key = true
 
 fn parse_toml(text: &str) -> Result<BTreeMap<String, BTreeMap<String, TomlValue>>, String> {
     let mut out: BTreeMap<String, BTreeMap<String, TomlValue>> = BTreeMap::new();
@@ -73,9 +73,15 @@ enum TomlValue {
     Str(String),
     List(Vec<String>),
     Table(BTreeMap<String, String>),
+    Bool(bool),
 }
 
 fn parse_value(v: &str) -> Option<TomlValue> {
+    match v {
+        "true" => return Some(TomlValue::Bool(true)),
+        "false" => return Some(TomlValue::Bool(false)),
+        _ => {}
+    }
     if let Some(s) = v.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
         return Some(TomlValue::Str(s.to_string()));
     }
@@ -205,6 +211,11 @@ pub fn write_manifest(root: &Path, m: &Manifest) -> Result<(), String> {
 ///     path = "/api"                   # /api and below; the longest path wins
 ///     outbound = ["api.stripe.com"]   # this app's own list
 ///
+///     [apps.site]                     # a frontend: files, served as they are
+///     static = "frontend/dist"
+///     build = "cd frontend && npm run build"   # run before a deploy
+///     spa = true                      # page paths get index.html
+///
 ///     [deploy]
 ///     server = "https://my-server.example.com"
 ///
@@ -226,7 +237,14 @@ pub struct ProjectConfig {
 #[derive(Debug, Clone, Default)]
 pub struct AppConfig {
     pub name: String,
-    pub main: String,
+    /// The program; none for an app of static files only.
+    pub main: Option<String>,
+    /// A directory of static files, served before the program (or alone).
+    pub static_dir: Option<String>,
+    /// A command that makes `static_dir` (`npm run build`), run in the
+    /// project's directory.
+    pub build: Option<String>,
+    pub spa: bool,
     pub path: Option<String>,
     pub websocket: Option<String>,
     pub outbound: Option<Vec<String>>,
@@ -277,7 +295,7 @@ pub fn read_project(root: &Path) -> Result<ProjectConfig, String> {
         Some(_) => Err(format!("{}: [{}] {} must be a list: {} = [\"...\"]", file, at, k, k)),
     };
     let allowed: &[&str] = if single {
-        &["name", "main", "domains", "databases", "schema", "outbound", "websocket"]
+        &["name", "main", "domains", "databases", "schema", "outbound", "websocket", "static", "build", "spa"]
     } else {
         &["name", "domains", "databases", "schema", "outbound"]
     };
@@ -285,6 +303,28 @@ pub fn read_project(root: &Path) -> Result<ProjectConfig, String> {
         let hint = if single { "" } else { " (an app's settings go in [apps.NAME])" };
         return Err(format!("{}: [{}] has no `{}`{}", file, table, k, hint));
     }
+    let flag = |tbl: &BTreeMap<String, TomlValue>, at: &str, k: &str| match tbl.get(k) {
+        Some(TomlValue::Bool(v)) => Ok(*v),
+        None => Ok(false),
+        Some(_) => Err(format!("{}: [{}] {} is true or false", file, at, k)),
+    };
+    // what an app is made of: a program, static files, or both
+    let parts = |tbl: &BTreeMap<String, TomlValue>, at: &str, default_main: Option<&str>| -> Result<(Option<String>, Option<String>, Option<String>, bool), String> {
+        let static_dir = s(tbl, at, "static")?;
+        let main = s(tbl, at, "main")?.or_else(|| if static_dir.is_none() { default_main.map(str::to_string) } else { None });
+        let build = s(tbl, at, "build")?;
+        let spa = flag(tbl, at, "spa")?;
+        if main.is_none() && static_dir.is_none() {
+            return Err(format!("{}: [{}] needs main = \"main.plumb\" (a program), static = \"dist\" (files), or both", file, at));
+        }
+        if build.is_some() && static_dir.is_none() {
+            return Err(format!("{}: [{}] build makes the static files: add static = \"the directory it makes\"", file, at));
+        }
+        if spa && (main.is_some() || static_dir.is_none()) {
+            return Err(format!("{}: [{}] spa is for an app of static files only (with a program, the program answers what isn't a file)", file, at));
+        }
+        Ok((main, static_dir, build, spa))
+    };
     let name = s(section, table, "name")?.ok_or_else(|| format!("{}: [{}] needs a name: name = \"myapp\"", file, table))?;
     if !valid_name(&name) {
         return Err(format!("{}: [{}] name {:?}: lower-case letters, digits and -, starting with a letter", file, table, name));
@@ -297,12 +337,8 @@ pub fn read_project(root: &Path) -> Result<ProjectConfig, String> {
         ..Default::default()
     };
     if single {
-        c.apps.push(AppConfig {
-            name,
-            main: s(section, table, "main")?.unwrap_or_else(|| "main.plumb".into()),
-            websocket: s(section, table, "websocket")?,
-            ..Default::default()
-        });
+        let (main, static_dir, build, spa) = parts(section, table, Some("main.plumb"))?;
+        c.apps.push(AppConfig { name, main, static_dir, build, spa, websocket: s(section, table, "websocket")?, ..Default::default() });
     } else {
         for (tname, tbl) in &t {
             let Some(app) = tname.strip_prefix("apps.") else { continue };
@@ -310,7 +346,7 @@ pub fn read_project(root: &Path) -> Result<ProjectConfig, String> {
             if !valid_name(app) {
                 return Err(format!("{}: [{}]: an app's name is lower-case letters, digits and -, starting with a letter", file, at));
             }
-            if let Some(k) = tbl.keys().find(|k| !["main", "path", "websocket", "outbound"].contains(&k.as_str())) {
+            if let Some(k) = tbl.keys().find(|k| !["main", "path", "websocket", "outbound", "static", "build", "spa"].contains(&k.as_str())) {
                 let hint = if ["domains", "databases", "schema"].contains(&k.as_str()) { " (the project's apps share it: put it in [project])" } else { "" };
                 return Err(format!("{}: [{}] has no `{}`{}", file, at, k, hint));
             }
@@ -324,13 +360,8 @@ pub fn read_project(root: &Path) -> Result<ProjectConfig, String> {
                     return Err(format!("{}: two apps have path {:?}", file, p));
                 }
             }
-            c.apps.push(AppConfig {
-                name: app.to_string(),
-                main: s(tbl, at, "main")?.ok_or_else(|| format!("{}: [{}] needs main = \"{}/main.plumb\"", file, at, app))?,
-                path,
-                websocket: s(tbl, at, "websocket")?,
-                outbound: list(tbl, at, "outbound")?,
-            });
+            let (main, static_dir, build, spa) = parts(tbl, at, None)?;
+            c.apps.push(AppConfig { name: app.to_string(), main, static_dir, build, spa, path, websocket: s(tbl, at, "websocket")?, outbound: list(tbl, at, "outbound")? });
         }
         if c.apps.is_empty() {
             return Err(format!("{}: the project has no apps; add one:\n\n[apps.web]\nmain = \"main.plumb\"", file));
@@ -543,10 +574,15 @@ mod tests {
         assert_eq!(p.apps.iter().map(|a| p.server_name(a)).collect::<Vec<_>>(), ["shop.api", "shop.web"]);
         assert_eq!(p.schema["main"], "s.sql");
         let one = read("[app]\nname = \"notes\"\ndomains = [\"n.example.com\"]\n").unwrap();
-        assert_eq!((one.apps.len(), one.server_name(&one.apps[0]), one.apps[0].main.as_str()), (1, "notes".to_string(), "main.plumb"));
+        assert_eq!((one.apps.len(), one.server_name(&one.apps[0]), one.apps[0].main.as_deref()), (1, "notes".to_string(), Some("main.plumb")));
         assert!(read("[project]\nname = \"shop\"\n").unwrap_err().contains("no apps"));
         assert!(read("[project]\nname = \"shop\"\n[apps.a]\nmain = \"a.plumb\"\n[apps.b]\nmain = \"b.plumb\"\n").unwrap_err().contains("whole domain"));
         assert!(read("[project]\nname = \"shop\"\n[apps.a]\nmain = \"a.plumb\"\ndatabases = [\"x\"]\n").unwrap_err().contains("put it in [project]"));
         assert!(read("[project]\nname = \"shop\"\n[apps.a]\nmain = \"a.plumb\"\npath = \"/api/\"\n").unwrap_err().contains("must start with /"));
+        let site = read("[project]\nname = \"shop\"\n[apps.site]\nstatic = \"dist\"\nspa = true\n[apps.api]\nmain = \"a.plumb\"\npath = \"/api\"\n").unwrap();
+        let s = site.apps.iter().find(|a| a.name == "site").unwrap();
+        assert!(s.main.is_none() && s.spa && s.static_dir.as_deref() == Some("dist"));
+        assert!(read("[project]\nname = \"shop\"\n[apps.a]\npath = \"/a\"\n").unwrap_err().contains("needs main"));
+        assert!(read("[project]\nname = \"shop\"\n[apps.a]\nmain = \"a.plumb\"\nstatic = \"d\"\nspa = true\n").unwrap_err().contains("static files only"));
     }
 }
