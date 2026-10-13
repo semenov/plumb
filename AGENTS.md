@@ -581,9 +581,15 @@ An app with both `main` and `static` serves its files first and runs its
 program for everything else; under a `path`, its files are below that
 path (`/admin/style.css` is `style.css`).
 
+- `plumb server add root@HOST --domain example.com` once: installs
+  wasm-server on a Debian or Ubuntu server over SSH, with HTTPS, and makes
+  it the default for `plumb deploy`. Projects then answer at
+  `PROJECT.example.com` (one DNS record, `*.example.com`); without
+  `--domain`, at `PROJECT.1-2-3-4.sslip.io` with no DNS at all.
 - `plumb dev`: runs it on a local wasm-server as the server will, with
   secrets from `.env`, rebuilt on every change (http://localhost:8080).
-- `plumb login <server>` once, then `plumb deploy`: live without downtime;
+- `plumb deploy`: live without downtime (`plumb login <server>` for a
+  server someone else set up);
   if any app doesn't start, the deploy is refused and the old version of
   every app stays.
 - `plumb secret set KEY=VALUE`: environment variables kept on the server,

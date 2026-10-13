@@ -42,6 +42,7 @@ Programs:
   plumb lsp                         the language server for editors (editors/vscode for VS Code)
 
 Apps on wasm-server ([app] in plumb.toml):
+  plumb server add USER@HOST        install wasm-server on your Linux server over SSH, with HTTPS (--domain D)
   plumb dev [--port N]              run the project's apps locally as the server would; rebuilt on changes
   plumb login <server URL>          keep the server's admin token
   plumb deploy [--to URL] [-m NOTE] build the project's apps and put them live together, without downtime
@@ -107,6 +108,7 @@ fn learn_command(args: &[String]) -> Option<ExitCode> {
         "releases" => Some(deploy::releases(&args[1..])),
         "migrations" => Some(deploy::migrations(&args[1..])),
         "db" => Some(deploy::db(&args[1..])),
+        "server" if args.get(1).map(String::as_str) == Some("add") => Some(deploy::server_add(&args[2..])),
         "api" => Some(export::api_cmd(&args[1..])),
         "sql" => Some(export::sql_cmd(&args[1..])),
         "export" => Some(export::export(&args[1..])),

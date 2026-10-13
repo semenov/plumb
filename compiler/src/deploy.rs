@@ -43,6 +43,21 @@ fn save_token(server: &str, token: &str) -> Result<(), String> {
     std::fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e))
 }
 
+/// The server `plumb server add` set up last: projects without a
+/// `[deploy] server` go there.
+fn default_server() -> Option<String> {
+    let text = std::fs::read_to_string(credentials_file()).ok()?;
+    text.lines().rev().find_map(|l| l.strip_prefix("default ").map(|u| u.trim().to_string()))
+}
+
+fn set_default_server(server: &str) -> Result<(), String> {
+    let file = credentials_file();
+    let old = std::fs::read_to_string(&file).unwrap_or_default();
+    let mut text: String = old.lines().filter(|l| !l.starts_with("default ")).map(|l| format!("{}\n", l)).collect();
+    text += &format!("default {}\n", server);
+    std::fs::write(&file, text).map_err(|e| format!("{}: {}", file.display(), e))
+}
+
 fn token_for(server: &str) -> Result<String, String> {
     if let Ok(t) = std::env::var("PLUMB_TOKEN") {
         return Ok(t);
@@ -159,7 +174,7 @@ fn server_of(app: &ProjectConfig, args: &[String]) -> Result<String, String> {
     if let Some(i) = args.iter().position(|a| a == "--to") {
         return args.get(i + 1).map(|s| s.trim_end_matches('/').to_string()).ok_or_else(|| "--to needs the server's URL".to_string());
     }
-    app.server.clone().ok_or_else(|| "where to? add the server to plumb.toml:\n\n[deploy]\nserver = \"https://my-server.example.com\"\n\nor give it: plumb deploy --to https://...".to_string())
+    app.server.clone().or_else(default_server).ok_or_else(|| "where to? set up a server once: plumb server add root@YOUR_SERVER (or name one in plumb.toml: [deploy] server = \"https://...\")".to_string())
 }
 
 /// `plumb login <server>`: asks for the admin token, checks it, keeps it.
@@ -373,6 +388,8 @@ struct Pushed {
     unchanged: bool,
     /// the server's notes: migrations applied, warnings
     notes: Vec<String>,
+    /// every project answers at PROJECT.this (`--apps-domain`)
+    apps_domain: Option<String>,
 }
 
 /// The strings of a JSON array under `key` (`{"missing": ["ab", ...]}`),
@@ -461,6 +478,7 @@ fn push(server: &str, token: &str, project: &str, built: &Built, note: &str) -> 
             total: built.parts.len(),
             unchanged: body.contains("\"unchanged\":true"),
             notes: json_strings(&body, "notes"),
+            apps_domain: json_field(&body, "apps_domain"),
         }),
         Ok((code, body)) => Err(format!("{} ({})", server_error(&body), code)),
         Err(e) => Err(e),
@@ -560,7 +578,11 @@ pub fn deploy(args: &[String], build: &dyn Fn(&Path, Option<&str>, &Path) -> boo
                 println!("  {}", n);
             }
             for a in &app.apps {
-                println!("  {:<12} {}", a.name, place(&app, a, &server, false));
+                let url = match (&p.apps_domain, app.domains.first()) {
+                    (Some(d), None) => format!("https://{}.{}{}", app.name, d, a.path.as_deref().unwrap_or("/")),
+                    _ => place(&app, a, &server, false),
+                };
+                println!("  {:<12} {}", a.name, url);
             }
             ExitCode::SUCCESS
         }
@@ -1477,4 +1499,124 @@ pub(crate) fn server_and_token(p: &ProjectConfig, args: &[String]) -> Result<(St
     let server = server_of(p, args)?;
     let token = token_for(&server)?;
     Ok((server, token))
+}
+
+// ---- plumb server add
+
+/// `s` as one word for a POSIX shell.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// `plumb server add USER@HOST [--domain D] [--email E]`: installs
+/// wasm-server on a Linux server over SSH (your keys, ~/.ssh/config), with
+/// HTTPS; keeps its admin token here and makes it the default server.
+pub fn server_add(args: &[String]) -> ExitCode {
+    let usage = "usage: plumb server add USER@HOST [--domain example.com] [--email you@example.com] [-p SSH_PORT]\n\
+                 (--domain: projects answer at PROJECT.example.com, after one DNS record *.example.com → the server;\n\
+                 without it, PROJECT.1-2-3-4.sslip.io, which needs no DNS)";
+    let Some(target) = args.first().filter(|a| !a.starts_with('-')).cloned() else { return fail(usage.into()) };
+    let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
+    let host = target.rsplit('@').next().unwrap_or(&target).to_string();
+    // a port given here; otherwise ssh's own (~/.ssh/config, or 22)
+    let port_arg = opt("-p");
+    let port = port_arg.clone().unwrap_or_else(|| "22".into());
+    let ssh_base = |cmd: &mut Command| {
+        // an ssh config of its own (tests, CI): PLUMB_SSH_CONFIG
+        if let Ok(f) = std::env::var("PLUMB_SSH_CONFIG") {
+            cmd.args(["-F", &f]);
+        }
+        cmd.args(["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15"]);
+        if let Some(p) = &port_arg {
+            cmd.args(["-p", p]);
+        }
+    };
+    // the script: wasm-server's install.sh (or --script FILE)
+    let script = match opt("--script") {
+        Some(f) => match std::fs::read(&f) {
+            Ok(b) => b,
+            Err(e) => return fail(format!("{}: {}", f, e)),
+        },
+        None => match Command::new("curl").args(["-fsSL", "https://raw.githubusercontent.com/semenov/wasm-server/main/install.sh"]).output() {
+            Ok(o) if o.status.success() => o.stdout,
+            _ => return fail("can't download wasm-server's install.sh from GitHub".into()),
+        },
+    };
+    let mut remote_args: Vec<String> = vec!["--print-token".into()];
+    match opt("--domain") {
+        Some(d) => remote_args.extend(["--domain".into(), d]),
+        None => {
+            // the address we reach it at, for an sslip.io name
+            use std::net::ToSocketAddrs;
+            let ip = format!("{}:{}", host, port).to_socket_addrs().ok().and_then(|mut a| a.find(|a| a.is_ipv4())).map(|a| a.ip().to_string());
+            match ip {
+                Some(ip) => remote_args.extend(["--ip".into(), ip]),
+                None => return fail(format!("can't find {}'s IPv4 address; give --domain", host)),
+            }
+        }
+    }
+    for flag in ["--email", "--version", "--acme-directory", "--acme-ca-file"] {
+        if let Some(v) = opt(flag) {
+            remote_args.extend([flag.to_string(), v]);
+        }
+    }
+    if args.iter().any(|a| a == "--staging") {
+        remote_args.push("--staging".into());
+    }
+    // a binary of our own (a build not released yet)
+    if let Some(bin) = opt("--binary") {
+        eprintln!("→ uploading {}", bin);
+        // through ssh itself: no sftp needed on the server
+        let file = match std::fs::File::open(&bin) {
+            Ok(f) => f,
+            Err(e) => return fail(format!("{}: {}", bin, e)),
+        };
+        let mut up = Command::new("ssh");
+        ssh_base(&mut up);
+        let ok = up.arg(&target).arg("cat > /tmp/wasm-server-upload").stdin(file).status().map(|s| s.success()).unwrap_or(false);
+        if !ok {
+            return fail(format!("can't copy {} to {}", bin, target));
+        }
+        remote_args.extend(["--binary".into(), "/tmp/wasm-server-upload".into()]);
+    }
+    eprintln!("→ installing wasm-server on {}", target);
+    let quoted: Vec<String> = remote_args.iter().map(|a| sh_quote(a)).collect();
+    let remote = format!("if [ \"$(id -u)\" = 0 ]; then sh -s -- {a}; else sudo -n sh -s -- {a}; fi", a = quoted.join(" "));
+    let mut ssh = Command::new("ssh");
+    ssh_base(&mut ssh);
+    ssh.arg(&target).arg(remote).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
+    let mut child = match ssh.spawn() {
+        Ok(c) => c,
+        Err(e) => return fail(format!("can't run ssh: {}", e)),
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(&script);
+    }
+    let out = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => return fail(e.to_string()),
+    };
+    if !out.status.success() {
+        return fail(format!("the install on {} failed (its output is above). Can you `ssh {}`, as root or with passwordless sudo?", target, target));
+    }
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let field = |k: &str| text.lines().find_map(|l| l.strip_prefix(&format!("{}=", k)).map(str::to_string));
+    let (Some(url), Some(token), Some(domain)) = (field("WASM_SERVER_URL"), field("WASM_SERVER_ADMIN_TOKEN"), field("WASM_SERVER_APPS_DOMAIN")) else {
+        return fail("the install finished without saying where the server is".into());
+    };
+    if let Err(e) = save_token(&url, &token).and_then(|_| set_default_server(&url)) {
+        return fail(e);
+    }
+    println!("wasm-server is running on {}", target);
+    println!();
+    println!("  Projects   https://PROJECT.{}", domain);
+    println!("  Server     {} (the default for plumb deploy; its token is saved)", url);
+    println!();
+    if domain.ends_with(".sslip.io") {
+        println!("sslip.io names need no DNS. For your own domain: plumb server add {} --domain example.com", target);
+    } else {
+        println!("DNS: one A record, *.{} → {}'s address (at Cloudflare: DNS only, not proxied).", domain, host);
+    }
+    println!("The first request to a new name waits a few seconds for its certificate.");
+    ExitCode::SUCCESS
 }
