@@ -590,6 +590,9 @@ path (`/admin/style.css` is `style.css`).
   never in the project.
 - `plumb logs [APP] [-f]` and `plumb stats [APP]`: the project's apps
   together, or one.
+- Every deploy is a release kept on the server (only changed parts are
+  uploaded): `plumb releases` lists them with their git commits, `plumb
+  rollback` goes back to the previous one (or `plumb rollback ID`).
 
 `plumb build --target wasm-server app.plumb` makes the component itself
 (it needs wasi-sdk: `WASI_SDK`, `/opt/wasi-sdk` or `~/wasi-sdk`). The host

@@ -103,19 +103,6 @@ fn json_list(items: &[String]) -> String {
     format!("[{}]", items.iter().map(|s| json_str(s)).collect::<Vec<_>>().join(","))
 }
 
-fn base64(data: &[u8]) -> String {
-    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
-        let n = (b[0] as u32) << 16 | (b[1] as u32) << 8 | b[2] as u32;
-        out.push(T[(n >> 18) as usize & 63] as char);
-        out.push(T[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
-    }
-    out
-}
 
 fn fail(msg: String) -> ExitCode {
     eprintln!("error: {}", msg);
@@ -248,14 +235,25 @@ fn static_files(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
     Ok(out)
 }
 
-/// The deploy request for the project's apps, in a temporary file, and
-/// its code and files' total size; `extra_domains` are served too (`plumb
-/// dev`: localhost). Err(""): a build failed and said why.
-fn deploy_body(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &dyn Fn(&Path, &Path) -> bool) -> Result<(PathBuf, usize), String> {
-    let mut components = vec![];
-    let mut files = vec![];
-    let mut apps = vec![];
-    let mut size = 0;
+/// A release made locally: its manifest, and the parts it names by hash.
+struct Built {
+    manifest: String,
+    parts: Vec<(String, Vec<u8>)>,
+}
+
+/// Builds the project's apps and gathers their files and schema into a
+/// release; `extra_domains` are served too (`plumb dev`: localhost).
+/// Err(""): a build failed and said why.
+fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &dyn Fn(&Path, &Path) -> bool) -> Result<Built, String> {
+    let mut parts: Vec<(String, Vec<u8>)> = vec![];
+    let mut add = |data: Vec<u8>| -> String {
+        let h = sha256_hex(&data);
+        if !parts.iter().any(|(k, _)| *k == h) {
+            parts.push((h.clone(), data));
+        }
+        h
+    };
+    let (mut components, mut files, mut apps) = (vec![], vec![], vec![]);
     for app in &p.apps {
         if let Some(main) = &app.main {
             let main = root.join(main);
@@ -268,23 +266,17 @@ fn deploy_body(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &d
             }
             let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
             let _ = std::fs::remove_file(&wasm);
-            size += component.len();
-            components.push(format!("{}:\"{}\"", json_str(&app.name), base64(&component)));
+            components.push(format!("{}:\"{}\"", json_str(&app.name), add(component)));
         }
-        let mut settings = vec![];
         if let Some(dir) = &app.static_dir {
             let mut list = vec![];
             for (rel, path) in static_files(&root.join(dir))? {
                 let data = std::fs::read(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
-                size += data.len();
-                list.push(format!("{}:\"{}\"", json_str(&rel), base64(&data)));
+                list.push(format!("{}:\"{}\"", json_str(&rel), add(data)));
             }
             files.push(format!("{}:{{{}}}", json_str(&app.name), list.join(",")));
-            settings.push("\"static\":true".to_string());
         }
-        if app.spa {
-            settings.push("\"spa\":true".to_string());
-        }
+        let mut settings = vec![];
         if let Some(path) = &app.path {
             settings.push(format!("\"path\":{}", json_str(path)));
         }
@@ -294,12 +286,15 @@ fn deploy_body(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &d
         if let Some(o) = &app.outbound {
             settings.push(format!("\"outbound\":{}", json_list(o)));
         }
+        if app.spa {
+            settings.push("\"spa\":true".to_string());
+        }
         apps.push(format!("{}:{{{}}}", json_str(&app.name), settings.join(",")));
     }
     let mut schema = vec![];
     for (db, file) in &p.schema {
-        let sql = std::fs::read_to_string(root.join(file)).map_err(|e| format!("the schema of {}: {}: {}", db, root.join(file).display(), e))?;
-        schema.push(format!("{}:{}", json_str(db), json_str(&sql)));
+        let sql = std::fs::read(root.join(file)).map_err(|e| format!("the schema of {}: {}: {}", db, root.join(file).display(), e))?;
+        schema.push(format!("{}:\"{}\"", json_str(db), add(sql)));
     }
     let mut domains = p.domains.clone();
     domains.extend(extra_domains.iter().map(|d| d.to_string()));
@@ -308,16 +303,153 @@ fn deploy_body(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &d
         settings.push(format!("\"outbound\":{}", json_list(o)));
     }
     settings.push(format!("\"apps\":{{{}}}", apps.join(",")));
-    let body = format!(
-        "{{\"settings\":{{{}}},\"schema\":{{{}}},\"components\":{{{}}},\"files\":{{{}}}}}",
+    let manifest = format!(
+        "{{\"project\":{},\"settings\":{{{}}},\"components\":{{{}}},\"files\":{{{}}},\"schema\":{{{}}},\"compiler\":{}}}",
+        json_str(&p.name),
         settings.join(","),
-        schema.join(","),
         components.join(","),
-        files.join(",")
+        files.join(","),
+        schema.join(","),
+        json_str(&format!("plumb {}", env!("CARGO_PKG_VERSION")))
     );
-    let body_file = std::env::temp_dir().join(format!("plumb-deploy-{}-{}.json", p.name, std::process::id()));
-    std::fs::write(&body_file, body).map_err(|e| format!("{}: {}", body_file.display(), e))?;
-    Ok((body_file, size))
+    Ok(Built { manifest, parts })
+}
+
+/// What a deploy did.
+struct Pushed {
+    release: String,
+    uploaded: usize,
+    uploaded_bytes: usize,
+    total: usize,
+    unchanged: bool,
+}
+
+/// The strings of a JSON array under `key` (`{"missing": ["ab", ...]}`).
+fn json_strings(body: &str, key: &str) -> Vec<String> {
+    let Some(at) = body.find(&format!("\"{}\":[", key)) else { return vec![] };
+    let rest = &body[at + key.len() + 4..];
+    let inner = &rest[..rest.find(']').unwrap_or(rest.len())];
+    inner.split(',').map(|s| s.trim().trim_matches('"').to_string()).filter(|s| !s.is_empty()).collect()
+}
+
+/// A string field of a flat JSON object.
+fn json_field(body: &str, key: &str) -> Option<String> {
+    let at = body.find(&format!("\"{}\":\"", key))? + key.len() + 4;
+    let rest = &body[at..];
+    Some(rest[..rest.find('"')?].to_string())
+}
+
+/// Sends a release: asks which parts the server lacks, uploads only those
+/// (in one request), then the manifest, which the server switches to.
+fn push(server: &str, token: &str, project: &str, built: &Built, note: &str) -> Result<Pushed, String> {
+    let tmp = std::env::temp_dir().join(format!("plumb-push-{}", std::process::id()));
+    let hashes: Vec<String> = built.parts.iter().map(|(h, _)| h.clone()).collect();
+    std::fs::write(&tmp, format!("{{\"hashes\":{}}}", json_list(&hashes))).map_err(|e| e.to_string())?;
+    let missing = match request("POST", &format!("{}/_platform/blobs/missing", server), token, Some(&tmp)) {
+        Ok((200, body)) => json_strings(&body, "missing"),
+        Ok((code, body)) => {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("{} ({})", server_error(&body), code));
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+    };
+    let mut batch: Vec<u8> = vec![];
+    let mut uploaded = 0;
+    for (h, data) in built.parts.iter().filter(|(h, _)| missing.contains(h)) {
+        batch.extend_from_slice(format!("{} {}\n", h, data.len()).as_bytes());
+        batch.extend_from_slice(data);
+        uploaded += 1;
+    }
+    let uploaded_bytes = batch.len();
+    if uploaded > 0 {
+        std::fs::write(&tmp, &batch).map_err(|e| e.to_string())?;
+        match request("POST", &format!("{}/_platform/blobs", server), token, Some(&tmp)) {
+            Ok((200, _)) => {}
+            Ok((code, body)) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(format!("uploading: {} ({})", server_error(&body), code));
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e);
+            }
+        }
+    }
+    std::fs::write(&tmp, format!("{{\"release\":{},\"note\":{}}}", built.manifest, json_str(note))).map_err(|e| e.to_string())?;
+    let result = request("POST", &format!("{}/_platform/projects/{}/releases", server, project), token, Some(&tmp));
+    let _ = std::fs::remove_file(&tmp);
+    match result {
+        Ok((200, body)) => Ok(Pushed {
+            release: json_field(&body, "release").unwrap_or_default(),
+            uploaded,
+            uploaded_bytes,
+            total: built.parts.len(),
+            unchanged: body.contains("\"unchanged\":true"),
+        }),
+        Ok((code, body)) => Err(format!("{} ({})", server_error(&body), code)),
+        Err(e) => Err(e),
+    }
+}
+
+/// What to note with a release: `-m TEXT`, or the git commit (with
+/// "+ changes" when the tree has uncommitted ones).
+fn release_note(root: &Path, args: &[String]) -> String {
+    if let Some(m) = args.iter().position(|a| a == "-m").and_then(|i| args.get(i + 1)) {
+        return m.clone();
+    }
+    let git = |a: &[&str]| Command::new("git").args(a).current_dir(root).stderr(Stdio::null()).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    match git(&["log", "-1", "--format=%h %s"]) {
+        Some(c) if !c.is_empty() => {
+            let dirty = git(&["status", "--porcelain"]).is_some_and(|s| !s.is_empty());
+            if dirty { format!("{} + changes", c) } else { c }
+        }
+        _ => String::new(),
+    }
+}
+
+/// SHA-256 (FIPS 180-4), hex: the store's names for parts.
+fn sha256_hex(data: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while msg.len() % 64 != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&((data.len() as u64) * 8).to_be_bytes());
+    for chunk in msg.chunks(64) {
+        let mut w = [0u32; 64];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+        }
+        let mut v = h;
+        for i in 0..64 {
+            let s1 = v[4].rotate_right(6) ^ v[4].rotate_right(11) ^ v[4].rotate_right(25);
+            let ch = (v[4] & v[5]) ^ (!v[4] & v[6]);
+            let t1 = v[7].wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
+            let s0 = v[0].rotate_right(2) ^ v[0].rotate_right(13) ^ v[0].rotate_right(22);
+            let maj = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
+            let t2 = s0.wrapping_add(maj);
+            v = [t1.wrapping_add(t2), v[0], v[1], v[2], v[3].wrapping_add(t1), v[4], v[5], v[6]];
+        }
+        for i in 0..8 {
+            h[i] = h[i].wrapping_add(v[i]);
+        }
+    }
+    h.iter().map(|x| format!("{:08x}", x)).collect()
 }
 
 /// `plumb deploy [--to URL]`: builds the project's apps for wasm-server and
@@ -339,27 +471,92 @@ pub fn deploy(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode
     if let Err(e) = build_static(&root, &app) {
         return if e.is_empty() { ExitCode::from(1) } else { fail(e) };
     }
-    let (body_file, size) = match deploy_body(&root, &app, &[], build) {
+    let built = match build_release(&root, &app, &[], build) {
         Ok(x) => x,
         Err(e) if e.is_empty() => return ExitCode::from(1),
         Err(e) => return fail(e),
     };
-    eprintln!("deploying {} ({} KB) to {}", app.name, size.div_ceil(1024), server);
-    let result = request("POST", &format!("{}/_platform/projects/{}/deploy", server, app.name), &token, Some(&body_file));
-    let _ = std::fs::remove_file(&body_file);
-    match result {
-        Ok((200, _)) => {
-            if let [one] = app.apps.as_slice() {
-                println!("deployed {}: {}", app.name, place(&app, one, &server, false));
-            } else {
-                println!("deployed {}:", app.name);
-                for a in &app.apps {
-                    println!("  {:<12} {}", a.name, place(&app, a, &server, false));
-                }
+    let note = release_note(&root, args);
+    eprintln!("deploying {} to {}", app.name, server);
+    match push(&server, &token, &app.name, &built, &note) {
+        Ok(p) => {
+            let sent = if p.uploaded == 0 { "nothing new to upload".to_string() } else { format!("uploaded {} of {} parts, {} KB", p.uploaded, p.total, p.uploaded_bytes.div_ceil(1024)) };
+            let what = if p.unchanged { "already running" } else { "deployed" };
+            println!("{} {} (release {}; {})", what, app.name, p.release.get(..12).unwrap_or(""), sent);
+            for a in &app.apps {
+                println!("  {:<12} {}", a.name, place(&app, a, &server, false));
             }
             ExitCode::SUCCESS
         }
-        Ok((code, body)) => fail(format!("the server refused the deploy ({}): {}", code, server_error(&body))),
+        Err(e) => fail(format!("the server refused the deploy: {}", e)),
+    }
+}
+
+/// `plumb releases`: what the project ran on its server, newest first.
+pub fn releases(args: &[String]) -> ExitCode {
+    let (_, project) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let server = match server_of(&project, args) {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+    let token = match token_for(&server) {
+        Ok(t) => t,
+        Err(e) => return fail(e),
+    };
+    let body = match request("GET", &format!("{}/_platform/projects/{}/releases", server, project.name), &token, None) {
+        Ok((200, b)) => b,
+        Ok((code, b)) => return fail(format!("{} ({})", server_error(&b), code)),
+        Err(e) => return fail(e),
+    };
+    let current = json_field(&body, "current").unwrap_or_default();
+    let list = body.split("\"releases\":[").nth(1).unwrap_or("");
+    for entry in list.split("},{") {
+        let (Some(id), at) = (json_field(entry, "id"), entry.find("\"at_ms\":").map(|i| &entry[i + 8..])) else { continue };
+        let ms: u64 = at.unwrap_or("0").chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0);
+        let note = json_field(entry, "note").unwrap_or_default();
+        let mark = if id == current { "→" } else { " " };
+        println!("{} {}  {}  {}", mark, &id[..12.min(id.len())], ago(ms), note);
+    }
+    ExitCode::SUCCESS
+}
+
+/// "5 min ago", "3 days ago".
+fn ago(ms: u64) -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+    let s = now.saturating_sub(ms) / 1000;
+    match s {
+        0..=59 => format!("{:>3} s ago  ", s),
+        60..=3599 => format!("{:>3} min ago", s / 60),
+        3600..=86399 => format!("{:>3} h ago  ", s / 3600),
+        _ => format!("{:>3} days ago", s / 86400),
+    }
+}
+
+/// `plumb rollback [RELEASE]`: back to the release before the current one,
+/// or to the one given (its first characters are enough).
+pub fn rollback(args: &[String]) -> ExitCode {
+    let (_, project) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let server = match server_of(&project, args) {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+    let token = match token_for(&server) {
+        Ok(t) => t,
+        Err(e) => return fail(e),
+    };
+    let to = args.iter().enumerate().find(|(i, a)| !a.starts_with('-') && (*i == 0 || args[i - 1] != "--to")).map(|(_, a)| format!("?to={}", a)).unwrap_or_default();
+    match request("POST", &format!("{}/_platform/projects/{}/rollback{}", server, project.name, to), &token, None) {
+        Ok((200, body)) => {
+            println!("{} runs release {} again", project.name, json_field(&body, "release").unwrap_or_default().get(..12).unwrap_or(""));
+            ExitCode::SUCCESS
+        }
+        Ok((code, body)) => fail(format!("{} ({})", server_error(&body), code)),
         Err(e) => fail(e),
     }
 }
@@ -448,12 +645,11 @@ pub fn secret(args: &[String]) -> ExitCode {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn base64() {
-        assert_eq!(super::base64(b""), "");
-        assert_eq!(super::base64(b"f"), "Zg==");
-        assert_eq!(super::base64(b"fo"), "Zm8=");
-        assert_eq!(super::base64(b"foo"), "Zm9v");
-        assert_eq!(super::base64(b"foobar"), "Zm9vYmFy");
+    fn sha256() {
+        assert_eq!(super::sha256_hex(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(super::sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        let long = vec![b'a'; 1000];
+        assert_eq!(super::sha256_hex(&long), "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3");
     }
 }
 
@@ -582,12 +778,10 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
                     Err(e) => eprintln!("error: {}", e),
                 }
             }
-            match deploy_body(&root, &app, &["localhost", "127.0.0.1"], build) {
-                Ok((body, _)) => {
-                    let r = request("POST", &format!("{}/_platform/projects/{}/deploy", base, app.name), &token, Some(&body));
-                    let _ = std::fs::remove_file(&body);
-                    match r {
-                        Ok((200, _)) => {
+            match build_release(&root, &app, &["localhost", "127.0.0.1"], build) {
+                Ok(built) => {
+                    match push(&base, &token, &app.name, &built, "plumb dev") {
+                        Ok(_) => {
                             if let Some(env) = dotenv_json(&root) {
                                 let file = root.join(".plumb").join("dev").join("env.json");
                                 if std::fs::write(&file, env).is_ok() {
@@ -613,8 +807,7 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
                                 eprintln!("-- {} is running the new version", app.name);
                             }
                         }
-                        Ok((code, b)) => eprintln!("error: the new version doesn't start ({}): {}", code, server_error(&b)),
-                        Err(e) => eprintln!("error: {}", e),
+                        Err(e) => eprintln!("error: the new version doesn't start: {}", e),
                     }
                 }
                 Err(e) if e.is_empty() => eprintln!("-- the build failed; the previous version keeps running"),

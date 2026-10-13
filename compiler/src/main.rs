@@ -42,7 +42,9 @@ Programs:
 Apps on wasm-server ([app] in plumb.toml):
   plumb dev [--port N]              run the project's apps locally as the server would; rebuilt on changes
   plumb login <server URL>          keep the server's admin token
-  plumb deploy [--to <server URL>]  build the project's apps and put them live together, without downtime
+  plumb deploy [--to URL] [-m NOTE] build the project's apps and put them live together, without downtime
+  plumb releases                    what the project ran on its server, newest first
+  plumb rollback [RELEASE]          back to the release before (or to the one given)
   plumb secret set KEY=VALUE...     the project's secrets (environment variables); also unset, list
   plumb logs [APP] [-n N] [-f]      the apps' log on their server (-f: keep following it)
   plumb stats [APP] [--range 24h]   requests, errors, response times and where they go (1h 6h 24h 7d 30d)
@@ -92,6 +94,8 @@ fn learn_command(args: &[String]) -> Option<ExitCode> {
         "login" => Some(deploy::login(&args[1..])),
         "secret" => Some(deploy::secret(&args[1..])),
         "logs" => Some(deploy::logs(&args[1..])),
+        "releases" => Some(deploy::releases(&args[1..])),
+        "rollback" => Some(deploy::rollback(&args[1..])),
         "stats" => Some(deploy::stats(&args[1..])),
         "dev" => Some(deploy::dev(&args[1..], &|main, out| {
             let opts = Opts {
