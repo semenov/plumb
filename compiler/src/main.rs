@@ -41,6 +41,8 @@ Apps on wasm-server ([app] in plumb.toml):
   plumb login <server URL>          keep the server's admin token
   plumb deploy [--to <server URL>]  build the app and put it live, without downtime
   plumb secret set KEY=VALUE...     the app's secrets (environment variables); also unset, list
+  plumb logs [-n N] [-f]            the app's log on its server (-f: keep following it)
+  plumb stats [--range 24h]         requests, errors, response times and where they go (1h 6h 24h 7d 30d)
 
 Projects and packages:
   plumb init [name]                 make this directory a project (plumb.toml, main.plumb)
@@ -85,6 +87,8 @@ fn learn_command(args: &[String]) -> Option<ExitCode> {
         "doc" => Some(doc_command(&args[1..])),
         "login" => Some(deploy::login(&args[1..])),
         "secret" => Some(deploy::secret(&args[1..])),
+        "logs" => Some(deploy::logs(&args[1..])),
+        "stats" => Some(deploy::stats(&args[1..])),
         "dev" => Some(deploy::dev(&args[1..], &|main, out| {
             let opts = Opts {
                 cmd: "build".into(),

@@ -471,3 +471,120 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
         std::thread::sleep(std::time::Duration::from_millis(400));
     }
 }
+
+// ---- plumb logs, plumb stats
+
+/// `plumb logs [-n N] [-f]`: the app's log on its server; -f keeps
+/// printing what comes.
+pub fn logs(args: &[String]) -> ExitCode {
+    let (_, app) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let server = match server_of(&app, args) {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+    let token = match token_for(&server) {
+        Ok(t) => t,
+        Err(e) => return fail(e),
+    };
+    let lines = args.iter().position(|a| a == "-n").and_then(|i| args.get(i + 1)).and_then(|n| n.parse::<u64>().ok()).unwrap_or(100);
+    let follow = args.iter().any(|a| a == "-f" || a == "--follow");
+    let base = format!("{}/_platform/apps/{}/logs", server, app.name);
+    let mut url = format!("{}?lines={}", base, lines);
+    loop {
+        let headers = std::env::temp_dir().join(format!("plumb-logs-{}.headers", std::process::id()));
+        let result = request_saving_headers(&url, &token, &headers);
+        let offset = std::fs::read_to_string(&headers).ok().and_then(|h| {
+            h.lines().find_map(|l| {
+                let (k, v) = l.split_once(':')?;
+                k.trim().eq_ignore_ascii_case("x-log-offset").then(|| v.trim().parse::<u64>().ok())?
+            })
+        });
+        let _ = std::fs::remove_file(&headers);
+        match result {
+            Ok((200, body)) => print!("{}", body),
+            Ok((code, body)) => return fail(format!("{} ({})", server_error(&body), code)),
+            Err(e) => return fail(e),
+        }
+        if !follow {
+            return ExitCode::SUCCESS;
+        }
+        let _ = std::io::stdout().flush();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        url = format!("{}?since={}", base, offset.unwrap_or(0));
+    }
+}
+
+/// `request`, also writing the response's headers to `headers`.
+fn request_saving_headers(url: &str, token: &str, headers: &Path) -> Result<(u16, String), String> {
+    let mut cmd = Command::new("curl");
+    cmd.args(["-sS", "-K", "-", "-D"]).arg(headers).args(["-w", "\n%{http_code}"]).arg(url);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("can't run curl: {}", e))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = writeln!(stdin, "header = \"Authorization: Bearer {}\"", token.replace('\\', "\\\\").replace('"', "\\\""));
+    }
+    let out = child.wait_with_output().map_err(|e| format!("curl: {}", e))?;
+    if !out.status.success() {
+        return Err(format!("can't reach {}: {}", url, String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let (body, code) = text.rsplit_once('\n').unwrap_or(("", &text));
+    Ok((code.trim().parse().unwrap_or(0), body.to_string()))
+}
+
+/// A number field of a flat JSON object (the metrics' summary).
+fn json_number(obj: &str, key: &str) -> Option<f64> {
+    let at = obj.find(&format!("\"{}\":", key))? + key.len() + 3;
+    let rest = &obj[at..];
+    let end = rest.find([',', '}']).unwrap_or(rest.len());
+    rest[..end].trim().parse().ok()
+}
+
+/// `plumb stats [--range 1h|6h|24h|7d|30d]`: requests, errors, response
+/// times and where they go, from the server's metrics.
+pub fn stats(args: &[String]) -> ExitCode {
+    let (_, app) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let server = match server_of(&app, args) {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+    let token = match token_for(&server) {
+        Ok(t) => t,
+        Err(e) => return fail(e),
+    };
+    let range = args.iter().position(|a| a == "--range").and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| "24h".into());
+    let body = match request("GET", &format!("{}/_platform/metrics?app={}&range={}", server, app.name, range), &token, None) {
+        Ok((200, b)) => b,
+        Ok((code, b)) => return fail(format!("{} ({})", server_error(&b), code)),
+        Err(e) => return fail(e),
+    };
+    let Some(summary) = body.split("\"summary\":").nth(1).and_then(|s| s.split('}').next()) else {
+        return fail("the server's answer has no summary".into());
+    };
+    let n = |k: &str| json_number(summary, k).unwrap_or(0.0);
+    let ms = |k: &str| match json_number(summary, k) {
+        Some(v) if v >= 1000.0 => format!("{:.2} s", v / 1000.0),
+        Some(v) if v >= 10.0 => format!("{:.0} ms", v),
+        Some(v) => format!("{:.1} ms", v),
+        None => "–".into(),
+    };
+    let requests = n("requests");
+    println!("{} on {}, last {}", app.name, server, range);
+    if requests == 0.0 && n("events") == 0.0 {
+        println!("  no requests");
+        return ExitCode::SUCCESS;
+    }
+    println!("  requests      {:.0} ({:.2}/s)", requests, n("rps"));
+    println!("  failed        {:.0} ({:.2}%: 5xx answers and timeouts)", n("errors"), 100.0 * n("errors") / requests.max(1.0));
+    println!("  response time p50 {}  p95 {}  p99 {}", ms("p50_ms"), ms("p95_ms"), ms("p99_ms"));
+    println!("  on average    {} = cpu {} + database {} + outgoing http {} + other {}", ms("avg_ms"), ms("cpu_ms"), ms("db_ms"), ms("http_ms"), ms("other_ms"));
+    println!("  per request   {:.1} database queries, {:.2} outgoing requests", n("db_queries") / requests.max(1.0), n("outbound_requests") / requests.max(1.0));
+    println!("charts: {}/_platform/requests?app={}", server, app.name);
+    ExitCode::SUCCESS
+}
