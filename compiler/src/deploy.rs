@@ -1,0 +1,473 @@
+// `plumb login`, `plumb deploy`, `plumb secret`: a project's app on a
+// wasm-server, through its admin API (/_platform/). What runs and how comes
+// from plumb.toml's [app] (project::read_app); the server's admin token is
+// kept per server in ~/.config/plumb/servers, readable by the owner only,
+// or comes from PLUMB_TOKEN. Requests go through curl, which every system
+// we build on has; the token goes to curl on its standard input, never on
+// the command line.
+
+use crate::project::{self, AppConfig};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode, Stdio};
+
+fn credentials_file() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    PathBuf::from(home).join(".config").join("plumb").join("servers")
+}
+
+fn saved_token(server: &str) -> Option<String> {
+    let text = std::fs::read_to_string(credentials_file()).ok()?;
+    text.lines().find_map(|l| {
+        let (url, token) = l.split_once(' ')?;
+        (url == server).then(|| token.trim().to_string())
+    })
+}
+
+fn save_token(server: &str, token: &str) -> Result<(), String> {
+    let file = credentials_file();
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+    }
+    let old = std::fs::read_to_string(&file).unwrap_or_default();
+    let mut text: String = old.lines().filter(|l| l.split(' ').next() != Some(server)).map(|l| format!("{}\n", l)).collect();
+    text += &format!("{} {}\n", server, token);
+    let tmp = file.with_extension("tmp");
+    std::fs::write(&tmp, text).map_err(|e| format!("{}: {}", tmp.display(), e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    std::fs::rename(&tmp, &file).map_err(|e| format!("{}: {}", file.display(), e))
+}
+
+fn token_for(server: &str) -> Result<String, String> {
+    if let Ok(t) = std::env::var("PLUMB_TOKEN") {
+        return Ok(t);
+    }
+    saved_token(server).ok_or_else(|| format!("no token for {}: run `plumb login {}` (or set PLUMB_TOKEN)", server, server))
+}
+
+/// One request to the server's admin API: (status, body).
+fn request(method: &str, url: &str, token: &str, body: Option<&Path>) -> Result<(u16, String), String> {
+    let mut cmd = Command::new("curl");
+    cmd.args(["-sS", "-K", "-", "-X", method, "-w", "\n%{http_code}"]);
+    if let Some(file) = body {
+        cmd.args(["-H", "content-type: application/json", "--data-binary"]).arg(format!("@{}", file.display()));
+    }
+    cmd.arg(url).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("can't run curl: {}", e))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = writeln!(stdin, "header = \"Authorization: Bearer {}\"", token.replace('\\', "\\\\").replace('"', "\\\""));
+    }
+    let out = child.wait_with_output().map_err(|e| format!("curl: {}", e))?;
+    if !out.status.success() {
+        return Err(format!("can't reach {}: {}", url, String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let (body, code) = text.rsplit_once('\n').unwrap_or(("", &text));
+    Ok((code.trim().parse().unwrap_or(0), body.to_string()))
+}
+
+/// The server's `{"error": "..."}`, or the body as it is.
+fn server_error(body: &str) -> String {
+    let b = body.trim();
+    if let Some(rest) = b.strip_prefix("{\"error\":\"") {
+        if let Some(msg) = rest.strip_suffix("\"}") {
+            return msg.replace("\\\"", "\"").replace("\\n", "\n");
+        }
+    }
+    b.to_string()
+}
+
+fn json_str(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out += "\\\"",
+            '\\' => out += "\\\\",
+            '\n' => out += "\\n",
+            '\r' => out += "\\r",
+            '\t' => out += "\\t",
+            c if (c as u32) < 0x20 => out += &format!("\\u{:04x}", c as u32),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn json_list(items: &[String]) -> String {
+    format!("[{}]", items.iter().map(|s| json_str(s)).collect::<Vec<_>>().join(","))
+}
+
+fn base64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (b[0] as u32) << 16 | (b[1] as u32) << 8 | b[2] as u32;
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+fn fail(msg: String) -> ExitCode {
+    eprintln!("error: {}", msg);
+    ExitCode::from(1)
+}
+
+fn project_app() -> Result<(PathBuf, AppConfig), String> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let root = project::find_root(&cwd.join("x.plumb"));
+    let app = project::read_app(&root)?;
+    Ok((root, app))
+}
+
+fn server_of(app: &AppConfig, args: &[String]) -> Result<String, String> {
+    if let Some(i) = args.iter().position(|a| a == "--to") {
+        return args.get(i + 1).map(|s| s.trim_end_matches('/').to_string()).ok_or_else(|| "--to needs the server's URL".to_string());
+    }
+    app.server.clone().ok_or_else(|| "where to? add the server to plumb.toml:\n\n[deploy]\nserver = \"https://my-server.example.com\"\n\nor give it: plumb deploy --to https://...".to_string())
+}
+
+/// `plumb login <server>`: asks for the admin token, checks it, keeps it.
+pub fn login(args: &[String]) -> ExitCode {
+    let Some(server) = args.first().map(|s| s.trim_end_matches('/').to_string()) else {
+        return fail("usage: plumb login <server URL>, e.g. plumb login https://my-server.example.com".into());
+    };
+    eprint!("the server's admin token (--admin-token): ");
+    let mut token = String::new();
+    if std::io::stdin().read_line(&mut token).is_err() || token.trim().is_empty() {
+        return fail("no token given".into());
+    }
+    let token = token.trim();
+    match request("GET", &format!("{}/_platform/whoami", server), token, None) {
+        Ok((200, body)) if body.contains("\"admin\"") => {}
+        Ok((200 | 401 | 403, _)) => return fail(format!("{} doesn't accept this token as its admin token", server)),
+        Ok((code, body)) => return fail(format!("{} answered {}: {}", server, code, server_error(&body))),
+        Err(e) => return fail(e),
+    }
+    match save_token(&server, token) {
+        Ok(()) => {
+            println!("logged in to {} (the token is in {})", server, credentials_file().display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => fail(e),
+    }
+}
+
+/// The deploy request for the project's app, in a temporary file, and the
+/// component's size. Err(""): the build failed and said why.
+fn deploy_body(root: &Path, app: &AppConfig, build: &dyn Fn(&Path, &Path) -> bool) -> Result<(PathBuf, usize), String> {
+    let main = root.join(&app.main);
+    let wasm = std::env::temp_dir().join(format!("plumb-deploy-{}-{}.wasm", app.name, std::process::id()));
+    if !build(&main, &wasm) {
+        return Err(String::new());
+    }
+    let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
+    let _ = std::fs::remove_file(&wasm);
+    let mut schema = vec![];
+    for (db, file) in &app.schema {
+        let sql = std::fs::read_to_string(root.join(file)).map_err(|e| format!("the schema of {}: {}: {}", db, root.join(file).display(), e))?;
+        schema.push(format!("{}:{}", json_str(db), json_str(&sql)));
+    }
+    let mut settings = vec![format!("\"domains\":{}", json_list(&app.domains)), format!("\"databases\":{}", json_list(&app.databases))];
+    if let Some(o) = &app.outbound {
+        settings.push(format!("\"outbound\":{}", json_list(o)));
+    }
+    if let Some(w) = &app.websocket {
+        settings.push(format!("\"websocket\":{}", json_str(w)));
+    }
+    let body = format!("{{\"settings\":{{{}}},\"schema\":{{{}}},\"component\":\"{}\"}}", settings.join(","), schema.join(","), base64(&component));
+    let body_file = std::env::temp_dir().join(format!("plumb-deploy-{}-{}.json", app.name, std::process::id()));
+    std::fs::write(&body_file, body).map_err(|e| format!("{}: {}", body_file.display(), e))?;
+    Ok((body_file, component.len()))
+}
+
+/// `plumb deploy [--to URL]`: builds the app for wasm-server and sends it
+/// with its settings and schema; the server switches without downtime.
+pub fn deploy(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
+    let (root, app) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let server = match server_of(&app, args) {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+    let token = match token_for(&server) {
+        Ok(t) => t,
+        Err(e) => return fail(e),
+    };
+    let (body_file, size) = match deploy_body(&root, &app, build) {
+        Ok(x) => x,
+        Err(e) if e.is_empty() => return ExitCode::from(1),
+        Err(e) => return fail(e),
+    };
+    eprintln!("deploying {} ({} KB) to {}", app.name, size.div_ceil(1024), server);
+    let result = request("POST", &format!("{}/_platform/apps/{}/deploy", server, app.name), &token, Some(&body_file));
+    let _ = std::fs::remove_file(&body_file);
+    match result {
+        Ok((200, _)) => {
+            let place = match app.domains.first() {
+                Some(d) => format!("https://{}", d),
+                None => format!("{}/{}", server, app.name),
+            };
+            println!("deployed {}: {}", app.name, place);
+            ExitCode::SUCCESS
+        }
+        Ok((code, body)) => fail(format!("the server refused the deploy ({}): {}", code, server_error(&body))),
+        Err(e) => fail(e),
+    }
+}
+
+/// `plumb secret set KEY=VALUE...`, `plumb secret set KEY` (the value from
+/// standard input), `plumb secret unset KEY...`, `plumb secret list`.
+pub fn secret(args: &[String]) -> ExitCode {
+    let usage = "usage: plumb secret set KEY=VALUE... | plumb secret set KEY (reads the value) | plumb secret unset KEY... | plumb secret list";
+    let (_, app) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    // the words after the action, without `--to URL`
+    let mut rest: Vec<String> = vec![];
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--to" {
+            i += 2;
+            continue;
+        }
+        rest.push(args[i].clone());
+        i += 1;
+    }
+    let server = match server_of(&app, args) {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+    let token = match token_for(&server) {
+        Ok(t) => t,
+        Err(e) => return fail(e),
+    };
+    let url = format!("{}/_platform/apps/{}/secrets", server, app.name);
+    let changes: Vec<String> = match args.first().map(String::as_str) {
+        Some("list") => {
+            return match request("GET", &url, &token, None) {
+                Ok((200, body)) => {
+                    let names = body.split('[').nth(1).and_then(|s| s.split(']').next()).unwrap_or("");
+                    for n in names.split(',').map(|s| s.trim().trim_matches('"')).filter(|s| !s.is_empty()) {
+                        println!("{}", n);
+                    }
+                    ExitCode::SUCCESS
+                }
+                Ok((code, body)) => fail(format!("{} ({})", server_error(&body), code)),
+                Err(e) => fail(e),
+            };
+        }
+        Some("set") if !rest.is_empty() => {
+            let mut out = vec![];
+            for a in &rest {
+                match a.split_once('=') {
+                    Some((k, v)) => out.push(format!("{}:{}", json_str(k), json_str(v))),
+                    None => {
+                        eprint!("{}: ", a);
+                        let mut v = String::new();
+                        let _ = std::io::stdin().read_line(&mut v);
+                        out.push(format!("{}:{}", json_str(a), json_str(v.trim_end_matches(['\n', '\r']))));
+                    }
+                }
+            }
+            out
+        }
+        Some("unset") if !rest.is_empty() => rest.iter().map(|k| format!("{}:null", json_str(k))).collect(),
+        _ => return fail(usage.into()),
+    };
+    let body_file = std::env::temp_dir().join(format!("plumb-secret-{}.json", std::process::id()));
+    if let Err(e) = std::fs::write(&body_file, format!("{{{}}}", changes.join(","))) {
+        return fail(e.to_string());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&body_file, std::fs::Permissions::from_mode(0o600));
+    }
+    let result = request("PUT", &url, &token, Some(&body_file));
+    let _ = std::fs::remove_file(&body_file);
+    match result {
+        Ok((200, _)) => {
+            println!("done; {} restarted with them", app.name);
+            ExitCode::SUCCESS
+        }
+        Ok((code, body)) => fail(format!("{} ({})", server_error(&body), code)),
+        Err(e) => fail(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn base64() {
+        assert_eq!(super::base64(b""), "");
+        assert_eq!(super::base64(b"f"), "Zg==");
+        assert_eq!(super::base64(b"fo"), "Zm8=");
+        assert_eq!(super::base64(b"foo"), "Zm9v");
+        assert_eq!(super::base64(b"foobar"), "Zm9vYmFy");
+    }
+}
+
+// ---- plumb dev
+
+/// The wasm-server program: $WASM_SERVER, or `wasm-server` on the PATH.
+fn wasm_server_bin() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("WASM_SERVER") {
+        return Some(PathBuf::from(p));
+    }
+    std::env::var("PATH").ok()?.split(':').map(|d| Path::new(d).join("wasm-server")).find(|p| p.exists())
+}
+
+/// KEY=VALUE lines of the project's `.env` (secrets for local runs; keep it
+/// out of git), as a JSON object for the secrets endpoint.
+fn dotenv_json(root: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(root.join(".env")).ok()?;
+    let mut pairs = vec![];
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        if let Some((k, v)) = line.split_once('=') {
+            let v = v.trim();
+            let v = v.strip_prefix('"').and_then(|x| x.strip_suffix('"')).or_else(|| v.strip_prefix('\'').and_then(|x| x.strip_suffix('\''))).unwrap_or(v);
+            pairs.push(format!("{}:{}", json_str(k.trim()), json_str(v)));
+        }
+    }
+    Some(format!("{{{}}}", pairs.join(",")))
+}
+
+/// The newest change among the project's files: code, schema, settings.
+fn newest_change(root: &Path) -> std::time::SystemTime {
+    fn walk(dir: &Path, newest: &mut std::time::SystemTime, depth: u32) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let path = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') && name != ".env" {
+                continue;
+            }
+            if path.is_dir() {
+                if depth < 6 {
+                    walk(&path, newest, depth + 1);
+                }
+            } else if name.ends_with(".plumb") || name.ends_with(".sql") || name == "plumb.toml" || name == ".env" {
+                if let Ok(t) = e.metadata().and_then(|m| m.modified()) {
+                    if t > *newest {
+                        *newest = t;
+                    }
+                }
+            }
+        }
+    }
+    let mut newest = std::time::SystemTime::UNIX_EPOCH;
+    walk(root, &mut newest, 0);
+    newest
+}
+
+/// `plumb dev [--port N]`: the app on a local wasm-server, deployed the way
+/// `plumb deploy` does it (same settings, schema, databases and limits),
+/// with secrets from `.env`; rebuilt and redeployed when a file changes.
+/// Its data stays in `.plumb/dev`.
+pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
+    let (root, mut app) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let port = args.iter().position(|a| a == "--port").and_then(|i| args.get(i + 1)).and_then(|p| p.parse::<u16>().ok()).unwrap_or(8080);
+    let Some(bin) = wasm_server_bin() else {
+        return fail("plumb dev runs the app on wasm-server: put `wasm-server` on the PATH, or set WASM_SERVER to it".into());
+    };
+    let data = root.join(".plumb").join("dev");
+    if let Err(e) = std::fs::create_dir_all(&data) {
+        return fail(format!("{}: {}", data.display(), e));
+    }
+    let token = format!("dev-{:x}{:x}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    let mut server = match Command::new(&bin)
+        .args(["serve", "--listen", &format!("127.0.0.1:{}", port), "--workers", "2", "--admin-token", &token, "--data-dir"])
+        .arg(&data)
+        .stdin(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return fail(format!("can't start {}: {}", bin.display(), e)),
+    };
+    let base = format!("http://127.0.0.1:{}", port);
+    let mut up = false;
+    for _ in 0..100 {
+        if let Ok((200, _)) = request("GET", &format!("{}/_platform/whoami", base), &token, None) {
+            up = true;
+            break;
+        }
+        if let Ok(Some(_)) = server.try_wait() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    if !up {
+        let _ = server.kill();
+        return fail(format!("wasm-server didn't start on {} (is the port taken? --port N)", base));
+    }
+    let mut seen = std::time::SystemTime::UNIX_EPOCH;
+    let mut first = true;
+    loop {
+        let changed = newest_change(&root);
+        if changed > seen {
+            seen = changed;
+            if !first {
+                eprintln!("\n-- changed: rebuilding");
+                match project::read_app(&root) {
+                    Ok(a) => app = a,
+                    Err(e) => eprintln!("error: {}", e),
+                }
+            }
+            match deploy_body(&root, &app, build) {
+                Ok((body, _)) => {
+                    let r = request("POST", &format!("{}/_platform/apps/{}/deploy", base, app.name), &token, Some(&body));
+                    let _ = std::fs::remove_file(&body);
+                    match r {
+                        Ok((200, _)) => {
+                            if let Some(env) = dotenv_json(&root) {
+                                let file = root.join(".plumb").join("dev").join("env.json");
+                                if std::fs::write(&file, env).is_ok() {
+                                    if let Ok((code, b)) = request("PUT", &format!("{}/_platform/apps/{}/secrets", base, app.name), &token, Some(&file)) {
+                                        if code != 200 {
+                                            eprintln!("error: .env: {}", server_error(&b));
+                                        }
+                                    }
+                                    let _ = std::fs::remove_file(&file);
+                                }
+                            }
+                            if first {
+                                eprintln!("{} is running on {} (data in {}); Ctrl-C stops it", app.name, base, data.display());
+                            } else {
+                                eprintln!("-- {} is running the new version", app.name);
+                            }
+                        }
+                        Ok((code, b)) => eprintln!("error: the new version doesn't start ({}): {}", code, server_error(&b)),
+                        Err(e) => eprintln!("error: {}", e),
+                    }
+                }
+                Err(e) if e.is_empty() => eprintln!("-- the build failed; the previous version keeps running"),
+                Err(e) => eprintln!("error: {}", e),
+            }
+            first = false;
+        }
+        if let Ok(Some(status)) = server.try_wait() {
+            return if status.success() { ExitCode::SUCCESS } else { fail(format!("wasm-server stopped ({})", status)) };
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
+}

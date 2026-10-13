@@ -535,11 +535,33 @@ project (`plumb test app.plumb`: one file's).
 
 ## Building for wasm-server
 
-`plumb build --target wasm-server app.plumb` makes `app.wasm`, a
-WebAssembly component for wasm-server (it needs wasi-sdk: `WASI_SDK`,
-`/opt/wasi-sdk` or `~/wasi-sdk`). The host starts a fresh instance for
-every request and runs `main`; `http.serve` answers that one request
-and returns. So the same file also runs as an ordinary server:
+An app for wasm-server is described in the project's `plumb.toml`:
+
+```
+[app]
+name = "notes"
+main = "main.plumb"
+databases = ["main"]            # its own SQLite databases
+schema = "schema.sql"           # `create table if not exists ...`, run on deploy
+domains = ["notes.example.com"] # HTTPS certificates come by themselves
+outbound = ["api.stripe.com"]   # hosts it may call; left out: any public host
+
+[deploy]
+server = "https://my-server.example.com"
+```
+
+- `plumb dev`: runs it on a local wasm-server as the server will, with
+  secrets from `.env`, rebuilt on every change (http://localhost:8080).
+- `plumb login <server>` once, then `plumb deploy`: live without downtime;
+  a version that doesn't start is refused and the old one stays.
+- `plumb secret set KEY=VALUE`: environment variables kept on the server,
+  never in the project.
+
+`plumb build --target wasm-server app.plumb` makes the component itself
+(it needs wasi-sdk: `WASI_SDK`, `/opt/wasi-sdk` or `~/wasi-sdk`). The host
+starts a fresh instance for every request and runs `main`; `http.serve`
+answers that one request and returns. So the same file also runs as an
+ordinary server:
 
 ```
 fn main() throws {
@@ -551,8 +573,8 @@ fn main() throws {
 }
 ```
 
-- `db.open(name)` takes the name of a database the host grants the app
-  (SQLite or Postgres on the host), not a file. SQL, `query<T>`,
+- `db.open(name)` takes a name from `databases` in `[app]` (or one the
+  host grants the app), not a file. SQL, `query<T>`,
   `insert` and `transaction` work as usual.
 - Nothing stays in memory between requests: keep state in the database.
 - `http.get`, `http.send` and the rest of the client work: the host makes

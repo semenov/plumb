@@ -1,6 +1,7 @@
 mod ast;
 mod cgen;
 mod check;
+mod deploy;
 mod diag;
 mod doc;
 mod fmt;
@@ -34,6 +35,12 @@ Programs:
   plumb build <file.plumb> [-o out] compile an optimized binary
   plumb test [file.plumb or dir]    run the `test` blocks: of one file, or of every file in the project
   plumb check <file.plumb>          only check for errors (fast)
+
+Apps on wasm-server ([app] in plumb.toml):
+  plumb dev [--port N]              run the app locally as the server would; rebuilt on changes
+  plumb login <server URL>          keep the server's admin token
+  plumb deploy [--to <server URL>]  build the app and put it live, without downtime
+  plumb secret set KEY=VALUE...     the app's secrets (environment variables); also unset, list
 
 Projects and packages:
   plumb init [name]                 make this directory a project (plumb.toml, main.plumb)
@@ -76,6 +83,34 @@ fn learn_command(args: &[String]) -> Option<ExitCode> {
             Some(ExitCode::SUCCESS)
         }
         "doc" => Some(doc_command(&args[1..])),
+        "login" => Some(deploy::login(&args[1..])),
+        "secret" => Some(deploy::secret(&args[1..])),
+        "dev" => Some(deploy::dev(&args[1..], &|main, out| {
+            let opts = Opts {
+                cmd: "build".into(),
+                path: main.to_string_lossy().to_string(),
+                out: None,
+                emit_c: None,
+                debug: false,
+                static_link: false,
+                target: Some("wasm-server".into()),
+                args: vec![],
+            };
+            compile(&opts, false, false, out)
+        })),
+        "deploy" => Some(deploy::deploy(&args[1..], &|main, out| {
+            let opts = Opts {
+                cmd: "build".into(),
+                path: main.to_string_lossy().to_string(),
+                out: None,
+                emit_c: None,
+                debug: false,
+                static_link: false,
+                target: Some("wasm-server".into()),
+                args: vec![],
+            };
+            compile(&opts, false, true, out)
+        })),
         "fmt" => Some(fmt_command(&args[1..])),
         _ => None,
     }

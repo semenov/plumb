@@ -45,7 +45,8 @@ pub struct Locked {
     pub commit: String,
 }
 
-// ---- a small TOML subset: [tables], key = "string", key = { k = "v", ... }
+// ---- a small TOML subset: [tables], key = "string", key = ["a", "b"],
+// key = { k = "v", ... }
 
 fn parse_toml(text: &str) -> Result<BTreeMap<String, BTreeMap<String, TomlValue>>, String> {
     let mut out: BTreeMap<String, BTreeMap<String, TomlValue>> = BTreeMap::new();
@@ -70,12 +71,24 @@ fn parse_toml(text: &str) -> Result<BTreeMap<String, BTreeMap<String, TomlValue>
 #[derive(Debug, Clone)]
 enum TomlValue {
     Str(String),
+    List(Vec<String>),
     Table(BTreeMap<String, String>),
 }
 
 fn parse_value(v: &str) -> Option<TomlValue> {
     if let Some(s) = v.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
         return Some(TomlValue::Str(s.to_string()));
+    }
+    if let Some(inner) = v.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        let mut items = vec![];
+        for part in inner.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            items.push(part.strip_prefix('"')?.strip_suffix('"')?.to_string());
+        }
+        return Some(TomlValue::List(items));
     }
     if let Some(inner) = v.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
         let mut m = BTreeMap::new();
@@ -122,7 +135,7 @@ pub fn read_manifest(root: &Path) -> Result<Option<Manifest>, String> {
                     let version = tbl.get("version").cloned().unwrap_or_default();
                     m.deps.insert(name.clone(), Dep { git, version, path: sub });
                 }
-                TomlValue::Str(_) => return Err(format!("{}: write `{} = {{ git = \"...\", version = \"...\" }}`", path.display(), name)),
+                _ => return Err(format!("{}: write `{} = {{ git = \"...\", version = \"...\" }}`", path.display(), name)),
             }
         }
     }
@@ -147,7 +160,101 @@ pub fn write_manifest(root: &Path, m: &Manifest) -> Result<(), String> {
             s += &format!("{} = {{ {} }}\n", n, parts.join(", "));
         }
     }
+    // the file's other tables ([app], [deploy]...) stay as they were
+    if let Ok(old) = std::fs::read_to_string(root.join("plumb.toml")) {
+        let mut keep = false;
+        let mut rest = String::new();
+        for line in old.lines() {
+            let t = line.trim();
+            if t.starts_with('[') {
+                let name = t.trim_matches(|c| c == '[' || c == ']').trim();
+                keep = name != "package" && name != "dependencies";
+            }
+            if keep {
+                rest += line;
+                rest.push('\n');
+            }
+        }
+        if !rest.trim().is_empty() {
+            s += "\n";
+            s += rest.trim_end();
+            s.push('\n');
+        }
+    }
     std::fs::write(root.join("plumb.toml"), s).map_err(|e| e.to_string())
+}
+
+/// `[app]` and `[deploy]` of plumb.toml: what `plumb deploy` and `plumb dev`
+/// run, and where.
+///
+///     [app]
+///     name = "notes"
+///     main = "main.plumb"
+///     domains = ["notes.example.com"]
+///     databases = ["main"]
+///     schema = "schema.sql"           # for the first database
+///     outbound = ["api.stripe.com"]   # left out: any public host
+///
+///     [app.schema]                    # or one per database
+///     main = "schema.sql"
+///
+///     [deploy]
+///     server = "https://my-server.example.com"
+#[derive(Debug, Clone, Default)]
+pub struct AppConfig {
+    pub name: String,
+    pub main: String,
+    pub domains: Vec<String>,
+    pub databases: Vec<String>,
+    pub outbound: Option<Vec<String>>,
+    pub websocket: Option<String>,
+    /// database → schema file, relative to the project
+    pub schema: BTreeMap<String, String>,
+    pub server: Option<String>,
+}
+
+pub fn read_app(root: &Path) -> Result<AppConfig, String> {
+    let path = root.join("plumb.toml");
+    let text = std::fs::read_to_string(&path).map_err(|_| format!("there is no plumb.toml in {}; make the directory a project with `plumb init`", root.display()))?;
+    let t = parse_toml(&text).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let app = t.get("app").ok_or_else(|| format!("{}: there is no [app] section; add one:\n\n[app]\nname = \"myapp\"\nmain = \"main.plumb\"\ndatabases = [\"main\"]\nschema = \"schema.sql\"", path.display()))?;
+    let s = |k: &str| match app.get(k) {
+        Some(TomlValue::Str(v)) => Ok(Some(v.clone())),
+        None => Ok(None),
+        Some(_) => Err(format!("{}: [app] {} must be text: {} = \"...\"", path.display(), k, k)),
+    };
+    let list = |k: &str| match app.get(k) {
+        Some(TomlValue::List(v)) => Ok(Some(v.clone())),
+        None => Ok(None),
+        Some(_) => Err(format!("{}: [app] {} must be a list: {} = [\"...\"]", path.display(), k, k)),
+    };
+    let mut c = AppConfig {
+        name: s("name")?.ok_or_else(|| format!("{}: [app] needs a name: name = \"myapp\"", path.display()))?,
+        main: s("main")?.unwrap_or_else(|| "main.plumb".into()),
+        domains: list("domains")?.unwrap_or_default(),
+        databases: list("databases")?.unwrap_or_default(),
+        outbound: list("outbound")?,
+        websocket: s("websocket")?,
+        ..Default::default()
+    };
+    if let Some(file) = s("schema")? {
+        let first = c.databases.first().ok_or_else(|| format!("{}: [app] schema is for the first database, and there are none: databases = [\"main\"]", path.display()))?;
+        c.schema.insert(first.clone(), file);
+    }
+    if let Some(tbl) = t.get("app.schema") {
+        for (db, v) in tbl {
+            match v {
+                TomlValue::Str(file) => {
+                    c.schema.insert(db.clone(), file.clone());
+                }
+                _ => return Err(format!("{}: [app.schema] {} = \"file.sql\"", path.display(), db)),
+            }
+        }
+    }
+    if let Some(TomlValue::Str(server)) = t.get("deploy").and_then(|d| d.get("server")) {
+        c.server = Some(server.trim_end_matches('/').to_string());
+    }
+    Ok(c)
 }
 
 pub fn read_lock(root: &Path) -> BTreeMap<String, Locked> {
