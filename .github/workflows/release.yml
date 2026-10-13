@@ -1,0 +1,64 @@
+# A release: push a tag (git tag v0.1.0 && git push origin v0.1.0). Builds
+# plumb for macOS and Linux on aarch64 and x86_64 and publishes the
+# binaries (gzipped), their checksums and install.sh, which downloads them.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-22.04, os: linux, arch: x86_64, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-22.04-arm, os: linux, arch: aarch64, target: aarch64-unknown-linux-gnu }
+          - { runner: macos-14, os: macos, arch: aarch64, target: aarch64-apple-darwin }
+          - { runner: macos-14, os: macos, arch: x86_64, target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: compiler
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: compiler
+          key: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - run: |
+          B=target/${{ matrix.target }}/release/plumb
+          strip $B
+          # Apple silicon runs only signed code: sign it again after strip
+          if [ "${{ matrix.os }}" = macos ]; then codesign -s - -f $B; fi
+          if [ "${{ matrix.target }}" != x86_64-apple-darwin ]; then $B help > /dev/null; fi
+          gzip -9 -c $B > ../plumb-${{ matrix.os }}-${{ matrix.arch }}.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}
+          path: plumb-${{ matrix.os }}-${{ matrix.arch }}.gz
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - run: sha256sum plumb-*.gz > SHA256SUMS
+      - run: |
+          gh release create "$GITHUB_REF_NAME" plumb-*.gz SHA256SUMS install.sh \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Install: \`curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/install.sh | sh\`"
+        env:
+          GH_TOKEN: ${{ github.token }}

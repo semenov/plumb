@@ -502,7 +502,7 @@ fn release_note(root: &Path, args: &[String]) -> String {
 }
 
 /// SHA-256 (FIPS 180-4), hex: the store's names for parts.
-fn sha256_hex(data: &[u8]) -> String {
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
         0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
@@ -753,13 +753,6 @@ mod tests {
 
 // ---- plumb dev
 
-/// The wasm-server program: $WASM_SERVER, or `wasm-server` on the PATH.
-fn wasm_server_bin() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("WASM_SERVER") {
-        return Some(PathBuf::from(p));
-    }
-    std::env::var("PATH").ok()?.split(':').map(|d| Path::new(d).join("wasm-server")).find(|p| p.exists())
-}
 
 /// KEY=VALUE lines of the project's `.env` (secrets for local runs; keep it
 /// out of git), as a JSON object for the secrets endpoint.
@@ -825,8 +818,9 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, Option<&str>, &Path) -> bool) 
         Err(e) => return fail(e),
     };
     let port = args.iter().position(|a| a == "--port").and_then(|i| args.get(i + 1)).and_then(|p| p.parse::<u16>().ok()).unwrap_or(8080);
-    let Some(bin) = wasm_server_bin() else {
-        return fail("plumb dev runs the app on wasm-server: put `wasm-server` on the PATH, or set WASM_SERVER to it".into());
+    let bin = match crate::toolchain::wasm_server() {
+        Ok(b) => b,
+        Err(e) => return fail(e),
     };
     let data = root.join(".plumb").join("dev");
     if let Err(e) = std::fs::create_dir_all(&data) {

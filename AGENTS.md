@@ -642,7 +642,8 @@ path (`/admin/style.css` is `style.css`).
   sql` lists what's SQLite-only.
 
 `plumb build --target wasm-server app.plumb` makes the component itself
-(it needs wasi-sdk: `WASI_SDK`, `/opt/wasi-sdk` or `~/wasi-sdk`). The host
+(with wasi-sdk, which plumb downloads into `~/.plumb` the first time,
+unless `WASI_SDK` names one). The host
 starts a fresh instance for every request and runs `main`; `http.serve`
 answers that one request and returns. So the same file also runs as an
 ordinary server:

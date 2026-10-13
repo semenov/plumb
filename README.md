@@ -170,11 +170,22 @@ This repository has several, all written in the language itself:
 
 ## Using it
 
-The compiler is written in Rust and produces C, which the system's C
-compiler turns into a native program.
+On macOS or Linux:
 
 ```
-cd compiler && cargo build --release      # the `Plumb` binary: target/release/plumb
+curl -fsSL https://github.com/semenov/plumb/releases/latest/download/install.sh | sh
+```
+
+That's all to install: `plumb` lands in `~/.plumb/bin`, and what it needs
+later comes by itself the first time it's needed (wasi-sdk for building
+WebAssembly, wasm-server for `plumb dev`), pinned and checked. From the
+source: `cd compiler && cargo build --release`.
+
+The compiler is written in Rust and produces C, which the system's C
+compiler turns into a native program (or, with `--target wasm-server`, a
+WebAssembly component).
+
+```
 
 plumb run app.plumb [args]     # compile and run
 plumb build app.plumb -o app   # an optimized binary
