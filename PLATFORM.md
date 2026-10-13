@@ -1,5 +1,11 @@
 # Who the platform (Plumb + wasm-server) is for
 
+**The main goal now (2026-10-13):** Plumb compiled to WebAssembly, running
+on wasm-server. The native target stays for `plumb run`, `plumb test` and
+leaving the platform, but features are designed for wasm first. The state
+before this work is the tag `pre-wasm` (commit 9384789, Run 4): Plumb as a
+native language for ordinary servers and tools.
+
 ## The requirements, as stated (2026-10-13)
 
 - The user is a **solo developer**.
