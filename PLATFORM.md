@@ -157,6 +157,27 @@ Suggested order: 3, 4 and 1 first (a website with users, which almost
 every project is), then 2, 5, 6 and 7. After that comes 8, which is what
 makes the platform different, with the scaling steps alongside it.
 
+## To think through
+
+- **WebSockets.** The server holds connections and calls the app per
+  message (`platform:sdk/websocket`), but Plumb's wasm target doesn't reach
+  that interface, and a Plumb server's own `router.websocket` (a task per
+  connection) isn't available on wasm. What should a Plumb app write for
+  chat or live updates, and what happens to connections on a cluster and
+  when a project moves to servers of its own?
+- **One app with its own router, or an app per URL?** Today an app is a
+  whole program with a router, started fresh for every request. The other
+  way is a function per route (as on Vercel or Lambda). To weigh:
+  - the cost per request (instantiating a bigger component, running
+    `main` and building the router every time);
+  - cold starts and memory with many small components;
+  - deploy size and time;
+  - how an agent writes and tests it;
+  - shared code;
+  - whether the same file still runs as an ordinary server.
+
+  Measure before deciding.
+
 ## Open questions
 
 - At what point does a project outgrow SQLite on its own server, and do we
