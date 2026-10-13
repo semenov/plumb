@@ -794,6 +794,22 @@ pub type Request {
   // The fields of an HTML form (application/x-www-form-urlencoded).
   // For forms with files, see `parts`.
   pub fn form(self) throws -> Map<String, String>
+  // The form's fields as a record, as `json.decode` does with JSON:
+  //   type SignUp { email: String  age: Int  agree: Bool  tags: List<String> = [] }
+  //   let input = try req.decode_form<SignUp>()
+  // Names match fields as in JSON (case, _ and - ignored); other names are
+  // ignored. Text becomes numbers and true/false ("on" from a checkbox). A
+  // missing Bool is false even with a default, since an unchecked box isn't
+  // sent. An empty value counts as missing, except for a required String
+  // (no default, not optional). A name given several times fills a List
+  // field. For urlencoded and multipart forms (files are left out: see
+  // `parts`).
+  pub fn decode_form<T>(self) throws -> T
+  // The query parameters as a record, by the rules of `decode_form`, except
+  // that a missing Bool takes its default (false without one):
+  //   type Search { q: String  page: Int = 1 }
+  //   let search = try req.decode_query<Search>()
+  pub fn decode_query<T>(self) throws -> T
   // The parts of a multipart/form-data body: form fields and uploaded
   // files. A field has `filename` none; `text()` reads its value.
   pub fn parts(self) throws -> List<Part>

@@ -1544,6 +1544,69 @@ static {ret_t} {name}({l} *p, lt_fn f) {{
         let _ = writeln!(self.helpers, "static void enc_{}({} v, lt_buf *b) {{ {} }}", id, c, body);
     }
 
+    // http's decode_form / decode_query: an object from a form's names and
+    // values (`keys`, `vals`: lists of the same length, in order), decoded
+    // leniently. A name matches a field as in JSON (case, _ and - ignored);
+    // unknown names are ignored. An empty value counts as missing, except
+    // for a required String. A missing Bool is false: always in a form (an
+    // unchecked box isn't sent), without a default in a query. Every value
+    // of a repeated name goes into a List or Set field.
+    fn gen_fields_reader(&mut self, id: usize) -> String {
+        let name = format!("formdec_{}", id);
+        if self.done.contains(&(H::Ops, usize::MAX / 64 + id)) {
+            return name;
+        }
+        self.done.insert((H::Ops, usize::MAX / 64 + id));
+        let c = self.tys[id].c.clone();
+        let fields: Vec<(String, usize)> = match &self.tys[id].kind {
+            Kind::Record { fields, .. } => fields.clone(),
+            _ => vec![],
+        };
+        let has_default: Vec<bool> = match &self.ty_of(id) {
+            Ty::Adt(d, _) => match &self.prog.defs[*d].kind {
+                TypeKind::Record { fields } => fields.iter().map(|f| f.default.is_some()).collect(),
+                _ => vec![],
+            },
+            _ => vec![],
+        };
+        let n = fields.len().max(1);
+        let mut s = format!("static lt_err {name}(lt_texts *keys, lt_texts *vals, lt_text *src, {c} *out) {{ bool form = src->len == 4 && memcmp(src->data, \"form\", 4) == 0; lt_arena ar = {{0}}; lt_dyn o; memset(&o, 0, sizeof o); o.kind = LT_D_OBJ; o.items = (lt_dyn *)lt_arena_alloc(&ar, sizeof(lt_dyn) * {n}); o.keys = (const char **)lt_arena_alloc(&ar, sizeof(char *) * {n}); o.klens = (int64_t *)lt_arena_alloc(&ar, sizeof(int64_t) * {n});", name = name, c = c, n = n);
+        for (fi, (fname, fid)) in fields.iter().enumerate() {
+            let defaulted = has_default.get(fi).copied().unwrap_or(false);
+            let (opt, inner) = match &self.tys[*fid].kind {
+                Kind::Opt { inner, .. } => (true, *inner),
+                _ => (false, *fid),
+            };
+            let (list, elem_text) = match &self.tys[inner].kind {
+                Kind::List(e) | Kind::Set(e) => (true, matches!(self.tys[*e].kind, Kind::Text)),
+                _ => (false, false),
+            };
+            let text = matches!(self.tys[inner].kind, Kind::Text);
+            let boolean = matches!(self.tys[inner].kind, Kind::Bool);
+            let fl = fname.len();
+            // the value at index i as a string node in v
+            let put = "memset(v, 0, sizeof *v); v->kind = LT_D_STR; v->s = vals->items[i]->data; v->slen = vals->items[i]->len;";
+            let _ = write!(s, " {{ lt_dyn *v = &o.items[o.n]; bool found = false;");
+            if list {
+                let keep = if elem_text { "true" } else { "vals->items[i]->len > 0" };
+                let _ = write!(s, " int64_t cnt = 0; for (int64_t i = 0; i < keys->len; i++) if (lt_key_loose_eq(keys->items[i]->data, keys->items[i]->len, \"{f}\", {fl}) && {keep}) cnt++; lt_dyn *items = (lt_dyn *)lt_arena_alloc(&ar, sizeof(lt_dyn) * (size_t)(cnt ? cnt : 1)); int64_t k = 0; for (int64_t i = 0; i < keys->len; i++) if (lt_key_loose_eq(keys->items[i]->data, keys->items[i]->len, \"{f}\", {fl}) && {keep}) {{ lt_dyn *w = &items[k++]; memset(w, 0, sizeof *w); w->kind = LT_D_STR; w->s = vals->items[i]->data; w->slen = vals->items[i]->len; }} memset(v, 0, sizeof *v); v->kind = LT_D_ARR; v->n = cnt; v->items = items; found = true;", f = fname, fl = fl, keep = keep);
+            } else {
+                let keep = if text && !opt && !defaulted { "true" } else { "vals->items[i]->len > 0" };
+                let _ = write!(s, " for (int64_t i = keys->len - 1; i >= 0 && !found; i--) if (lt_key_loose_eq(keys->items[i]->data, keys->items[i]->len, \"{f}\", {fl}) && {keep}) {{ {put} found = true; }}", f = fname, fl = fl, keep = keep, put = put);
+                // in a form, a missing box is unchecked, whatever the default
+                if boolean && !opt {
+                    let _ = write!(s, " if (!found && (form || !{})) {{ memset(v, 0, sizeof *v); v->kind = LT_D_BOOL; v->b = false; found = true; }}", defaulted);
+                }
+            }
+            let _ = write!(s, " if (found) {{ o.keys[o.n] = \"{f}\"; o.klens[o.n] = {fl}; o.n++; }} }}", f = fname, fl = fl);
+        }
+        let _ = write!(s, " char sb[32]; snprintf(sb, sizeof sb, \"%.*s\", (int)src->len, src->data); lt_err e = dec_{}(sb, &o, NULL, 1, out); lt_arena_free(&ar); return e; }}", id);
+        self.helpers += &s;
+        self.helpers += "\n";
+        let _ = writeln!(self.protos, "static lt_err {}(lt_texts *keys, lt_texts *vals, lt_text *src, {} *out);", name, c);
+        name
+    }
+
     // env.decode / cli.decode: builds an object from environment variables or
     // command-line arguments, then decodes it leniently
     fn gen_args_reader(&mut self, id: usize, cli: bool) -> String {
@@ -3551,6 +3614,12 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
                 let id = tid0.unwrap();
                 self.need(H::Dec, id);
                 format!("({{ lt_arena ar_ = {{0}}; lt_dyn d_; lt_err e_ = lt_json_parse({}, &ar_, &d_); if (!e_.obj) e_ = dec_{}(\"json\", &d_, NULL, 0, {}); lt_arena_free(&ar_); e_; }})", a[0], id, a[1])
+            }
+            "http.__decode_fields" => {
+                let id = tid0.unwrap();
+                self.need(H::Dec, id);
+                let f = self.gen_fields_reader(id);
+                format!("{}({}, {}, {}, {})", f, a[0], a[1], a[2], a[3])
             }
             "env.decode" | "cli.decode" => {
                 let id = tid0.unwrap();

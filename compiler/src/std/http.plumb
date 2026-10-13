@@ -104,6 +104,55 @@ pub type Request {
     return out
   }
 
+  // The form's fields as a record, as `json.decode` does with JSON:
+  //   type SignUp { email: String  age: Int  agree: Bool  tags: List<String> = [] }
+  //   let input = try req.decode_form<SignUp>()
+  // Names match fields as in JSON (case, _ and - ignored); other names are
+  // ignored. Text becomes numbers and true/false ("on" from a checkbox). A
+  // missing Bool is false even with a default, since an unchecked box isn't
+  // sent. An empty value counts as missing, except for a required String
+  // (no default, not optional). A name given several times fills a List
+  // field. For urlencoded and multipart forms (files are left out: see
+  // `parts`).
+  pub fn decode_form<T>(self) throws -> T {
+    var keys: List<String> = []
+    var values: List<String> = []
+    if (self.header("content-type") ?? "").starts_with("multipart/") {
+      for part in try self.parts() {
+        if part.filename is none {
+          keys.append(part.name)
+          values.append(part.text())
+        }
+      }
+    } else {
+      for pair in self.text().split("&") {
+        if not pair.is_empty() {
+          let kv = pair.split("=")
+          keys.append(try __url_decode(kv[0].replace("+", " ")))
+          values.append(try __url_decode(kv.drop(1).join("=").replace("+", " ")))
+        }
+      }
+    }
+    return try __decode_fields<T>(keys, values: values, source: "form")
+  }
+
+  // The query parameters as a record, by the rules of `decode_form`, except
+  // that a missing Bool takes its default (false without one):
+  //   type Search { q: String  page: Int = 1 }
+  //   let search = try req.decode_query<Search>()
+  pub fn decode_query<T>(self) throws -> T {
+    var keys: List<String> = []
+    var values: List<String> = []
+    for pair in self.raw_query.split("&") {
+      if not pair.is_empty() {
+        let kv = pair.split("=")
+        keys.append(try __url_decode(kv[0].replace("+", " ")))
+        values.append(try __url_decode(kv.drop(1).join("=").replace("+", " ")))
+      }
+    }
+    return try __decode_fields<T>(keys, values: values, source: "query")
+  }
+
   // The parts of a multipart/form-data body: form fields and uploaded
   // files. A field has `filename` none; `text()` reads its value.
   pub fn parts(self) throws -> List<Part> {
@@ -582,6 +631,7 @@ fn with_cors(req: Request, next: fn(Request) throws -> Response, origins: List<S
 pub fn mime_type(path: String) -> String
 
 fn __url_decode(text: String) throws -> String
+fn __decode_fields<T>(keys: List<String>, values: List<String>, source: String) throws -> T
 
 // A request for tests: `router.handle(http.request("GET", "/notes/1"))`.
 // With a body: `var req = http.request("POST", "/notes")`, then

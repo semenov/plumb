@@ -1586,7 +1586,7 @@ impl<'a> Lowerer<'a> {
                 itys.extend(arg_tys.iter().cloned());
             }
         }
-        if matches!(name.as_str(), "json.decode" | "env.decode" | "cli.decode" | "cli.decode_from" | "db.Connection.query" | "csv.decode" | "sql.decode") {
+        if matches!(name.as_str(), "json.decode" | "env.decode" | "cli.decode" | "cli.decode_from" | "db.Connection.query" | "csv.decode" | "sql.decode" | "http.__decode_fields") {
             if let Some(t) = itys.last().cloned() {
                 self.ensure_defaults(&t);
             }

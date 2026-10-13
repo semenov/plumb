@@ -464,8 +464,11 @@ WebSockets: `router.websocket("/chat", ws => try chat(ws))`; in `chat`,
 `while try ws.receive() is some(msg) { try ws.send_text(...) }`. Client:
 `with ws = try http.websocket("wss://...") { ... }`.
 
-Forms: `try req.form()` (a Map), `try req.parts()` (multipart, with files);
-cookies: `req.cookie("session")`, `res.with_cookie(http.Cookie(name: "session", value: v))`.
+Forms as records: `try req.decode_form<SignUp>()` (urlencoded or multipart;
+an unchecked box is `false`, an empty field is missing, a repeated name
+fills a `List`), the query: `try req.decode_query<Search>()`. As a Map:
+`try req.form()`; with files: `try req.parts()`. Cookies:
+`req.cookie("session")`, `res.with_cookie(http.Cookie(name: "session", value: v))`.
 
 Bodies are `Bytes`: `req.text()`, `res.text()` give them as text. A handler's error
 becomes a 500 and a log line. `http.serve` logs "listening on ..." itself.
