@@ -113,6 +113,8 @@ pub struct CGen<'a> {
     pkey: bool,
     // built for wasm-server (`--target wasm-server`)
     wasm: bool,
+    // what the program uses that wasm-server doesn't have, besides the flags
+    wasm_missing: Vec<&'static str>,
 }
 
 fn c_str(s: &str) -> String {
@@ -195,6 +197,7 @@ impl<'a> CGen<'a> {
             wants_interrupt: false,
             pkey: false,
             wasm: false,
+            wasm_missing: vec![],
         }
     }
 
@@ -3559,6 +3562,18 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
                 self.gen_http_glue();
                 format!("lt_http_serve_on({}, {}, {}, {}, {}, {}, {})", a[0], a[1], a[2], a[3], a[4], a[5], a[6])
             }
+            "http.__send" if self.wasm => {
+                // through the host: wasi:http's outgoing-handler (http_wasm.h)
+                self.gen_http_glue();
+                let map = self.tid(&Ty::Adt(self.prog.b.map, vec![Ty::Text, Ty::Text]));
+                let mc = self.tys[map].c.clone();
+                format!("({{ {mc} m_ = {m}; lt_texts *h_ = lt_texts_new(m_->len * 2 + 1); for (int64_t i_ = 0; i_ < m_->n; i_++) if (m_->e[i_].h) {{ lt_texts_push(&h_, m_->e[i_].k); lt_texts_push(&h_, m_->e[i_].v); }} lt_http_out o_; memset(&o_, 0, sizeof o_); lt_err e_ = lt_wasm_http_send({}, {}, h_, {}, {}, {}, {}, &o_); lt_free(h_, sizeof(lt_texts) + sizeof(lt_text *) * (size_t)h_->cap); if (!e_.obj) *{} = lt_http_response_from(&o_); e_; }})", a[0], a[1], a[3], a[4], a[5], a[8], a[9], mc = mc, m = a[2])
+            }
+            "http.__open" | "http.download" if self.wasm => {
+                // refused in generate_wasm; any expression of the right type
+                self.wasm_missing.push(if name == "http.download" { "http.download (no files)" } else { "http.open (streaming responses)" });
+                "lt_make_failure(lt_text_cstr(\"unavailable\"))".to_string()
+            }
             "http.download" => {
                 self.curl = true;
                 self.gen_http_glue();
@@ -4116,13 +4131,18 @@ static void lt_panic_error(lt_err e, int line) { lt_text *m = lt_error_message(e
         if self.wasm {
             for (used, what) in [
                 (self.threads, "tasks (spawn, Shared, Channel, parallel_map)"),
-                (self.curl, "the HTTP client (http.get, http.send)"),
+                (self.curl, "curl"),
                 (self.net, "net (sockets)"),
                 (self.tls, "TLS"),
                 (self.zlib, "zlib (compression)"),
                 (self.pkey, "crypto's public keys"),
             ] {
                 if used {
+                    missing.push(what);
+                }
+            }
+            for what in &self.wasm_missing {
+                if !missing.contains(what) {
                     missing.push(what);
                 }
             }

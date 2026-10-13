@@ -555,10 +555,13 @@ fn main() throws {
   (SQLite or Postgres on the host), not a file. SQL, `query<T>`,
   `insert` and `transaction` work as usual.
 - Nothing stays in memory between requests: keep state in the database.
+- `http.get`, `http.send` and the rest of the client work: the host makes
+  the connections (and keeps them). It refuses private and loopback
+  addresses, and hosts outside the app's `outbound` list if it has one.
 - Not available (a compile error names them): `spawn`, `Shared`,
-  `Channel`, `parallel_map`, the HTTP client, `net`, `zlib`, public-key
-  crypto. `http.file` and `http.stream` give a 500: the host serves the
-  app's static files itself. No processes.
+  `Channel`, `parallel_map`, `http.open`, `http.download`, `net`, `zlib`,
+  public-key crypto. `http.file` and `http.stream` give a 500: the host
+  serves the app's static files itself. No processes.
 - A panic prints its message and line to the host's log, and the request
   gets a 500.
 

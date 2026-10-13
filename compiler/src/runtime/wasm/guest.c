@@ -281,6 +281,11 @@ extern void __wasm_import_wasi_http_types_method_future_incoming_response_get(in
 __attribute__((__import_module__("wasi:http/types@0.2.12"), __import_name__("http-error-code")))
 extern void __wasm_import_wasi_http_types_http_error_code(int32_t, uint8_t *);
 
+// Imported Functions from `wasi:http/outgoing-handler@0.2.12`
+
+__attribute__((__import_module__("wasi:http/outgoing-handler@0.2.12"), __import_name__("handle")))
+extern void __wasm_import_wasi_http_outgoing_handler_handle(int32_t, int32_t, int32_t, uint8_t *);
+
 // Exported Functions from `wasi:http/incoming-handler@0.2.12`
 
 
@@ -1069,6 +1074,22 @@ void wasi_http_types_option_result_result_own_incoming_response_error_code_void_
 void wasi_http_types_option_error_code_free(wasi_http_types_option_error_code_t *ptr) {
   if (ptr->is_some) {
     wasi_http_types_error_code_free(&ptr->val);
+  }
+}
+
+void wasi_http_outgoing_handler_error_code_free(wasi_http_outgoing_handler_error_code_t *ptr) {
+  wasi_http_types_error_code_free(ptr);
+}
+
+void wasi_http_outgoing_handler_option_own_request_options_free(wasi_http_outgoing_handler_option_own_request_options_t *ptr) {
+  if (ptr->is_some) {
+  }
+}
+
+void wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_free(wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_t *ptr) {
+  if (!ptr->is_err) {
+  } else {
+    wasi_http_outgoing_handler_error_code_free(&ptr->val.err);
   }
 }
 
@@ -5802,6 +5823,467 @@ bool wasi_http_types_http_error_code(wasi_http_types_borrow_io_error_t err_, was
   }
   *ret = option21.val;
   return option21.is_some;
+}
+
+bool wasi_http_outgoing_handler_handle(wasi_http_outgoing_handler_own_outgoing_request_t request, wasi_http_outgoing_handler_own_request_options_t *maybe_options, wasi_http_outgoing_handler_own_future_incoming_response_t *ret, wasi_http_outgoing_handler_error_code_t *err) {
+  __attribute__((__aligned__(8)))
+  uint8_t ret_area[(24+4*sizeof(void*))];
+  wasi_http_outgoing_handler_option_own_request_options_t options;
+  options.is_some = maybe_options != NULL;if (maybe_options) {
+    options.val = *maybe_options;
+  }
+  int32_t option;
+  int32_t option1;
+  if ((options).is_some) {
+    const wasi_http_outgoing_handler_own_request_options_t *payload0 = &(options).val;
+    option = 1;
+    option1 = (*payload0).__handle;
+  } else {
+    option = 0;
+    option1 = 0;
+  }
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_wasi_http_outgoing_handler_handle((request).__handle, option, option1, ptr);
+  wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      result.val.ok = (wasi_http_outgoing_handler_own_future_incoming_response_t) { *((int32_t*) (ptr + 8)) };
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      wasi_http_types_error_code_t variant;
+      variant.tag = (int32_t) *((uint8_t*) (ptr + 8));
+      switch ((int32_t) variant.tag) {
+        case 0: {
+          break;
+        }
+        case 1: {
+          guest_option_string_t option2;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option2.is_some = false;
+              break;
+            }
+            case 1: {
+              option2.is_some = true;
+              option2.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+1*sizeof(void*))))), (*((size_t*) (ptr + (16+2*sizeof(void*))))) };
+              break;
+            }
+          }
+          guest_option_u16_t option3;
+          switch ((int32_t) *((uint8_t*) (ptr + (16+3*sizeof(void*))))) {
+            case 0: {
+              option3.is_some = false;
+              break;
+            }
+            case 1: {
+              option3.is_some = true;
+              option3.val = (uint16_t) ((int32_t) *((uint16_t*) (ptr + (18+3*sizeof(void*)))));
+              break;
+            }
+          }
+          variant.val.dns_error = (wasi_http_types_dns_error_payload_t) {
+            (guest_option_string_t) option2,
+            (guest_option_u16_t) option3,
+          };
+          break;
+        }
+        case 2: {
+          break;
+        }
+        case 3: {
+          break;
+        }
+        case 4: {
+          break;
+        }
+        case 5: {
+          break;
+        }
+        case 6: {
+          break;
+        }
+        case 7: {
+          break;
+        }
+        case 8: {
+          break;
+        }
+        case 9: {
+          break;
+        }
+        case 10: {
+          break;
+        }
+        case 11: {
+          break;
+        }
+        case 12: {
+          break;
+        }
+        case 13: {
+          break;
+        }
+        case 14: {
+          guest_option_u8_t option4;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option4.is_some = false;
+              break;
+            }
+            case 1: {
+              option4.is_some = true;
+              option4.val = (uint8_t) ((int32_t) *((uint8_t*) (ptr + 17)));
+              break;
+            }
+          }
+          guest_option_string_t option5;
+          switch ((int32_t) *((uint8_t*) (ptr + (16+1*sizeof(void*))))) {
+            case 0: {
+              option5.is_some = false;
+              break;
+            }
+            case 1: {
+              option5.is_some = true;
+              option5.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+2*sizeof(void*))))), (*((size_t*) (ptr + (16+3*sizeof(void*))))) };
+              break;
+            }
+          }
+          variant.val.tls_alert_received = (wasi_http_types_tls_alert_received_payload_t) {
+            (guest_option_u8_t) option4,
+            (guest_option_string_t) option5,
+          };
+          break;
+        }
+        case 15: {
+          break;
+        }
+        case 16: {
+          break;
+        }
+        case 17: {
+          guest_option_u64_t option6;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option6.is_some = false;
+              break;
+            }
+            case 1: {
+              option6.is_some = true;
+              option6.val = (uint64_t) (*((int64_t*) (ptr + 24)));
+              break;
+            }
+          }
+          variant.val.http_request_body_size = option6;
+          break;
+        }
+        case 18: {
+          break;
+        }
+        case 19: {
+          break;
+        }
+        case 20: {
+          break;
+        }
+        case 21: {
+          guest_option_u32_t option7;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option7.is_some = false;
+              break;
+            }
+            case 1: {
+              option7.is_some = true;
+              option7.val = (uint32_t) (*((int32_t*) (ptr + 20)));
+              break;
+            }
+          }
+          variant.val.http_request_header_section_size = option7;
+          break;
+        }
+        case 22: {
+          wasi_http_types_option_field_size_payload_t option10;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option10.is_some = false;
+              break;
+            }
+            case 1: {
+              option10.is_some = true;
+              guest_option_string_t option8;
+              switch ((int32_t) *((uint8_t*) (ptr + (16+1*sizeof(void*))))) {
+                case 0: {
+                  option8.is_some = false;
+                  break;
+                }
+                case 1: {
+                  option8.is_some = true;
+                  option8.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+2*sizeof(void*))))), (*((size_t*) (ptr + (16+3*sizeof(void*))))) };
+                  break;
+                }
+              }
+              guest_option_u32_t option9;
+              switch ((int32_t) *((uint8_t*) (ptr + (16+4*sizeof(void*))))) {
+                case 0: {
+                  option9.is_some = false;
+                  break;
+                }
+                case 1: {
+                  option9.is_some = true;
+                  option9.val = (uint32_t) (*((int32_t*) (ptr + (20+4*sizeof(void*)))));
+                  break;
+                }
+              }
+
+              option10.val = (wasi_http_types_field_size_payload_t) {
+                (guest_option_string_t) option8,
+                (guest_option_u32_t) option9,
+              };
+              break;
+            }
+          }
+          variant.val.http_request_header_size = option10;
+          break;
+        }
+        case 23: {
+          guest_option_u32_t option11;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option11.is_some = false;
+              break;
+            }
+            case 1: {
+              option11.is_some = true;
+              option11.val = (uint32_t) (*((int32_t*) (ptr + 20)));
+              break;
+            }
+          }
+          variant.val.http_request_trailer_section_size = option11;
+          break;
+        }
+        case 24: {
+          guest_option_string_t option12;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option12.is_some = false;
+              break;
+            }
+            case 1: {
+              option12.is_some = true;
+              option12.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+1*sizeof(void*))))), (*((size_t*) (ptr + (16+2*sizeof(void*))))) };
+              break;
+            }
+          }
+          guest_option_u32_t option13;
+          switch ((int32_t) *((uint8_t*) (ptr + (16+3*sizeof(void*))))) {
+            case 0: {
+              option13.is_some = false;
+              break;
+            }
+            case 1: {
+              option13.is_some = true;
+              option13.val = (uint32_t) (*((int32_t*) (ptr + (20+3*sizeof(void*)))));
+              break;
+            }
+          }
+          variant.val.http_request_trailer_size = (wasi_http_types_field_size_payload_t) {
+            (guest_option_string_t) option12,
+            (guest_option_u32_t) option13,
+          };
+          break;
+        }
+        case 25: {
+          break;
+        }
+        case 26: {
+          guest_option_u32_t option14;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option14.is_some = false;
+              break;
+            }
+            case 1: {
+              option14.is_some = true;
+              option14.val = (uint32_t) (*((int32_t*) (ptr + 20)));
+              break;
+            }
+          }
+          variant.val.http_response_header_section_size = option14;
+          break;
+        }
+        case 27: {
+          guest_option_string_t option15;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option15.is_some = false;
+              break;
+            }
+            case 1: {
+              option15.is_some = true;
+              option15.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+1*sizeof(void*))))), (*((size_t*) (ptr + (16+2*sizeof(void*))))) };
+              break;
+            }
+          }
+          guest_option_u32_t option16;
+          switch ((int32_t) *((uint8_t*) (ptr + (16+3*sizeof(void*))))) {
+            case 0: {
+              option16.is_some = false;
+              break;
+            }
+            case 1: {
+              option16.is_some = true;
+              option16.val = (uint32_t) (*((int32_t*) (ptr + (20+3*sizeof(void*)))));
+              break;
+            }
+          }
+          variant.val.http_response_header_size = (wasi_http_types_field_size_payload_t) {
+            (guest_option_string_t) option15,
+            (guest_option_u32_t) option16,
+          };
+          break;
+        }
+        case 28: {
+          guest_option_u64_t option17;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option17.is_some = false;
+              break;
+            }
+            case 1: {
+              option17.is_some = true;
+              option17.val = (uint64_t) (*((int64_t*) (ptr + 24)));
+              break;
+            }
+          }
+          variant.val.http_response_body_size = option17;
+          break;
+        }
+        case 29: {
+          guest_option_u32_t option18;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option18.is_some = false;
+              break;
+            }
+            case 1: {
+              option18.is_some = true;
+              option18.val = (uint32_t) (*((int32_t*) (ptr + 20)));
+              break;
+            }
+          }
+          variant.val.http_response_trailer_section_size = option18;
+          break;
+        }
+        case 30: {
+          guest_option_string_t option19;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option19.is_some = false;
+              break;
+            }
+            case 1: {
+              option19.is_some = true;
+              option19.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+1*sizeof(void*))))), (*((size_t*) (ptr + (16+2*sizeof(void*))))) };
+              break;
+            }
+          }
+          guest_option_u32_t option20;
+          switch ((int32_t) *((uint8_t*) (ptr + (16+3*sizeof(void*))))) {
+            case 0: {
+              option20.is_some = false;
+              break;
+            }
+            case 1: {
+              option20.is_some = true;
+              option20.val = (uint32_t) (*((int32_t*) (ptr + (20+3*sizeof(void*)))));
+              break;
+            }
+          }
+          variant.val.http_response_trailer_size = (wasi_http_types_field_size_payload_t) {
+            (guest_option_string_t) option19,
+            (guest_option_u32_t) option20,
+          };
+          break;
+        }
+        case 31: {
+          guest_option_string_t option21;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option21.is_some = false;
+              break;
+            }
+            case 1: {
+              option21.is_some = true;
+              option21.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+1*sizeof(void*))))), (*((size_t*) (ptr + (16+2*sizeof(void*))))) };
+              break;
+            }
+          }
+          variant.val.http_response_transfer_coding = option21;
+          break;
+        }
+        case 32: {
+          guest_option_string_t option22;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option22.is_some = false;
+              break;
+            }
+            case 1: {
+              option22.is_some = true;
+              option22.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+1*sizeof(void*))))), (*((size_t*) (ptr + (16+2*sizeof(void*))))) };
+              break;
+            }
+          }
+          variant.val.http_response_content_coding = option22;
+          break;
+        }
+        case 33: {
+          break;
+        }
+        case 34: {
+          break;
+        }
+        case 35: {
+          break;
+        }
+        case 36: {
+          break;
+        }
+        case 37: {
+          break;
+        }
+        case 38: {
+          guest_option_string_t option23;
+          switch ((int32_t) *((uint8_t*) (ptr + 16))) {
+            case 0: {
+              option23.is_some = false;
+              break;
+            }
+            case 1: {
+              option23.is_some = true;
+              option23.val = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (16+1*sizeof(void*))))), (*((size_t*) (ptr + (16+2*sizeof(void*))))) };
+              break;
+            }
+          }
+          variant.val.internal_error = option23;
+          break;
+        }
+      }
+
+      result.val.err = variant;
+      break;
+    }
+  }
+  if (!result.is_err) {
+    *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
 }
 
 __attribute__((__export_name__("wasi:http/incoming-handler@0.2.12#handle")))

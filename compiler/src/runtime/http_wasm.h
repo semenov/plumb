@@ -211,3 +211,267 @@ void exports_wasi_http_incoming_handler_handle(exports_wasi_http_incoming_handle
     fflush(stdout);
     wasi_http_types_incoming_request_drop_own(request);
 }
+
+// ---------------------------------------------------------------- client
+// http.send, get, post... on wasm-server go through wasi:http's
+// outgoing-handler: the host makes the connection (its pool and TLS) and
+// decides where an app may go. Redirects are followed here (up to 10).
+
+static const char *lt_wasm_http_why(const wasi_http_types_error_code_t *e) {
+    switch (e->tag) {
+    case WASI_HTTP_TYPES_ERROR_CODE_DNS_TIMEOUT: return "the name lookup took too long";
+    case WASI_HTTP_TYPES_ERROR_CODE_DNS_ERROR: return "the name doesn't resolve";
+    case WASI_HTTP_TYPES_ERROR_CODE_DESTINATION_NOT_FOUND: return "no such host";
+    case WASI_HTTP_TYPES_ERROR_CODE_DESTINATION_UNAVAILABLE: return "the host is unavailable";
+    case WASI_HTTP_TYPES_ERROR_CODE_DESTINATION_IP_PROHIBITED: return "the platform refused it: the host's address isn't public";
+    case WASI_HTTP_TYPES_ERROR_CODE_DESTINATION_IP_UNROUTABLE: return "the host's address can't be reached";
+    case WASI_HTTP_TYPES_ERROR_CODE_CONNECTION_REFUSED: return "connection refused";
+    case WASI_HTTP_TYPES_ERROR_CODE_CONNECTION_TERMINATED: return "the connection was closed";
+    case WASI_HTTP_TYPES_ERROR_CODE_CONNECTION_TIMEOUT: return "can't connect in time";
+    case WASI_HTTP_TYPES_ERROR_CODE_CONNECTION_READ_TIMEOUT:
+    case WASI_HTTP_TYPES_ERROR_CODE_HTTP_RESPONSE_TIMEOUT: return "no answer in time (see `timeout`)";
+    case WASI_HTTP_TYPES_ERROR_CODE_CONNECTION_WRITE_TIMEOUT: return "sending took too long";
+    case WASI_HTTP_TYPES_ERROR_CODE_TLS_PROTOCOL_ERROR:
+    case WASI_HTTP_TYPES_ERROR_CODE_TLS_ALERT_RECEIVED: return "the TLS handshake failed";
+    case WASI_HTTP_TYPES_ERROR_CODE_TLS_CERTIFICATE_ERROR: return "the server's certificate isn't valid";
+    case WASI_HTTP_TYPES_ERROR_CODE_HTTP_REQUEST_DENIED: return "the platform refused it: the host isn't in the app's `outbound` list";
+    case WASI_HTTP_TYPES_ERROR_CODE_HTTP_REQUEST_URI_INVALID: return "the URL isn't valid";
+    case WASI_HTTP_TYPES_ERROR_CODE_HTTP_RESPONSE_INCOMPLETE: return "the response ended early";
+    case WASI_HTTP_TYPES_ERROR_CODE_HTTP_PROTOCOL_ERROR: return "the server's answer isn't valid HTTP";
+    default: return "it failed";
+    }
+}
+
+static lt_err lt_wasm_http_fail(const char *method, int64_t mlen, const char *url, int64_t ulen, const char *why) {
+    char buf[768];
+    snprintf(buf, sizeof buf, "http: %.*s %.*s failed: %s", (int)mlen, method, (int)(ulen > 300 ? 300 : ulen), url, why);
+    return lt_make_failure(lt_text_cstr(buf));
+}
+
+static void lt_wasm_out_free(lt_http_out *o) {
+    if (o->headers) {
+        for (int64_t i = 0; i < o->headers->len; i++) lt_text_drop(o->headers->items[i]);
+        lt_free(o->headers, sizeof(lt_texts) + sizeof(lt_text *) * (size_t)o->headers->cap);
+    }
+    lt_bytes_drop(o->body);
+    memset(o, 0, sizeof *o);
+}
+
+// One request, no redirects.
+static lt_err lt_wasm_http_once(const char *method, int64_t mlen, const char *url, int64_t ulen, lt_texts *headers, const uint8_t *body, int64_t blen, int64_t timeout_ms, lt_http_out *out) {
+    wasi_http_types_scheme_t scheme;
+    int64_t skip;
+    if (ulen >= 8 && strncasecmp(url, "https://", 8) == 0) scheme.tag = WASI_HTTP_TYPES_SCHEME_HTTPS, skip = 8;
+    else if (ulen >= 7 && strncasecmp(url, "http://", 7) == 0) scheme.tag = WASI_HTTP_TYPES_SCHEME_HTTP, skip = 7;
+    else return lt_wasm_http_fail(method, mlen, url, ulen, "the URL must start with http:// or https://");
+    const char *auth = url + skip, *end = url + ulen, *p = auth;
+    while (p < end && *p != '/' && *p != '?' && *p != '#') p++;
+    if (p == auth) return lt_wasm_http_fail(method, mlen, url, ulen, "the URL has no host");
+    const char *frag = memchr(p, '#', (size_t)(end - p));
+    const char *pend = frag ? frag : end;
+    lt_buf path = { 0 };
+    if (p == pend || *p == '?') lt_buf_put(&path, "/", 1);
+    lt_buf_put(&path, p, pend - p);
+
+    wasi_http_types_own_fields_t fields = wasi_http_types_constructor_fields();
+    wasi_http_types_borrow_fields_t bf = wasi_http_types_borrow_fields(fields);
+    bool has_length = false;
+    for (int64_t i = 0; headers && i + 1 < headers->len; i += 2) {
+        lt_text *hn = headers->items[i], *hv = headers->items[i + 1];
+        if (lt_ieq(hn->data, hn->len, "content-length")) has_length = true;
+        wasi_http_types_field_name_t name = { (uint8_t *)hn->data, (size_t)hn->len };
+        wasi_http_types_field_value_t value = { (uint8_t *)hv->data, (size_t)hv->len };
+        wasi_http_types_header_error_t err;
+        wasi_http_types_method_fields_append(bf, &name, &value, &err); // a forbidden one (host...) is left out
+    }
+    char lenbuf[24];
+    bool sends_body = blen > 0 || (mlen == 4 && memcmp(method, "POST", 4) == 0) || (mlen == 3 && memcmp(method, "PUT", 3) == 0) || (mlen == 5 && memcmp(method, "PATCH", 5) == 0);
+    if (sends_body && !has_length) {
+        int n = snprintf(lenbuf, sizeof lenbuf, "%lld", (long long)blen);
+        wasi_http_types_field_name_t name = { (uint8_t *)"content-length", 14 };
+        wasi_http_types_field_value_t value = { (uint8_t *)lenbuf, (size_t)n };
+        wasi_http_types_header_error_t err;
+        wasi_http_types_method_fields_append(bf, &name, &value, &err);
+    }
+    wasi_http_types_own_outgoing_request_t req = wasi_http_types_constructor_outgoing_request(fields);
+    wasi_http_types_borrow_outgoing_request_t br = wasi_http_types_borrow_outgoing_request(req);
+    static const char *names[] = { "GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH" };
+    wasi_http_types_method_t m = { .tag = WASI_HTTP_TYPES_METHOD_OTHER };
+    m.val.other = (guest_string_t){ (uint8_t *)method, (size_t)mlen };
+    for (int i = 0; i < 9; i++)
+        if ((int64_t)strlen(names[i]) == mlen && memcmp(names[i], method, (size_t)mlen) == 0) m.tag = (uint8_t)i;
+    wasi_http_types_method_outgoing_request_set_method(br, &m);
+    wasi_http_types_method_outgoing_request_set_scheme(br, &scheme);
+    guest_string_t a = { (uint8_t *)auth, (size_t)(p - auth) };
+    wasi_http_types_method_outgoing_request_set_authority(br, &a);
+    guest_string_t pq = { (uint8_t *)path.d, (size_t)path.len };
+    wasi_http_types_method_outgoing_request_set_path_with_query(br, &pq);
+    lt_buf_free(&path);
+    wasi_http_types_own_outgoing_body_t ob;
+    wasi_http_types_method_outgoing_request_body(br, &ob);
+
+    wasi_http_types_own_request_options_t opts = wasi_http_types_constructor_request_options();
+    wasi_http_types_own_request_options_t *optp = NULL;
+    if (timeout_ms > 0) {
+        wasi_http_types_borrow_request_options_t bo = wasi_http_types_borrow_request_options(opts);
+        wasi_http_types_duration_t d = (wasi_http_types_duration_t)timeout_ms * 1000000;
+        wasi_http_types_method_request_options_set_connect_timeout(bo, &d);
+        wasi_http_types_method_request_options_set_first_byte_timeout(bo, &d);
+        wasi_http_types_method_request_options_set_between_bytes_timeout(bo, &d);
+        optp = &opts;
+    } else {
+        wasi_http_types_request_options_drop_own(opts);
+    }
+    wasi_http_types_own_future_incoming_response_t fut;
+    wasi_http_types_error_code_t err;
+    if (!wasi_http_outgoing_handler_handle(req, optp, &fut, &err)) {
+        lt_err e = lt_wasm_http_fail(method, mlen, url, ulen, lt_wasm_http_why(&err));
+        wasi_http_types_error_code_free(&err);
+        wasi_http_types_outgoing_body_drop_own(ob);
+        return e;
+    }
+    // the body, once the host is taking the request
+    wasi_http_types_own_output_stream_t stream;
+    if (wasi_http_types_method_outgoing_body_write(wasi_http_types_borrow_outgoing_body(ob), &stream)) {
+        for (int64_t off = 0; off < blen; off += 4096) {
+            size_t n = blen - off < 4096 ? (size_t)(blen - off) : 4096;
+            guest_list_u8_t chunk = { (uint8_t *)body + off, n };
+            wasi_io_streams_stream_error_t serr;
+            if (!wasi_io_streams_method_output_stream_blocking_write_and_flush(wasi_io_streams_borrow_output_stream(stream), &chunk, &serr)) break;
+        }
+        wasi_io_streams_output_stream_drop_own(stream);
+    }
+    wasi_http_types_error_code_t ferr;
+    wasi_http_types_static_outgoing_body_finish(ob, NULL, &ferr);
+
+    wasi_http_types_borrow_future_incoming_response_t bfut = wasi_http_types_borrow_future_incoming_response(fut);
+    wasi_io_poll_own_pollable_t ready = wasi_http_types_method_future_incoming_response_subscribe(bfut);
+    wasi_io_poll_method_pollable_block(wasi_io_poll_borrow_pollable(ready));
+    wasi_io_poll_pollable_drop_own(ready);
+    wasi_http_types_result_result_own_incoming_response_error_code_void_t got;
+    bool have = wasi_http_types_method_future_incoming_response_get(bfut, &got);
+    wasi_http_types_future_incoming_response_drop_own(fut);
+    if (!have || got.is_err) return lt_wasm_http_fail(method, mlen, url, ulen, "no response");
+    if (got.val.ok.is_err) {
+        lt_err e = lt_wasm_http_fail(method, mlen, url, ulen, lt_wasm_http_why(&got.val.ok.val.err));
+        wasi_http_types_error_code_free(&got.val.ok.val.err);
+        return e;
+    }
+    wasi_http_types_own_incoming_response_t resp = got.val.ok.val.ok;
+    wasi_http_types_borrow_incoming_response_t brsp = wasi_http_types_borrow_incoming_response(resp);
+    out->status = wasi_http_types_method_incoming_response_status(brsp);
+    wasi_http_types_own_headers_t hs = wasi_http_types_method_incoming_response_headers(brsp);
+    wasi_http_types_list_tuple2_field_name_field_value_t entries;
+    wasi_http_types_method_fields_entries(wasi_http_types_borrow_fields(hs), &entries);
+    out->headers = lt_texts_new((int64_t)entries.len * 2 + 1);
+    for (size_t i = 0; i < entries.len; i++) {
+        lt_text *k = lt_text_from_input((const char *)entries.ptr[i].f0.ptr, (int64_t)entries.ptr[i].f0.len);
+        for (int64_t j = 0; j < k->len; j++) k->data[j] = (char)tolower((unsigned char)k->data[j]);
+        lt_texts_push(&out->headers, k);
+        lt_texts_push(&out->headers, lt_text_from_input((const char *)entries.ptr[i].f1.ptr, (int64_t)entries.ptr[i].f1.len));
+    }
+    wasi_http_types_list_tuple2_field_name_field_value_free(&entries);
+    wasi_http_types_fields_drop_own(hs);
+    lt_buf data = { 0 };
+    bool complete = true;
+    wasi_http_types_own_incoming_body_t ib;
+    if (wasi_http_types_method_incoming_response_consume(brsp, &ib)) {
+        wasi_http_types_own_input_stream_t in;
+        if (wasi_http_types_method_incoming_body_stream(wasi_http_types_borrow_incoming_body(ib), &in)) {
+            for (;;) {
+                guest_list_u8_t chunk;
+                wasi_io_streams_stream_error_t serr;
+                if (!wasi_io_streams_method_input_stream_blocking_read(wasi_io_streams_borrow_input_stream(in), 65536, &chunk, &serr)) {
+                    if (serr.tag != WASI_IO_STREAMS_STREAM_ERROR_CLOSED) complete = false;
+                    break;
+                }
+                lt_buf_put(&data, (const char *)chunk.ptr, (int64_t)chunk.len);
+                guest_list_u8_free(&chunk);
+            }
+            wasi_io_streams_input_stream_drop_own(in);
+        }
+        wasi_http_types_future_trailers_drop_own(wasi_http_types_static_incoming_body_finish(ib));
+    }
+    wasi_http_types_incoming_response_drop_own(resp);
+    out->body = lt_bytes_from(data.d ? data.d : "", data.len);
+    lt_buf_free(&data);
+    if (!complete) {
+        lt_wasm_out_free(out);
+        return lt_wasm_http_fail(method, mlen, url, ulen, "the response ended early");
+    }
+    return (lt_err){ 0 };
+}
+
+// http.__send: with redirects when `follow` (303, and 301/302 after a
+// POST, continue as GET without a body, as browsers and curl do)
+static lt_err lt_wasm_http_send(lt_text *method, lt_text *url, lt_texts *headers, lt_bytes *body, int64_t timeout_ms, bool follow, bool insecure, lt_http_out *out) {
+    if (insecure) return lt_wasm_http_fail(method->data, method->len, url->data, url->len, "`insecure` isn't available on wasm-server");
+    // the current URL, NUL-terminated (strstr below)
+    lt_buf cur = { 0 };
+    lt_buf_put(&cur, url->data, url->len);
+    lt_buf_put(&cur, "", 1);
+    cur.len--;
+    const char *m = method->data;
+    int64_t mlen = method->len;
+    const uint8_t *b = body ? body->data : NULL;
+    int64_t blen = body ? body->len : 0;
+    for (int hop = 0;; hop++) {
+        lt_err e = lt_wasm_http_once(m, mlen, cur.d, cur.len, headers, b, blen, timeout_ms, out);
+        if (e.obj) {
+            lt_buf_free(&cur);
+            return e;
+        }
+        int64_t s = out->status;
+        if (!follow || !(s == 301 || s == 302 || s == 303 || s == 307 || s == 308)) break;
+        lt_text *loc = NULL;
+        for (int64_t i = 0; i + 1 < out->headers->len; i += 2)
+            if (lt_ieq(out->headers->items[i]->data, out->headers->items[i]->len, "location")) loc = out->headers->items[i + 1];
+        if (!loc) break;
+        if (hop == 10) {
+            lt_wasm_out_free(out);
+            lt_err e2 = lt_wasm_http_fail(method->data, method->len, url->data, url->len, "more than 10 redirects");
+            lt_buf_free(&cur);
+            return e2;
+        }
+        // the new URL: absolute, or relative to the current one
+        lt_buf next = { 0 };
+        const char *c = cur.d, *ce = cur.d + cur.len;
+        const char *after = strstr(c, "://") ? strstr(c, "://") + 3 : c;
+        const char *pathp = after;
+        while (pathp < ce && *pathp != '/' && *pathp != '?' && *pathp != '#') pathp++;
+        if ((loc->len >= 7 && strncasecmp(loc->data, "http://", 7) == 0) || (loc->len >= 8 && strncasecmp(loc->data, "https://", 8) == 0)) {
+            lt_buf_put(&next, loc->data, loc->len);
+        } else if (loc->len >= 2 && loc->data[0] == '/' && loc->data[1] == '/') {
+            lt_buf_put(&next, c, after - 2 - c);
+            lt_buf_put(&next, loc->data, loc->len);
+        } else if (loc->len >= 1 && loc->data[0] == '/') {
+            lt_buf_put(&next, c, pathp - c);
+            lt_buf_put(&next, loc->data, loc->len);
+        } else {
+            const char *q = pathp;
+            while (q < ce && *q != '?' && *q != '#') q++;
+            const char *slash = q;
+            while (slash > pathp && slash[-1] != '/') slash--;
+            if (slash == pathp) {
+                lt_buf_put(&next, c, pathp - c);
+                lt_buf_put(&next, "/", 1);
+            } else {
+                lt_buf_put(&next, c, slash - c);
+            }
+            lt_buf_put(&next, loc->data, loc->len);
+        }
+        lt_buf_free(&cur);
+        cur = next;
+        lt_buf_put(&cur, "", 1);
+        cur.len--;
+        if (s == 303 || ((s == 301 || s == 302) && !(mlen == 3 && memcmp(m, "GET", 3) == 0) && !(mlen == 4 && memcmp(m, "HEAD", 4) == 0))) {
+            m = "GET";
+            mlen = 3;
+            b = NULL;
+            blen = 0;
+        }
+        lt_wasm_out_free(out);
+    }
+    lt_buf_free(&cur);
+    return (lt_err){ 0 };
+}

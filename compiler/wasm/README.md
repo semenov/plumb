@@ -16,6 +16,10 @@ How it fits together:
   `guest_component_type.o`; clang's linker turns it into a component.
 - The host calls `handle` once per instance; it runs `main`, whose
   `http.serve` answers the request.
+- `http.send` and the client functions over it go through
+  `wasi:http/outgoing-handler` (`lt_wasm_http_send` in `http_wasm.h`): the
+  host connects, keeps connections and applies its outbound rules;
+  redirects are followed in the guest.
 
 ## The bindings
 

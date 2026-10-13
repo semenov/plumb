@@ -1,0 +1,1 @@
+error: this program uses what a wasm-server app doesn't have: http.download (no files), http.open (streaming responses)

@@ -51,13 +51,15 @@ for f in *.sh; do
     echo "FAIL wire/$f: output differs"; echo "$out"; fail=1
   fi
 done
-# wasm-server: tasks and the HTTP client are refused by name; with wasi-sdk
+# wasm-server: tasks, http.open and http.download are refused by name; with wasi-sdk
 # (WASI_SDK, /opt/wasi-sdk or ~/wasi-sdk) an app builds into a component
 cd ../wasm || exit 1
-out=$($PLUMB_BIN build --target wasm-server tasks.plumb -o $T/tasks.wasm 2>&1)
-if [ "$out" != "$(cat tasks.err)" ]; then
-  echo "FAIL wasm/tasks.plumb: the message differs"; echo "$out"; fail=1
-fi
+for f in tasks open; do
+  out=$($PLUMB_BIN build --target wasm-server $f.plumb -o $T/$f.wasm 2>&1)
+  if [ "$out" != "$(cat $f.err)" ]; then
+    echo "FAIL wasm/$f.plumb: the message differs"; echo "$out"; fail=1
+  fi
+done
 for sdk in "$WASI_SDK" /opt/wasi-sdk "$HOME/wasi-sdk"; do
   [ -n "$sdk" ] && [ -x "$sdk/bin/clang" ] || continue
   if ! WASI_SDK=$sdk $PLUMB_BIN build --target wasm-server app.plumb -o $T/app.wasm >$T/wasm-err 2>&1; then

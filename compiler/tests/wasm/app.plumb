@@ -52,6 +52,10 @@ fn main() throws {
       }
       http.text(200, "?")
     })
+    router.get("/edge/fetch", req => {
+      let res = try http.get(req.query("url") ?? "https://example.com/")
+      http.text(res.status, res.text())
+    })
     try http.serve(router, port: 8080)
   }
 }

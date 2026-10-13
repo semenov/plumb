@@ -1,1 +1,1 @@
-error: this program uses what a wasm-server app doesn't have: tasks (spawn, Shared, Channel, parallel_map), the HTTP client (http.get, http.send)
+error: this program uses what a wasm-server app doesn't have: tasks (spawn, Shared, Channel, parallel_map)

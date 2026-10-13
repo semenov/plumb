@@ -709,6 +709,27 @@ typedef struct {
   wasi_http_types_error_code_t val;
 } wasi_http_types_option_error_code_t;
 
+typedef wasi_http_types_error_code_t wasi_http_outgoing_handler_error_code_t;
+
+typedef wasi_http_types_own_outgoing_request_t wasi_http_outgoing_handler_own_outgoing_request_t;
+
+typedef wasi_http_types_own_request_options_t wasi_http_outgoing_handler_own_request_options_t;
+
+typedef struct {
+  bool is_some;
+  wasi_http_outgoing_handler_own_request_options_t val;
+} wasi_http_outgoing_handler_option_own_request_options_t;
+
+typedef wasi_http_types_own_future_incoming_response_t wasi_http_outgoing_handler_own_future_incoming_response_t;
+
+typedef struct {
+  bool is_err;
+  union {
+    wasi_http_outgoing_handler_own_future_incoming_response_t ok;
+    wasi_http_outgoing_handler_error_code_t err;
+  } val;
+} wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_t;
+
 typedef wasi_http_types_own_incoming_request_t exports_wasi_http_incoming_handler_own_incoming_request_t;
 
 typedef wasi_http_types_own_response_outparam_t exports_wasi_http_incoming_handler_own_response_outparam_t;
@@ -1251,6 +1272,19 @@ extern bool wasi_http_types_method_future_incoming_response_get(wasi_http_types_
 // http-related errors.
 extern bool wasi_http_types_http_error_code(wasi_http_types_borrow_io_error_t err_, wasi_http_types_error_code_t *ret);
 
+// Imported Functions from `wasi:http/outgoing-handler@0.2.12`
+// This function is invoked with an outgoing HTTP Request, and it returns
+// a resource `future-incoming-response` which represents an HTTP Response
+// which may arrive in the future.
+// 
+// The `options` argument accepts optional parameters for the HTTP
+// protocol's transport layer.
+// 
+// This function may return an error if the `outgoing-request` is invalid
+// or not allowed to be made. Otherwise, protocol errors are reported
+// through the `future-incoming-response`.
+extern bool wasi_http_outgoing_handler_handle(wasi_http_outgoing_handler_own_outgoing_request_t request, wasi_http_outgoing_handler_own_request_options_t *maybe_options, wasi_http_outgoing_handler_own_future_incoming_response_t *ret, wasi_http_outgoing_handler_error_code_t *err);
+
 // Exported Functions from `wasi:http/incoming-handler@0.2.12`
 void exports_wasi_http_incoming_handler_handle(exports_wasi_http_incoming_handler_own_incoming_request_t request, exports_wasi_http_incoming_handler_own_response_outparam_t response_out);
 
@@ -1481,6 +1515,12 @@ void wasi_http_types_result_result_own_incoming_response_error_code_void_free(wa
 void wasi_http_types_option_result_result_own_incoming_response_error_code_void_free(wasi_http_types_option_result_result_own_incoming_response_error_code_void_t *ptr);
 
 void wasi_http_types_option_error_code_free(wasi_http_types_option_error_code_t *ptr);
+
+void wasi_http_outgoing_handler_error_code_free(wasi_http_outgoing_handler_error_code_t *ptr);
+
+void wasi_http_outgoing_handler_option_own_request_options_free(wasi_http_outgoing_handler_option_own_request_options_t *ptr);
+
+void wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_free(wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_t *ptr);
 
 // Sets the string `ret` to reference the input string `s` without copying it
 void guest_string_set(guest_string_t *ret, const char*s);
