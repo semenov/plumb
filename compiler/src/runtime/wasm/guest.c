@@ -49,6 +49,29 @@ extern void __wasm_import_platform_sdk_cache_delete(uint8_t *, size_t);
 __attribute__((__import_module__("platform:sdk/cache@0.1.0"), __import_name__("incr")))
 extern int64_t __wasm_import_platform_sdk_cache_incr(uint8_t *, size_t, int64_t, int64_t);
 
+// Imported Functions from `platform:sdk/storage@0.1.0`
+
+__attribute__((__import_module__("platform:sdk/storage@0.1.0"), __import_name__("put")))
+extern void __wasm_import_platform_sdk_storage_put(uint8_t *, size_t, uint8_t *, size_t, uint8_t *, size_t, int32_t, uint8_t *);
+
+__attribute__((__import_module__("platform:sdk/storage@0.1.0"), __import_name__("get")))
+extern void __wasm_import_platform_sdk_storage_get(uint8_t *, size_t, uint8_t *);
+
+__attribute__((__import_module__("platform:sdk/storage@0.1.0"), __import_name__("info")))
+extern void __wasm_import_platform_sdk_storage_info(uint8_t *, size_t, uint8_t *);
+
+__attribute__((__import_module__("platform:sdk/storage@0.1.0"), __import_name__("delete")))
+extern void __wasm_import_platform_sdk_storage_delete(uint8_t *, size_t, uint8_t *);
+
+__attribute__((__import_module__("platform:sdk/storage@0.1.0"), __import_name__("list")))
+extern void __wasm_import_platform_sdk_storage_list(uint8_t *, size_t, uint8_t *, size_t, int32_t, uint8_t *);
+
+__attribute__((__import_module__("platform:sdk/storage@0.1.0"), __import_name__("url")))
+extern void __wasm_import_platform_sdk_storage_url(uint8_t *, size_t, int64_t, uint8_t *);
+
+__attribute__((__import_module__("platform:sdk/storage@0.1.0"), __import_name__("upload-url")))
+extern void __wasm_import_platform_sdk_storage_upload_url(uint8_t *, size_t, int64_t, uint8_t *, size_t, int32_t, int64_t, uint8_t *);
+
 // Imported Functions from `wasi:io/poll@0.2.12`
 
 __attribute__((__import_module__("wasi:io/poll@0.2.12"), __import_name__("[method]pollable.ready")))
@@ -506,6 +529,74 @@ void platform_sdk_cache_result_bool_error_free(platform_sdk_cache_result_bool_er
   if (!ptr->is_err) {
   } else {
     platform_sdk_cache_error_free(&ptr->val.err);
+  }
+}
+
+void platform_sdk_storage_object_free(platform_sdk_storage_object_t *ptr) {
+  guest_string_free(&ptr->key);
+  guest_string_free(&ptr->content_type);
+}
+
+void platform_sdk_storage_result_void_string_free(platform_sdk_storage_result_void_string_t *ptr) {
+  if (!ptr->is_err) {
+  } else {
+    guest_string_free(&ptr->val.err);
+  }
+}
+
+void platform_sdk_storage_result_option_list_u8_string_free(platform_sdk_storage_result_option_list_u8_string_t *ptr) {
+  if (!ptr->is_err) {
+    guest_option_list_u8_free(&ptr->val.ok);
+  } else {
+    guest_string_free(&ptr->val.err);
+  }
+}
+
+void platform_sdk_storage_option_object_free(platform_sdk_storage_option_object_t *ptr) {
+  if (ptr->is_some) {
+    platform_sdk_storage_object_free(&ptr->val);
+  }
+}
+
+void platform_sdk_storage_result_option_object_string_free(platform_sdk_storage_result_option_object_string_t *ptr) {
+  if (!ptr->is_err) {
+    platform_sdk_storage_option_object_free(&ptr->val.ok);
+  } else {
+    guest_string_free(&ptr->val.err);
+  }
+}
+
+void platform_sdk_storage_result_bool_string_free(platform_sdk_storage_result_bool_string_t *ptr) {
+  if (!ptr->is_err) {
+  } else {
+    guest_string_free(&ptr->val.err);
+  }
+}
+
+void platform_sdk_storage_list_object_free(platform_sdk_storage_list_object_t *ptr) {
+  size_t list_len = ptr->len;
+  if (list_len > 0) {
+    platform_sdk_storage_object_t *list_ptr = ptr->ptr;
+    for (size_t i = 0; i < list_len; i++) {
+      platform_sdk_storage_object_free(&list_ptr[i]);
+    }
+    free(list_ptr);
+  }
+}
+
+void platform_sdk_storage_result_list_object_string_free(platform_sdk_storage_result_list_object_string_t *ptr) {
+  if (!ptr->is_err) {
+    platform_sdk_storage_list_object_free(&ptr->val.ok);
+  } else {
+    guest_string_free(&ptr->val.err);
+  }
+}
+
+void platform_sdk_storage_result_string_string_free(platform_sdk_storage_result_string_string_t *ptr) {
+  if (!ptr->is_err) {
+    guest_string_free(&ptr->val.ok);
+  } else {
+    guest_string_free(&ptr->val.err);
   }
 }
 
@@ -1670,6 +1761,225 @@ void platform_sdk_cache_delete(guest_string_t *key) {
 int64_t platform_sdk_cache_incr(guest_string_t *key, int64_t delta, uint64_t ttl_ms) {
   int64_t ret = __wasm_import_platform_sdk_cache_incr((uint8_t *) (*key).ptr, (*key).len, delta, (int64_t) (ttl_ms));
   return ret;
+}
+
+bool platform_sdk_storage_put(guest_string_t *key, guest_list_u8_t *data, guest_string_t *content_type, bool public_, guest_string_t *err) {
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(3*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_platform_sdk_storage_put((uint8_t *) (*key).ptr, (*key).len, (uint8_t *) (*data).ptr, (*data).len, (uint8_t *) (*content_type).ptr, (*content_type).len, public_, ptr);
+  platform_sdk_storage_result_void_string_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      result.val.err = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+  }
+  if (!result.is_err) {
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
+}
+
+bool platform_sdk_storage_get(guest_string_t *key, guest_option_list_u8_t *ret, guest_string_t *err) {
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(4*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_platform_sdk_storage_get((uint8_t *) (*key).ptr, (*key).len, ptr);
+  platform_sdk_storage_result_option_list_u8_string_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      guest_option_list_u8_t option;
+      switch ((int32_t) *((uint8_t*) (ptr + sizeof(void*)))) {
+        case 0: {
+          option.is_some = false;
+          break;
+        }
+        case 1: {
+          option.is_some = true;
+          option.val = (guest_list_u8_t) { (uint8_t*)(*((uint8_t **) (ptr + (2*sizeof(void*))))), (*((size_t*) (ptr + (3*sizeof(void*))))) };
+          break;
+        }
+      }
+
+      result.val.ok = option;
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      result.val.err = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+  }
+  if (!result.is_err) {
+    *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
+}
+
+bool platform_sdk_storage_info(guest_string_t *key, platform_sdk_storage_option_object_t *ret, guest_string_t *err) {
+  __attribute__((__aligned__(8)))
+  uint8_t ret_area[(40+4*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_platform_sdk_storage_info((uint8_t *) (*key).ptr, (*key).len, ptr);
+  platform_sdk_storage_result_option_object_string_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      platform_sdk_storage_option_object_t option;
+      switch ((int32_t) *((uint8_t*) (ptr + 8))) {
+        case 0: {
+          option.is_some = false;
+          break;
+        }
+        case 1: {
+          option.is_some = true;
+          option.val = (platform_sdk_storage_object_t) {
+            (guest_string_t) (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + 16))), (*((size_t*) (ptr + (16+1*sizeof(void*))))) },
+            (uint64_t) (uint64_t) (*((int64_t*) (ptr + (16+2*sizeof(void*))))),
+            (guest_string_t) (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + (24+2*sizeof(void*))))), (*((size_t*) (ptr + (24+3*sizeof(void*))))) },
+            (bool) (int32_t) *((uint8_t*) (ptr + (24+4*sizeof(void*)))),
+            (uint64_t) (uint64_t) (*((int64_t*) (ptr + (32+4*sizeof(void*))))),
+          };
+          break;
+        }
+      }
+
+      result.val.ok = option;
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      result.val.err = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + 8))), (*((size_t*) (ptr + (8+1*sizeof(void*))))) };
+      break;
+    }
+  }
+  if (!result.is_err) {
+    *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
+}
+
+bool platform_sdk_storage_delete(guest_string_t *key, bool *ret, guest_string_t *err) {
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(3*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_platform_sdk_storage_delete((uint8_t *) (*key).ptr, (*key).len, ptr);
+  platform_sdk_storage_result_bool_string_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      result.val.ok = (int32_t) *((uint8_t*) (ptr + sizeof(void*)));
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      result.val.err = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+  }
+  if (!result.is_err) {
+    *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
+}
+
+bool platform_sdk_storage_list(guest_string_t *prefix, guest_string_t *after, uint32_t limit, platform_sdk_storage_list_object_t *ret, guest_string_t *err) {
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(3*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_platform_sdk_storage_list((uint8_t *) (*prefix).ptr, (*prefix).len, (uint8_t *) (*after).ptr, (*after).len, (int32_t) (limit), ptr);
+  platform_sdk_storage_result_list_object_string_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      result.val.ok = (platform_sdk_storage_list_object_t) { (platform_sdk_storage_object_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      result.val.err = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+  }
+  if (!result.is_err) {
+    *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
+}
+
+bool platform_sdk_storage_url(guest_string_t *key, uint64_t ttl_ms, guest_string_t *ret, guest_string_t *err) {
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(3*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_platform_sdk_storage_url((uint8_t *) (*key).ptr, (*key).len, (int64_t) (ttl_ms), ptr);
+  platform_sdk_storage_result_string_string_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      result.val.ok = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      result.val.err = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+  }
+  if (!result.is_err) {
+    *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
+}
+
+bool platform_sdk_storage_upload_url(guest_string_t *key, uint64_t max_bytes, guest_string_t *content_type, bool public_, uint64_t ttl_ms, guest_string_t *ret, guest_string_t *err) {
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(3*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_platform_sdk_storage_upload_url((uint8_t *) (*key).ptr, (*key).len, (int64_t) (max_bytes), (uint8_t *) (*content_type).ptr, (*content_type).len, public_, (int64_t) (ttl_ms), ptr);
+  platform_sdk_storage_result_string_string_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      result.val.ok = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      result.val.err = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      break;
+    }
+  }
+  if (!result.is_err) {
+    *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
 }
 
 bool wasi_io_poll_method_pollable_ready(wasi_io_poll_borrow_pollable_t self) {

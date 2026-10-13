@@ -1,6 +1,8 @@
 import db
 import http
 import json
+import storage
+import time
 
 type Note {
   id: Int
@@ -44,6 +46,13 @@ fn main() throws {
     router.get("/edge/panic", req => {
       let xs = [1, 2, 3]
       http.text(200, "${xs[(req.query("i") ?? "7").length + 5]}")
+    })
+    router.post("/edge/files/*key", req => {
+      let key = req.param("key") ?? ""
+      try storage.put(key, data: req.body, content_type: req.header("content-type") ?? "")
+      let back = try storage.get(key) ?? "".bytes()
+      let listed = try storage.list("").length
+      http.json(201, {"url": try storage.url(key, expires: time.minutes(5)), "size": "${back.length}", "listed": "${listed}", "upload": try storage.upload_url(key, options: storage.Upload(max_bytes: 100)), "deleted": "${try storage.delete(key)}"})
     })
     router.get("/edge/echo", req => http.json(200, {"q": req.query("q") ?? "", "agent": req.header("user-agent") ?? "", "method": req.method, "path": req.path}))
     router.get("/edge/denied", req => {

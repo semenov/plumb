@@ -115,6 +115,8 @@ pub struct CGen<'a> {
     wasm: bool,
     // what the program uses that wasm-server doesn't have, besides the flags
     wasm_missing: Vec<&'static str>,
+    /// storage_wasm.h is needed (the program uses `storage` on wasm)
+    storage_wasm: bool,
 }
 
 fn c_str(s: &str) -> String {
@@ -198,6 +200,7 @@ impl<'a> CGen<'a> {
             pkey: false,
             wasm: false,
             wasm_missing: vec![],
+            storage_wasm: false,
         }
     }
 
@@ -3562,6 +3565,18 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
                 self.gen_http_glue();
                 format!("lt_http_serve_on({}, {}, {}, {}, {}, {}, {})", a[0], a[1], a[2], a[3], a[4], a[5], a[6])
             }
+            // the project's files: through the host on wasm (storage_wasm.h);
+            // elsewhere std/storage.plumb keeps them in a directory and never
+            // reaches these
+            "storage.__on_host" => (if self.wasm { "true" } else { "false" }).to_string(),
+            n if n.starts_with("storage.__host_") => {
+                if !self.wasm {
+                    return "lt_make_failure(lt_text_cstr(\"storage: only on wasm-server\"))".to_string();
+                }
+                self.storage_wasm = true;
+                let f = &n["storage.__host_".len()..];
+                format!("lt_storage_{}({})", f, a.join(", "))
+            }
             "http.__send" if self.wasm => {
                 // through the host: wasi:http's outgoing-handler (http_wasm.h)
                 self.gen_http_glue();
@@ -4179,6 +4194,9 @@ static void lt_panic_error(lt_err e, int line) { lt_text *m = lt_error_message(e
         }
         if self.net {
             out += include_str!("runtime/net.h");
+        }
+        if self.storage_wasm {
+            out += include_str!("runtime/storage_wasm.h");
         }
         if self.sqlite && self.wasm {
             out += include_str!("runtime/db_wasm.h");

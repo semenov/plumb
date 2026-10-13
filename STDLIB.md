@@ -5,7 +5,7 @@ declarations with their comments, bodies left out. `import <module>`,
 then use `module.name`. Functions without a body are built into the
 compiler and runtime.
 
-Modules: [`files`](#files), [`path`](#path), [`io`](#io), [`process`](#process), [`env`](#env), [`cli`](#cli), [`term`](#term), [`log`](#log), [`time`](#time), [`json`](#json), [`http`](#http), [`net`](#net), [`sql`](#sql), [`db`](#db), [`crypto`](#crypto), [`encoding`](#encoding), [`random`](#random), [`regex`](#regex), [`csv`](#csv), [`xml`](#xml), [`template`](#template), [`url`](#url), [`zlib`](#zlib), [`archive`](#archive), [`math`](#math), and the [prelude](#prelude)
+Modules: [`files`](#files), [`path`](#path), [`io`](#io), [`process`](#process), [`env`](#env), [`cli`](#cli), [`term`](#term), [`log`](#log), [`time`](#time), [`json`](#json), [`http`](#http), [`net`](#net), [`sql`](#sql), [`db`](#db), [`crypto`](#crypto), [`encoding`](#encoding), [`random`](#random), [`regex`](#regex), [`csv`](#csv), [`xml`](#xml), [`template`](#template), [`url`](#url), [`zlib`](#zlib), [`archive`](#archive), [`math`](#math), [`storage`](#storage), and the [prelude](#prelude)
 (available everywhere without `import`).
 
 ## files
@@ -1705,6 +1705,83 @@ pub fn exp(x: Float) -> Float
 pub fn hypot(x: Float, y: Float) -> Float
 pub fn is_nan(x: Float) -> Bool
 pub fn infinity() -> Float
+```
+
+## storage
+
+storage: files the app keeps (users' uploads: avatars, photos,
+attachments), by key.
+
+```
+try storage.put_public("avatars/${user.id}.png", data: photo, content_type: "image/png")
+let src = try storage.url("avatars/${user.id}.png", expires: time.hours(1))
+```
+
+```
+// a big file goes from the client straight to storage, not through the app:
+let target = try storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
+// ...the client PUTs the file to `target`; then the app checks it arrived:
+if try storage.info("videos/${id}.mp4") is some(video) { ... }
+```
+
+A key is a path like `avatars/42.png`: parts of letters, digits, `.`,
+`_` and `-`, joined by `/`. A public file is served to anyone at its URL;
+any other only through a URL from `url`, which expires. URLs are paths
+on the app's own domain (`/_files/...`): a website uses them as they are,
+a mobile app puts its server's address in front.
+
+On wasm-server the host keeps the files, for the project's apps
+together, and serves them itself. Elsewhere (`plumb run`, `plumb test`)
+they're kept in the directory $PLUMB_STORAGE_DIR (or `storage`), and
+their URLs aren't served.
+
+```
+// A stored file.
+pub type Object {
+  key: String
+  size: Int
+  content_type: String
+  public: Bool
+  modified: time.DateTime
+}
+
+// What a client may send to an upload URL.
+pub type Upload {
+  // the largest file it takes
+  max_bytes: Int
+  // stored with this type; empty: the type the client sends
+  content_type: String = ""
+  // readable by anyone at its URL
+  public: Bool = false
+  // how long the URL works
+  expires: time.Duration = time.Duration(nanos: 900_000_000_000)
+}
+
+// Stores (or replaces) a file, readable only through `url`.
+pub fn put(key: String, data: Bytes, content_type: String) throws
+
+// Stores (or replaces) a file anyone may read at its URL.
+pub fn put_public(key: String, data: Bytes, content_type: String) throws
+
+// A file's content, none if there is no such file.
+pub fn get(key: String) throws -> Bytes?
+
+// A file's details, none if there is no such file.
+pub fn info(key: String) throws -> Object?
+
+// Removes a file; whether it was there.
+pub fn delete(key: String) throws -> Bool
+
+// The files whose keys start with `prefix` ("" for all), in key order.
+pub fn list(prefix: String) throws -> List<Object>
+
+// Where a browser or app reads the file: a public file's lasting URL, or
+// for another one a URL that works for `expires`.
+pub fn url(key: String, expires: time.Duration) throws -> String
+
+// Where a client sends the file itself, with PUT (the request's body is
+// the file), so it doesn't pass through the app.
+pub fn upload_url(key: String, options: Upload) throws -> String
 ```
 
 ## prelude

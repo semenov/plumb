@@ -63,7 +63,7 @@ Options:
 
 // The standard library's modules, for `plumb doc`.
 const STD_NAMES: &[&str] = &[
-    "files", "path", "io", "process", "env", "cli", "term", "log", "time", "json", "http", "net", "sql", "db", "crypto", "encoding", "random", "regex", "csv", "xml", "template", "url", "zlib", "archive", "math",
+    "files", "path", "io", "process", "env", "cli", "term", "log", "time", "json", "http", "net", "sql", "db", "crypto", "encoding", "random", "regex", "csv", "xml", "template", "url", "zlib", "archive", "math", "storage",
 ];
 
 // `plumb help`, `plumb guide`, `plumb doc`
@@ -454,6 +454,7 @@ fn std_module(name: &str) -> Option<&'static str> {
         "env" => include_str!("std/env.plumb"),
         "log" => include_str!("std/log.plumb"),
         "random" => include_str!("std/random.plumb"),
+        "storage" => include_str!("std/storage.plumb"),
         "json" => include_str!("std/json.plumb"),
         "cli" => include_str!("std/cli.plumb"),
         "http" => include_str!("std/http.plumb"),
@@ -1235,7 +1236,13 @@ fn main() -> ExitCode {
             // status and standard input are its own; it deletes its temporary
             // file when it starts (PLUMB_RUN_EXE)
             use std::os::unix::process::CommandExt;
-            let err = Command::new(&exe).arg0(&stem).args(&opts.args).env("PLUMB_RUN_EXE", &exe).exec();
+            let mut cmd = Command::new(&exe);
+            cmd.arg0(&stem).args(&opts.args).env("PLUMB_RUN_EXE", &exe);
+            // tests start with no stored files (`storage`), each run its own
+            if tests && std::env::var_os("PLUMB_STORAGE_DIR").is_none() {
+                cmd.env("PLUMB_STORAGE_DIR", build_dir().join(format!("storage-{}", std::process::id())));
+            }
+            let err = cmd.exec();
             let _ = std::fs::remove_file(&exe);
             eprintln!("error: can't run the program: {}", err);
             ExitCode::from(1)

@@ -1,0 +1,222 @@
+// storage: files the app keeps (users' uploads: avatars, photos,
+// attachments), by key.
+//
+//   try storage.put_public("avatars/${user.id}.png", data: photo, content_type: "image/png")
+//   let src = try storage.url("avatars/${user.id}.png", expires: time.hours(1))
+//
+//   // a big file goes from the client straight to storage, not through the app:
+//   let target = try storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
+//   // ...the client PUTs the file to `target`; then the app checks it arrived:
+//   if try storage.info("videos/${id}.mp4") is some(video) { ... }
+//
+// A key is a path like `avatars/42.png`: parts of letters, digits, `.`,
+// `_` and `-`, joined by `/`. A public file is served to anyone at its URL;
+// any other only through a URL from `url`, which expires. URLs are paths
+// on the app's own domain (`/_files/...`): a website uses them as they are,
+// a mobile app puts its server's address in front.
+//
+// On wasm-server the host keeps the files, for the project's apps
+// together, and serves them itself. Elsewhere (`plumb run`, `plumb test`)
+// they're kept in the directory $PLUMB_STORAGE_DIR (or `storage`), and
+// their URLs aren't served.
+
+import env
+import files
+import json
+import path
+import time
+
+// A stored file.
+pub type Object {
+  key: String
+  size: Int
+  content_type: String
+  public: Bool
+  modified: time.DateTime
+}
+
+// What a client may send to an upload URL.
+pub type Upload {
+  // the largest file it takes
+  max_bytes: Int
+  // stored with this type; empty: the type the client sends
+  content_type: String = ""
+  // readable by anyone at its URL
+  public: Bool = false
+  // how long the URL works
+  expires: time.Duration = time.Duration(nanos: 900_000_000_000)
+}
+
+// Stores (or replaces) a file, readable only through `url`.
+pub fn put(key: String, data: Bytes, content_type: String) throws {
+  try store(key, data: data, content_type: content_type, public: false)
+}
+
+// Stores (or replaces) a file anyone may read at its URL.
+pub fn put_public(key: String, data: Bytes, content_type: String) throws {
+  try store(key, data: data, content_type: content_type, public: true)
+}
+
+// A file's content, none if there is no such file.
+pub fn get(key: String) throws -> Bytes? {
+  if try info(key) is none {
+    return none
+  }
+  if __on_host() {
+    return try __host_get(key)
+  }
+  return try files.read_bytes(data_path(key))
+}
+
+// A file's details, none if there is no such file.
+pub fn info(key: String) throws -> Object? {
+  if __on_host() {
+    let text = try __host_info(key)
+    if text.is_empty() {
+      return none
+    }
+    return object(try json.decode<HostObject>(text))
+  }
+  try check(key)
+  let meta = meta_path(key)
+  if not files.exists(meta) {
+    return none
+  }
+  return object(try json.decode<HostObject>(try files.read(meta)))
+}
+
+// Removes a file; whether it was there.
+pub fn delete(key: String) throws -> Bool {
+  if __on_host() {
+    return try __host_delete(key)
+  }
+  if try info(key) is none {
+    return false
+  }
+  try files.delete(data_path(key))
+  try files.delete(meta_path(key))
+  return true
+}
+
+// The files whose keys start with `prefix` ("" for all), in key order.
+pub fn list(prefix: String) throws -> List<Object> {
+  var out: List<Object> = []
+  if __on_host() {
+    var after = ""
+    while true {
+      let page = try json.decode<List<HostObject>>(try __host_list(prefix, after: after, limit: 1000))
+      for o in page {
+        out.append(object(o))
+      }
+      if page.length < 1000 {
+        break
+      }
+      after = page[page.length - 1].key
+    }
+    return out
+  }
+  let dir = path.join(root(), name: "meta")
+  if not files.is_dir(dir) {
+    return out
+  }
+  for p in try files.walk(dir) {
+    let key = p.slice(dir.length + 1, p.length)
+    if key.ends_with(".json") and key.starts_with(prefix) {
+      out.append(object(try json.decode<HostObject>(try files.read(p))))
+    }
+  }
+  return out.sorted_by(o => o.key)
+}
+
+// Where a browser or app reads the file: a public file's lasting URL, or
+// for another one a URL that works for `expires`.
+pub fn url(key: String, expires: time.Duration) throws -> String {
+  if __on_host() {
+    return try __host_url(key, ttl_ms: expires.millis())
+  }
+  try check(key)
+  return "/_files/local/${key}"
+}
+
+// Where a client sends the file itself, with PUT (the request's body is
+// the file), so it doesn't pass through the app.
+pub fn upload_url(key: String, options: Upload) throws -> String {
+  if __on_host() {
+    return try __host_upload_url(key, max_bytes: options.max_bytes, content_type: options.content_type, public: options.public, ttl_ms: options.expires.millis())
+  }
+  try check(key)
+  return "/_files/local/${key}?upload"
+}
+
+// ---- in a directory, off wasm-server
+
+type HostObject {
+  key: String
+  size: Int
+  content_type: String
+  public: Bool
+  modified_ms: Int
+}
+
+fn object(o: HostObject) -> Object {
+  return Object(key: o.key, size: o.size, content_type: o.content_type, public: o.public, modified: time.from_unix_millis(o.modified_ms))
+}
+
+fn store(key: String, data: Bytes, content_type: String, public: Bool) throws {
+  if __on_host() {
+    try __host_put(key, data: data, content_type: content_type, public: public)
+    return
+  }
+  try check(key)
+  let file = data_path(key)
+  try files.make_dir(path.parent(file))
+  try files.write_bytes(file, data: data)
+  let meta = meta_path(key)
+  try files.make_dir(path.parent(meta))
+  let ct = if content_type.is_empty() { "application/octet-stream" } else { content_type }
+  let o = HostObject(key: key, size: data.length, content_type: ct, public: public, modified_ms: time.unix_millis())
+  try files.write(meta, text: json.encode(o))
+}
+
+fn root() -> String {
+  return env.get("PLUMB_STORAGE_DIR") ?? "storage"
+}
+
+fn data_path(key: String) -> String {
+  return path.join(path.join(root(), name: "data"), name: key)
+}
+
+fn meta_path(key: String) -> String {
+  return path.join(path.join(root(), name: "meta"), name: "${key}.json")
+}
+
+let key_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+
+fn check(key: String) throws {
+  let parts = key.split("/")
+  var ok = not key.is_empty() and key.length <= 512
+  for part in parts {
+    if part.is_empty() or part == "." or part == ".." {
+      ok = false
+    }
+    for c in part.chars() {
+      if not key_chars.contains(c) {
+        ok = false
+      }
+    }
+  }
+  if not ok {
+    throw Failure(message: "storage: ${key} isn't a valid file key: parts of letters, digits, `.`, `_` and `-`, joined by `/`")
+  }
+}
+
+// ---- through the host (storage_wasm.h)
+
+fn __on_host() -> Bool
+fn __host_put(key: String, data: Bytes, content_type: String, public: Bool) throws
+fn __host_get(key: String) throws -> Bytes
+fn __host_info(key: String) throws -> String
+fn __host_delete(key: String) throws -> Bool
+fn __host_list(prefix: String, after: String, limit: Int) throws -> String
+fn __host_url(key: String, ttl_ms: Int) throws -> String
+fn __host_upload_url(key: String, max_bytes: Int, content_type: String, public: Bool, ttl_ms: Int) throws -> String

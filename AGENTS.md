@@ -607,6 +607,19 @@ fn main() throws {
 }
 ```
 
+- Files from users (avatars, photos, attachments) go in `storage`, by key,
+  never into the database or the static files:
+
+  ```
+  try storage.put_public("avatars/${id}.png", data: part.data, content_type: part.content_type)
+  let link = try storage.url("docs/${id}.pdf", expires: time.hours(1))  // private files: a link that expires
+  let target = try storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
+  // the client PUTs a big file to `target` itself; then `storage.info(key)` shows it arrived
+  ```
+
+  URLs are paths on the app's domain (`/_files/...`), served by the host.
+  `plumb run` and `plumb test` keep the files in a directory (a fresh one
+  for every test run).
 - `db.open(name)` takes a name from `databases` in `[app]` (or one the
   host grants the app), not a file. SQL, `query<T>`,
   `insert` and `transaction` work as usual.

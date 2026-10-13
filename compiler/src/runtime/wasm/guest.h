@@ -180,6 +180,72 @@ typedef struct {
   } val;
 } platform_sdk_cache_result_bool_error_t;
 
+typedef struct platform_sdk_storage_object_t {
+  guest_string_t   key;
+  uint64_t   size;
+  guest_string_t   content_type;
+  bool   public_;
+  // When it was written, in milliseconds since 1970.
+  uint64_t   modified_ms;
+} platform_sdk_storage_object_t;
+
+typedef struct {
+  bool is_err;
+  union {
+    guest_string_t err;
+  } val;
+} platform_sdk_storage_result_void_string_t;
+
+typedef struct {
+  bool is_err;
+  union {
+    guest_option_list_u8_t ok;
+    guest_string_t err;
+  } val;
+} platform_sdk_storage_result_option_list_u8_string_t;
+
+typedef struct {
+  bool is_some;
+  platform_sdk_storage_object_t val;
+} platform_sdk_storage_option_object_t;
+
+typedef struct {
+  bool is_err;
+  union {
+    platform_sdk_storage_option_object_t ok;
+    guest_string_t err;
+  } val;
+} platform_sdk_storage_result_option_object_string_t;
+
+typedef struct {
+  bool is_err;
+  union {
+    bool ok;
+    guest_string_t err;
+  } val;
+} platform_sdk_storage_result_bool_string_t;
+
+typedef struct {
+  platform_sdk_storage_object_t *ptr;
+  size_t len;
+} platform_sdk_storage_list_object_t;
+
+typedef struct {
+  bool is_err;
+  union {
+    platform_sdk_storage_list_object_t ok;
+    guest_string_t err;
+  } val;
+} platform_sdk_storage_result_list_object_string_t;
+
+typedef struct {
+  bool is_err;
+  union {
+    guest_string_t ok;
+    guest_string_t err;
+  } val;
+} platform_sdk_storage_result_string_string_t;
+
 typedef struct wasi_io_poll_own_pollable_t {
   int32_t __handle;
 } wasi_io_poll_own_pollable_t;
@@ -765,6 +831,27 @@ extern void platform_sdk_cache_delete(guest_string_t *key);
 // replaced.
 extern int64_t platform_sdk_cache_incr(guest_string_t *key, int64_t delta, uint64_t ttl_ms);
 
+// Imported Functions from `platform:sdk/storage@0.1.0`
+// Stores (or replaces) a file.
+extern bool platform_sdk_storage_put(guest_string_t *key, guest_list_u8_t *data, guest_string_t *content_type, bool public_, guest_string_t *err);
+// A file's content, or none if there is no such file.
+extern bool platform_sdk_storage_get(guest_string_t *key, guest_option_list_u8_t *ret, guest_string_t *err);
+// A file's details, or none if there is no such file.
+extern bool platform_sdk_storage_info(guest_string_t *key, platform_sdk_storage_option_object_t *ret, guest_string_t *err);
+// Removes a file; returns whether it was there.
+extern bool platform_sdk_storage_delete(guest_string_t *key, bool *ret, guest_string_t *err);
+// Files whose keys start with `prefix`, in key order, after the key
+// `after` (empty: from the start), at most `limit`.
+extern bool platform_sdk_storage_list(guest_string_t *prefix, guest_string_t *after, uint32_t limit, platform_sdk_storage_list_object_t *ret, guest_string_t *err);
+// Where a browser or app reads the file: for a public file its
+// lasting URL, for another one signed for `ttl-ms`.
+extern bool platform_sdk_storage_url(guest_string_t *key, uint64_t ttl_ms, guest_string_t *ret, guest_string_t *err);
+// Where a client sends the file itself, with PUT (the body is the
+// file), so big files don't pass through the app: valid for `ttl-ms`,
+// up to `max-bytes`, stored with `content-type` (empty: the client's
+// Content-Type) and, if `public`, readable by anyone.
+extern bool platform_sdk_storage_upload_url(guest_string_t *key, uint64_t max_bytes, guest_string_t *content_type, bool public_, uint64_t ttl_ms, guest_string_t *ret, guest_string_t *err);
+
 // Imported Functions from `wasi:io/poll@0.2.12`
 // Return the readiness of a pollable. This function never blocks.
 // 
@@ -1337,6 +1424,24 @@ void guest_option_list_u8_free(guest_option_list_u8_t *ptr);
 void platform_sdk_cache_result_void_error_free(platform_sdk_cache_result_void_error_t *ptr);
 
 void platform_sdk_cache_result_bool_error_free(platform_sdk_cache_result_bool_error_t *ptr);
+
+void platform_sdk_storage_object_free(platform_sdk_storage_object_t *ptr);
+
+void platform_sdk_storage_result_void_string_free(platform_sdk_storage_result_void_string_t *ptr);
+
+void platform_sdk_storage_result_option_list_u8_string_free(platform_sdk_storage_result_option_list_u8_string_t *ptr);
+
+void platform_sdk_storage_option_object_free(platform_sdk_storage_option_object_t *ptr);
+
+void platform_sdk_storage_result_option_object_string_free(platform_sdk_storage_result_option_object_string_t *ptr);
+
+void platform_sdk_storage_result_bool_string_free(platform_sdk_storage_result_bool_string_t *ptr);
+
+void platform_sdk_storage_list_object_free(platform_sdk_storage_list_object_t *ptr);
+
+void platform_sdk_storage_result_list_object_string_free(platform_sdk_storage_result_list_object_string_t *ptr);
+
+void platform_sdk_storage_result_string_string_free(platform_sdk_storage_result_string_string_t *ptr);
 
 extern void wasi_io_poll_pollable_drop_own(wasi_io_poll_own_pollable_t handle);
 
