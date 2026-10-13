@@ -1,9 +1,11 @@
+mod api;
 mod ast;
 mod cgen;
 mod check;
 mod deploy;
 mod diag;
 mod doc;
+mod export;
 mod fmt;
 mod lexer;
 mod lower;
@@ -45,6 +47,14 @@ Apps on wasm-server ([app] in plumb.toml):
   plumb deploy [--to URL] [-m NOTE] build the project's apps and put them live together, without downtime
   plumb releases                    what the project ran on its server, newest first
   plumb rollback [RELEASE]          back to the release before (or to the one given)
+  plumb migration new NAME          a migration: fn before() (before a release goes live), fn after() (after)
+  plumb migrations                  how the project's migrations went on its server
+  plumb migrate                     run the migrations that haven't run here on this machine's data
+  plumb db pull|dump|shell [DB]     the project's database on its server: a SQLite file (data/DB.db), SQL, queries
+  plumb files pull [DIR]            the project's users' files from its server, into storage/
+  plumb api [--openapi]             the project's API, read from its code: routes, what they take and answer, SQL
+  plumb sql                         every SQL statement of the project, and what in it works only in SQLite
+  plumb export [DIR] [--local]      code, API, SQL, data and files in plain formats: to run elsewhere or rewrite
   plumb secret set KEY=VALUE...     the project's secrets (environment variables); also unset, list
   plumb logs [APP] [-n N] [-f]      the apps' log on their server (-f: keep following it)
   plumb stats [APP] [--range 24h]   requests, errors, response times and where they go (1h 6h 24h 7d 30d)
@@ -95,9 +105,37 @@ fn learn_command(args: &[String]) -> Option<ExitCode> {
         "secret" => Some(deploy::secret(&args[1..])),
         "logs" => Some(deploy::logs(&args[1..])),
         "releases" => Some(deploy::releases(&args[1..])),
+        "migrations" => Some(deploy::migrations(&args[1..])),
+        "db" => Some(deploy::db(&args[1..])),
+        "api" => Some(export::api_cmd(&args[1..])),
+        "sql" => Some(export::sql_cmd(&args[1..])),
+        "export" => Some(export::export(&args[1..])),
+        "files" if args.get(1).map(String::as_str) == Some("pull") => Some(deploy::files_pull(&args[2..])),
+        "migration" if args.get(1).map(String::as_str) == Some("new") => Some(deploy::migration_new(&args[2..])),
+        "migrate" => Some(deploy::migrate_local(&args[1..], &|file, entry, root| {
+            // a native program with `entry` as its main, run in the project
+            let opts = Opts {
+                cmd: "build".into(),
+                path: file.to_string_lossy().to_string(),
+                out: None,
+                emit_c: None,
+                debug: false,
+                static_link: false,
+                target: None,
+                entry: Some(entry.to_string()),
+                args: vec![],
+            };
+            let exe = build_dir().join(format!("migration-{}", std::process::id()));
+            if !compile(&opts, false, false, &exe) {
+                return false;
+            }
+            let ok = Command::new(&exe).current_dir(root).status().map(|s| s.success()).unwrap_or(false);
+            let _ = std::fs::remove_file(&exe);
+            ok
+        })),
         "rollback" => Some(deploy::rollback(&args[1..])),
         "stats" => Some(deploy::stats(&args[1..])),
-        "dev" => Some(deploy::dev(&args[1..], &|main, out| {
+        "dev" => Some(deploy::dev(&args[1..], &|main, entry, out| {
             let opts = Opts {
                 cmd: "build".into(),
                 path: main.to_string_lossy().to_string(),
@@ -106,11 +144,12 @@ fn learn_command(args: &[String]) -> Option<ExitCode> {
                 debug: false,
                 static_link: false,
                 target: Some("wasm-server".into()),
+                entry: entry.map(str::to_string),
                 args: vec![],
             };
             compile(&opts, false, false, out)
         })),
-        "deploy" => Some(deploy::deploy(&args[1..], &|main, out| {
+        "deploy" => Some(deploy::deploy(&args[1..], &|main, entry, out| {
             let opts = Opts {
                 cmd: "build".into(),
                 path: main.to_string_lossy().to_string(),
@@ -119,6 +158,7 @@ fn learn_command(args: &[String]) -> Option<ExitCode> {
                 debug: false,
                 static_link: false,
                 target: Some("wasm-server".into()),
+                entry: entry.map(str::to_string),
                 args: vec![],
             };
             compile(&opts, false, true, out)
@@ -346,6 +386,9 @@ struct Opts {
     static_link: bool,
     // "wasm-server": a component for wasm-server
     target: Option<String>,
+    // `--entry NAME`: run this function instead of `main` (a migration's
+    // `before` or `after`)
+    entry: Option<String>,
     args: Vec<String>,
 }
 
@@ -419,6 +462,7 @@ fn parse_args() -> Option<Opts> {
     let mut debug = false;
     let mut static_link = false;
     let mut target = None;
+    let mut entry = None;
     let mut rest = vec![];
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -434,6 +478,7 @@ fn parse_args() -> Option<Opts> {
                 }
                 target = Some(t);
             }
+            "--entry" if path.is_none() => entry = Some(args.next()?),
             _ if path.is_none() && a.starts_with("--") => {
                 eprintln!("error: unknown option `{}`", a);
                 std::process::exit(2);
@@ -446,7 +491,7 @@ fn parse_args() -> Option<Opts> {
         eprintln!("error: --target is for `plumb build`");
         std::process::exit(2);
     }
-    Some(Opts { cmd, path: path?, out, emit_c, debug, static_link, target, args: rest })
+    Some(Opts { cmd, path: path?, out, emit_c, debug, static_link, target, entry, args: rest })
 }
 
 // Standard library modules, embedded in the compiler.
@@ -802,10 +847,26 @@ fn project_command(args: &[String]) -> Option<ExitCode> {
 
 fn compile(opts: &Opts, tests: bool, optimize: bool, exe: &Path) -> bool {
     let mut sources = Sources::default();
-    let (prog, uf) = match front_end(&opts.path, &mut sources) {
+    let (mut prog, uf) = match front_end(&opts.path, &mut sources) {
         Some(x) => x,
         None => return false,
     };
+    if let Some(entry) = &opts.entry {
+        // the file's own top-level function of that name
+        let file_module = prog.module_names.len() - 1;
+        let found = prog.fns.iter().position(|f| f.name == *entry && f.owner.is_none() && f.module == file_module && f.body.is_some());
+        match found {
+            Some(id) if prog.fns[id].params.is_empty() && prog.fns[id].ret == types::Ty::Unit => prog.main = Some(id),
+            Some(_) => {
+                eprintln!("error: `{}` in {} takes no parameters and returns nothing", entry, opts.path);
+                return false;
+            }
+            None => {
+                eprintln!("error: {} has no `fn {}()`", opts.path, entry);
+                return false;
+            }
+        }
+    }
     if tests && prog.tests.is_empty() {
         eprintln!("no tests in {}", opts.path);
         return false;
@@ -835,7 +896,9 @@ fn compile(opts: &Opts, tests: bool, optimize: bool, exe: &Path) -> bool {
         }
     }
     let file_name = Path::new(&opts.path).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    let generator = cgen::CGen::new(&prog, &module, file_name);
+    let mut generator = cgen::CGen::new(&prog, &module, file_name);
+    // a step (a migration): answers 200 when it ends, 500 with its error
+    generator.step = opts.entry.is_some();
     if opts.target.is_some() {
         return match generator.generate_wasm() {
             Ok(c) => compile_wasm(opts, &c, exe),

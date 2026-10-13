@@ -51,5 +51,6 @@ pub builtin type Connection {
 }
 
 // Opens (or creates) a database file; ":memory:" for one that lives only
-// while the program runs.
+// while the program runs. A bare name ("main") is the app's database: on
+// wasm-server the one granted to it, elsewhere the file data/main.db.
 pub fn open(path: String) throws -> Connection

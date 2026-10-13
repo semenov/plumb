@@ -8,9 +8,13 @@ How it fits together:
 
 - `cgen.rs` (`generate_wasm`) pastes `runtime/wasi.h` (what WASI lacks:
   processes, signals, terminals fail with ENOSYS), the bindings header
-  and the runtime as usual, then `runtime/http_wasm.h` instead of the
+  and the runtime as usual, `runtime/wasm_handler.h` (the component's
+  request handler, always), then `runtime/http_wasm.h` instead of the
   socket server and `runtime/db_wasm.h` instead of SQLite. The program
   gets `lt_program_main` instead of C's `main`.
+- `--entry NAME` makes another function the program's main: a migration's
+  `before` or `after`. Built that way (`LT_WASM_STEP`), the handler answers
+  200 when the function returns and 500 with its error message.
 - `main.rs` (`compile_wasm`) compiles that with wasi-sdk's clang for
   `wasm32-wasip2` as a reactor, with `runtime/wasm/guest.c` and
   `guest_component_type.o`; clang's linker turns it into a component.

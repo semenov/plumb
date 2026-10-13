@@ -593,6 +593,47 @@ path (`/admin/style.css` is `style.css`).
 - Every deploy is a release kept on the server (only changed parts are
   uploaded): `plumb releases` lists them with their git commits, `plumb
   rollback` goes back to the previous one (or `plumb rollback ID`).
+- **Migrations** change data along with code: `plumb migration new
+  add_tags` makes `migrations/20261013120000_add_tags.plumb`. Each runs
+  once on every server, in order:
+
+  ```
+  import db
+
+  fn before() throws {          // before the new version goes live; a failure refuses the deploy
+    with conn = try db.open("main") {
+      try conn.transaction(() => {   // all or nothing
+        try conn.execute("alter table notes add column tag text", [])
+      })
+    }
+  }
+
+  fn after() throws {           // after it's live, in the background: backfills, moving files
+    with conn = try db.open("main") {
+      try conn.execute("update notes set tag = 'old' where tag is null", [])
+    }
+  }
+  ```
+
+  A file has `before`, `after` or both; the new code must work while
+  `after` hasn't finished. An `after` may run again if it failed halfway:
+  make it safe to repeat. The server snapshots the databases before
+  `before` steps. `plumb migrations` shows how they went there; `plumb
+  migrate` runs the ones that haven't run on this machine's data
+  (`data/main.db`: natively, `db.open("main")` is that file).
+- **The data is never locked in.** `plumb db pull` downloads a database
+  as a plain SQLite file into `data/` (where the program finds it when it
+  runs here), `plumb db dump` gives it as SQL, `plumb db shell` runs
+  queries on the server's copy; `plumb files pull` downloads the users'
+  files into `storage/`. `plumb export` puts the code, the API read from it
+  (`API.md`, `openapi.json`), every SQL statement with its SQLite-only parts
+  (`SQL.md`), the data, the files and the secrets' names in one folder, with
+  a README on running it elsewhere or rewriting it. `plumb api` and `plumb
+  sql` print those descriptions.
+- Write SQL that works in Postgres too where it costs nothing: `?` works in
+  both (the server numbers them for Postgres), `insert ... on conflict`
+  rather than `insert or replace`, `coalesce` rather than `ifnull`; `plumb
+  sql` lists what's SQLite-only.
 
 `plumb build --target wasm-server app.plumb` makes the component itself
 (it needs wasi-sdk: `WASI_SDK`, `/opt/wasi-sdk` or `~/wasi-sdk`). The host

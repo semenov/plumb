@@ -51,7 +51,7 @@ fn token_for(server: &str) -> Result<String, String> {
 }
 
 /// One request to the server's admin API: (status, body).
-fn request(method: &str, url: &str, token: &str, body: Option<&Path>) -> Result<(u16, String), String> {
+pub(crate) fn request(method: &str, url: &str, token: &str, body: Option<&Path>) -> Result<(u16, String), String> {
     let mut cmd = Command::new("curl");
     cmd.args(["-sS", "-K", "-", "-X", method, "-w", "\n%{http_code}"]);
     if let Some(file) = body {
@@ -72,7 +72,7 @@ fn request(method: &str, url: &str, token: &str, body: Option<&Path>) -> Result<
 }
 
 /// The server's `{"error": "..."}`, or the body as it is.
-fn server_error(body: &str) -> String {
+pub(crate) fn server_error(body: &str) -> String {
     let b = body.trim();
     if let Some(rest) = b.strip_prefix("{\"error\":\"") {
         if let Some(msg) = rest.strip_suffix("\"}") {
@@ -82,7 +82,7 @@ fn server_error(body: &str) -> String {
     b.to_string()
 }
 
-fn json_str(s: &str) -> String {
+pub(crate) fn json_str(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
         match c {
@@ -244,7 +244,7 @@ struct Built {
 /// Builds the project's apps and gathers their files and schema into a
 /// release; `extra_domains` are served too (`plumb dev`: localhost).
 /// Err(""): a build failed and said why.
-fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &dyn Fn(&Path, &Path) -> bool) -> Result<Built, String> {
+fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: &dyn Fn(&Path, Option<&str>, &Path) -> bool) -> Result<Built, String> {
     let mut parts: Vec<(String, Vec<u8>)> = vec![];
     let mut add = |data: Vec<u8>| -> String {
         let h = sha256_hex(&data);
@@ -261,7 +261,7 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
             if p.apps.len() > 1 {
                 eprintln!("building {}", app.name);
             }
-            if !build(&main, &wasm) {
+            if !build(&main, None, &wasm) {
                 return Err(String::new());
             }
             let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
@@ -296,6 +296,30 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
         let sql = std::fs::read(root.join(file)).map_err(|e| format!("the schema of {}: {}: {}", db, root.join(file).display(), e))?;
         schema.push(format!("{}:\"{}\"", json_str(db), add(sql)));
     }
+    let mut migrations = vec![];
+    if let Some(dir) = &p.migrations {
+        for (name, path) in migration_files(&root.join(dir))? {
+            let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+            let mut parts = vec![format!("\"file\":{}", json_str(&name))];
+            for phase in ["before", "after"] {
+                if !defines(&text, phase) {
+                    continue;
+                }
+                let wasm = std::env::temp_dir().join(format!("plumb-migration-{}-{}.wasm", phase, std::process::id()));
+                eprintln!("building migration {} ({})", name, phase);
+                if !build(&path, Some(phase), &wasm) {
+                    return Err(String::new());
+                }
+                let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
+                let _ = std::fs::remove_file(&wasm);
+                parts.push(format!("\"{}\":\"{}\"", phase, add(component)));
+            }
+            if parts.len() == 1 {
+                return Err(format!("{}: a migration has `fn before() throws` (runs before the new version goes live), `fn after() throws` (after, in the background), or both", path.display()));
+            }
+            migrations.push(format!("{{{}}}", parts.join(",")));
+        }
+    }
     let mut domains = p.domains.clone();
     domains.extend(extra_domains.iter().map(|d| d.to_string()));
     let mut settings = vec![format!("\"domains\":{}", json_list(&domains)), format!("\"databases\":{}", json_list(&p.databases))];
@@ -304,15 +328,40 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
     }
     settings.push(format!("\"apps\":{{{}}}", apps.join(",")));
     let manifest = format!(
-        "{{\"project\":{},\"settings\":{{{}}},\"components\":{{{}}},\"files\":{{{}}},\"schema\":{{{}}},\"compiler\":{}}}",
+        "{{\"project\":{},\"settings\":{{{}}},\"components\":{{{}}},\"files\":{{{}}},\"schema\":{{{}}},\"migrations\":[{}],\"compiler\":{}}}",
         json_str(&p.name),
         settings.join(","),
         components.join(","),
         files.join(","),
         schema.join(","),
+        migrations.join(","),
         json_str(&format!("plumb {}", env!("CARGO_PKG_VERSION")))
     );
     Ok(Built { manifest, parts })
+}
+
+/// The project's migrations: `VERSION_NAME.plumb` files, sorted.
+fn migration_files(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
+    let mut out = vec![];
+    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(out) };
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".plumb") {
+            continue;
+        }
+        let (v, _) = name.split_once('_').unwrap_or(("", ""));
+        if v.is_empty() || !v.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(format!("{}: a migration is named VERSION_NAME.plumb (20261013120000_add_avatars.plumb); `plumb migration new NAME` makes one", e.path().display()));
+        }
+        out.push((name, e.path()));
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Whether a file defines a top-level `fn NAME(`.
+fn defines(text: &str, name: &str) -> bool {
+    text.lines().any(|l| l.starts_with(&format!("fn {}(", name)) || l.starts_with(&format!("pub fn {}(", name)))
 }
 
 /// What a deploy did.
@@ -322,18 +371,41 @@ struct Pushed {
     uploaded_bytes: usize,
     total: usize,
     unchanged: bool,
+    /// the server's notes: migrations applied, warnings
+    notes: Vec<String>,
 }
 
-/// The strings of a JSON array under `key` (`{"missing": ["ab", ...]}`).
-fn json_strings(body: &str, key: &str) -> Vec<String> {
+/// The strings of a JSON array under `key` (`{"missing": ["ab", ...]}`),
+/// unescaped.
+pub(crate) fn json_strings(body: &str, key: &str) -> Vec<String> {
     let Some(at) = body.find(&format!("\"{}\":[", key)) else { return vec![] };
-    let rest = &body[at + key.len() + 4..];
-    let inner = &rest[..rest.find(']').unwrap_or(rest.len())];
-    inner.split(',').map(|s| s.trim().trim_matches('"').to_string()).filter(|s| !s.is_empty()).collect()
+    let mut out = vec![];
+    let mut chars = body[at + key.len() + 4..].chars();
+    let mut cur: Option<String> = None;
+    while let Some(c) = chars.next() {
+        match (&mut cur, c) {
+            (None, '"') => cur = Some(String::new()),
+            (None, ']') => break,
+            (None, _) => {}
+            (Some(s), '\\') => match chars.next() {
+                Some('n') => s.push('\n'),
+                Some('t') => s.push('\t'),
+                Some('u') => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    s.push(u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32).unwrap_or('?'));
+                }
+                Some(other) => s.push(other),
+                None => break,
+            },
+            (Some(_), '"') => out.push(cur.take().unwrap()),
+            (Some(s), c) => s.push(c),
+        }
+    }
+    out
 }
 
 /// A string field of a flat JSON object.
-fn json_field(body: &str, key: &str) -> Option<String> {
+pub(crate) fn json_field(body: &str, key: &str) -> Option<String> {
     let at = body.find(&format!("\"{}\":\"", key))? + key.len() + 4;
     let rest = &body[at..];
     Some(rest[..rest.find('"')?].to_string())
@@ -388,6 +460,7 @@ fn push(server: &str, token: &str, project: &str, built: &Built, note: &str) -> 
             uploaded_bytes,
             total: built.parts.len(),
             unchanged: body.contains("\"unchanged\":true"),
+            notes: json_strings(&body, "notes"),
         }),
         Ok((code, body)) => Err(format!("{} ({})", server_error(&body), code)),
         Err(e) => Err(e),
@@ -455,7 +528,7 @@ fn sha256_hex(data: &[u8]) -> String {
 /// `plumb deploy [--to URL]`: builds the project's apps for wasm-server and
 /// sends them with their settings and schema; the server switches to all of
 /// them at once, without downtime, or (if one doesn't start) to none.
-pub fn deploy(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
+pub fn deploy(args: &[String], build: &dyn Fn(&Path, Option<&str>, &Path) -> bool) -> ExitCode {
     let (root, app) = match project_app() {
         Ok(x) => x,
         Err(e) => return fail(e),
@@ -483,6 +556,9 @@ pub fn deploy(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode
             let sent = if p.uploaded == 0 { "nothing new to upload".to_string() } else { format!("uploaded {} of {} parts, {} KB", p.uploaded, p.total, p.uploaded_bytes.div_ceil(1024)) };
             let what = if p.unchanged { "already running" } else { "deployed" };
             println!("{} {} (release {}; {})", what, app.name, p.release.get(..12).unwrap_or(""), sent);
+            for n in &p.notes {
+                println!("  {}", n);
+            }
             for a in &app.apps {
                 println!("  {:<12} {}", a.name, place(&app, a, &server, false));
             }
@@ -721,7 +797,7 @@ fn newest_change(root: &Path, p: &ProjectConfig) -> std::time::SystemTime {
 /// then the files are watched),
 /// with secrets from `.env`; rebuilt and redeployed when a file changes.
 /// Its data stays in `.plumb/dev`.
-pub fn dev(args: &[String], build: &dyn Fn(&Path, &Path) -> bool) -> ExitCode {
+pub fn dev(args: &[String], build: &dyn Fn(&Path, Option<&str>, &Path) -> bool) -> ExitCode {
     let (root, mut app) = match project_app() {
         Ok(x) => x,
         Err(e) => return fail(e),
@@ -1004,4 +1080,401 @@ pub fn stats(args: &[String]) -> ExitCode {
     let first = project.server_name(chosen[0]);
     println!("charts: {}/_platform/requests?app={}", server, first);
     ExitCode::SUCCESS
+}
+
+// ---- migrations
+
+/// `plumb migration new NAME`: a new step in the project's migrations
+/// directory, named by the time (`20261013120000_NAME.plumb`).
+pub fn migration_new(args: &[String]) -> ExitCode {
+    let Some(name) = args.first().filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) else {
+        return fail("usage: plumb migration new NAME (letters, digits and _: add_avatars)".into());
+    };
+    let (root, p) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let dir = root.join(p.migrations.as_deref().unwrap_or("migrations"));
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return fail(format!("{}: {}", dir.display(), e));
+    }
+    let out = Command::new("date").args(["-u", "+%Y%m%d%H%M%S"]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let file = dir.join(format!("{}_{}.plumb", out, name));
+    let db = p.databases.first().cloned().unwrap_or_else(|| "main".into());
+    let text = format!(
+        "// Runs once on each server, in order with the other migrations.\n\
+         import db\n\n\
+         // Before the new version goes live; if it fails, the deploy is refused.\n\
+         // Keep database changes in a transaction: all or nothing.\n\
+         fn before() throws {{\n  with conn = try db.open(\"{db}\") {{\n    try conn.transaction(() => {{\n      try conn.execute(\"alter table ... add column ...\", [])\n    }})\n  }}\n}}\n\n\
+         // After the new version is live, in the background (backfills, moving\n\
+         // files). It may run again if it fails halfway: make it safe to repeat.\n\
+         // Delete it if there's nothing to do.\n\
+         fn after() throws {{\n}}\n"
+    );
+    if let Err(e) = std::fs::write(&file, text) {
+        return fail(format!("{}: {}", file.display(), e));
+    }
+    println!("{}", file.strip_prefix(&root).unwrap_or(&file).display());
+    ExitCode::SUCCESS
+}
+
+/// `plumb migrations`: how the project's steps went on its server.
+pub fn migrations(args: &[String]) -> ExitCode {
+    let (root, project) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let server = match server_of(&project, args) {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+    let token = match token_for(&server) {
+        Ok(t) => t,
+        Err(e) => return fail(e),
+    };
+    let body = match request("GET", &format!("{}/_platform/projects/{}/migrations", server, project.name), &token, None) {
+        Ok((200, b)) => b,
+        Ok((code, b)) => return fail(format!("{} ({})", server_error(&b), code)),
+        Err(e) => return fail(e),
+    };
+    let runs = body.split("\"runs\":[").nth(1).unwrap_or("");
+    let mut any = false;
+    for entry in runs.split("},{") {
+        let (Some(file), Some(phase)) = (json_field(entry, "file"), json_field(entry, "phase")) else { continue };
+        any = true;
+        let ok = entry.contains("\"ok\":true");
+        let ms: u64 = entry.find("\"at_ms\":").map(|i| entry[i + 8..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>()).and_then(|v| v.parse().ok()).unwrap_or(0);
+        let error = json_strings(&format!("\"e\":[{}]", entry.find("\"error\":").map(|i| &entry[i + 8..]).unwrap_or("").split(",\"").next().unwrap_or("")), "e").pop().unwrap_or_default();
+        println!("{}  {:<44} {:<6} {}{}", ago(ms), file, phase, if ok { "ok" } else { "FAILED" }, if error.is_empty() { String::new() } else { format!(": {}", error) });
+    }
+    if !any {
+        println!("no migrations have run on {}", server);
+    }
+    // the ones here that haven't
+    if let Some(dir) = &project.migrations {
+        if let Ok(files) = migration_files(&root.join(dir)) {
+            for (name, _) in files {
+                let v = name.split('_').next().unwrap_or("");
+                if !body.contains(&format!("\"file\":\"{}_", v)) {
+                    println!("not yet           {}", name);
+                }
+            }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// `plumb migrate`: the project's steps that haven't run here, run on this
+/// machine against its local data (`data/NAME.db`, `storage/`): each
+/// file's `before`, then its `after`. Noted in `.plumb/migrations.jsonl`.
+pub fn migrate_local(_args: &[String], run_step: &dyn Fn(&Path, &str, &Path) -> bool) -> ExitCode {
+    let (root, p) = match project_app() {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let Some(dir) = &p.migrations else {
+        println!("no migrations (make one with `plumb migration new NAME`)");
+        return ExitCode::SUCCESS;
+    };
+    let files = match migration_files(&root.join(dir)) {
+        Ok(f) => f,
+        Err(e) => return fail(e),
+    };
+    let ledger = root.join(".plumb").join("migrations.jsonl");
+    let done = std::fs::read_to_string(&ledger).unwrap_or_default();
+    let mut ran = 0;
+    for (name, path) in files {
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let v = name.split('_').next().unwrap_or("").to_string();
+        for phase in ["before", "after"] {
+            if !defines(&text, phase) || done.lines().any(|l| l.contains(&format!("\"file\":\"{}_", v)) && l.contains(&format!("\"phase\":\"{}\"", phase)) && l.contains("\"ok\":true")) {
+                continue;
+            }
+            eprintln!("{} ({})", name, phase);
+            let started = std::time::Instant::now();
+            let ok = run_step(&path, phase, &root);
+            let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+            let line = format!("{{\"file\":{},\"phase\":\"{}\",\"ok\":{},\"at_ms\":{},\"ms\":{}}}\n", json_str(&name), phase, ok, at, started.elapsed().as_millis());
+            let _ = std::fs::create_dir_all(root.join(".plumb"));
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&ledger) {
+                let _ = f.write_all(line.as_bytes());
+            }
+            if !ok {
+                return fail(format!("{} ({}) failed; the ones after it didn't run", name, phase));
+            }
+            ran += 1;
+        }
+    }
+    println!("{}", if ran == 0 { "nothing to run: every migration ran here".to_string() } else { format!("ran {} step{}", ran, if ran == 1 { "" } else { "s" }) });
+    ExitCode::SUCCESS
+}
+
+// ---- plumb db, plumb files: the project's data, in standard formats
+
+/// `request`, writing the body to `out` as it is (binary).
+pub(crate) fn download(url: &str, token: &str, out: &Path) -> Result<u16, String> {
+    let mut cmd = Command::new("curl");
+    cmd.args(["-sS", "-K", "-", "-o"]).arg(out).args(["-w", "%{http_code}"]).arg(url);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("can't run curl: {}", e))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = writeln!(stdin, "header = \"Authorization: Bearer {}\"", token.replace('\\', "\\\\").replace('"', "\\\""));
+    }
+    let o = child.wait_with_output().map_err(|e| format!("curl: {}", e))?;
+    if !o.status.success() {
+        return Err(format!("can't reach {}: {}", url, String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).trim().parse().unwrap_or(0))
+}
+
+/// The server, its token and the project, for the data commands.
+fn connect(args: &[String]) -> Result<(PathBuf, ProjectConfig, String, String), String> {
+    let (root, project) = project_app()?;
+    let server = server_of(&project, args)?;
+    let token = token_for(&server)?;
+    Ok((root, project, server, token))
+}
+
+/// The words of `args` that aren't flags or their values.
+fn words(args: &[String], with_value: &[&str]) -> Vec<String> {
+    let mut out = vec![];
+    let mut i = 0;
+    while i < args.len() {
+        if with_value.contains(&args[i].as_str()) {
+            i += 2;
+            continue;
+        }
+        if !args[i].starts_with('-') {
+            out.push(args[i].clone());
+        }
+        i += 1;
+    }
+    out
+}
+
+/// `plumb db pull|dump|shell [DB]`: the project's database on its server as
+/// a SQLite file (into data/DB.db, where the program finds it when it runs
+/// here), as SQL, or with queries typed by hand.
+pub fn db(args: &[String]) -> ExitCode {
+    let usage = "usage: plumb db pull [DB] [-o FILE] | plumb db dump [DB] | plumb db shell [DB] [\"SQL\"]";
+    let Some(action) = args.first().cloned() else { return fail(usage.into()) };
+    let (root, project, server, token) = match connect(&args[1..]) {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let rest = words(&args[1..], &["--to", "-o"]);
+    let db = rest.first().cloned().or_else(|| project.databases.first().cloned()).unwrap_or_else(|| "main".into());
+    let base = format!("{}/_platform/projects/{}/databases/{}", server, project.name, db);
+    match action.as_str() {
+        "pull" => {
+            let out = args.iter().position(|a| a == "-o").and_then(|i| args.get(i + 1)).map(PathBuf::from).unwrap_or_else(|| root.join("data").join(format!("{}.db", db)));
+            if let Some(dir) = out.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let tmp = out.with_extension("pulling");
+            match download(&format!("{}/snapshot", base), &token, &tmp) {
+                Ok(200) => {}
+                Ok(code) => {
+                    let body = std::fs::read_to_string(&tmp).unwrap_or_default();
+                    let _ = std::fs::remove_file(&tmp);
+                    return fail(format!("{} ({})", server_error(&body), code));
+                }
+                Err(e) => return fail(e),
+            }
+            if out.exists() {
+                let keep = out.with_extension("db.before-pull");
+                let _ = std::fs::rename(&out, &keep);
+                eprintln!("the previous {} is now {}", out.display(), keep.display());
+            }
+            for suffix in ["-wal", "-shm"] {
+                let _ = std::fs::remove_file(format!("{}{}", out.display(), suffix));
+            }
+            if let Err(e) = std::fs::rename(&tmp, &out) {
+                return fail(e.to_string());
+            }
+            let size = std::fs::metadata(&out).map_or(0, |m| m.len());
+            println!("{}: {} KB, a plain SQLite file (sqlite3 {} opens it)", out.strip_prefix(&root).unwrap_or(&out).display(), size.div_ceil(1024), out.strip_prefix(&root).unwrap_or(&out).display());
+            ExitCode::SUCCESS
+        }
+        "dump" => match request("GET", &format!("{}/dump", base), &token, None) {
+            Ok((200, body)) => {
+                print!("{}", body);
+                ExitCode::SUCCESS
+            }
+            Ok((code, body)) => fail(format!("{} ({})", server_error(&body), code)),
+            Err(e) => fail(e),
+        },
+        "shell" => {
+            let one = rest.get(1).cloned();
+            let run = |sql: &str| -> bool {
+                let tmp = std::env::temp_dir().join(format!("plumb-sql-{}", std::process::id()));
+                if std::fs::write(&tmp, format!("{{\"sql\":{}}}", json_str(sql))).is_err() {
+                    return false;
+                }
+                let r = request("POST", &format!("{}/query", base), &token, Some(&tmp));
+                let _ = std::fs::remove_file(&tmp);
+                match r {
+                    Ok((200, body)) => {
+                        print_rows(&body);
+                        true
+                    }
+                    Ok((_, body)) => {
+                        eprintln!("error: {}", server_error(&body));
+                        false
+                    }
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        false
+                    }
+                }
+            };
+            if let Some(sql) = one {
+                return if run(&sql) { ExitCode::SUCCESS } else { ExitCode::from(1) };
+            }
+            eprintln!("{} on {}: SQL ends with `;`, Ctrl-D leaves", db, server);
+            let mut buf = String::new();
+            loop {
+                eprint!("{}", if buf.is_empty() { "sql> " } else { "...> " });
+                let mut line = String::new();
+                match std::io::stdin().read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                buf.push_str(&line);
+                if buf.trim_end().ends_with(';') {
+                    run(buf.trim());
+                    buf.clear();
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        _ => fail(usage.into()),
+    }
+}
+
+/// A query's answer as a table.
+fn print_rows(body: &str) {
+    let columns = json_strings(body, "columns");
+    if columns.is_empty() {
+        let n: String = body.split("\"changed\":").nth(1).unwrap_or("0").chars().take_while(|c| c.is_ascii_digit()).collect();
+        println!("{} row{} changed", n, if n == "1" { "" } else { "s" });
+        return;
+    }
+    // rows: [[...],[...]] of plain values
+    let rows_text = body.split("\"rows\":[").nth(1).unwrap_or("");
+    let mut rows: Vec<Vec<String>> = vec![];
+    let (mut depth, mut cur, mut row, mut in_str, mut esc) = (0, String::new(), vec![], false, false);
+    for c in rows_text.chars() {
+        if in_str {
+            if esc {
+                cur.push(match c { 'n' => '\n', 't' => '\t', c => c });
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                in_str = false;
+            } else {
+                cur.push(c);
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '[' => depth += 1,
+            ',' if depth == 1 => row.push(std::mem::take(&mut cur)),
+            ']' if depth == 1 => {
+                row.push(std::mem::take(&mut cur));
+                rows.push(std::mem::take(&mut row));
+                depth = 0;
+            }
+            ']' => break,
+            ',' if depth == 0 => {}
+            c if depth >= 1 => cur.push(c),
+            _ => {}
+        }
+    }
+    let mut widths: Vec<usize> = columns.iter().map(|c| c.chars().count()).collect();
+    for r in &rows {
+        for (i, v) in r.iter().enumerate() {
+            if i < widths.len() {
+                widths[i] = widths[i].max(v.chars().count().min(40));
+            }
+        }
+    }
+    let line = |vals: &[String]| vals.iter().enumerate().map(|(i, v)| format!("{:<w$}", v.chars().take(40).collect::<String>(), w = widths.get(i).copied().unwrap_or(0))).collect::<Vec<_>>().join(" | ");
+    println!("{}", line(&columns));
+    println!("{}", widths.iter().map(|w| "-".repeat(*w)).collect::<Vec<_>>().join("-+-"));
+    for r in &rows {
+        println!("{}", line(r));
+    }
+    let more = body.contains("\"more\":true");
+    println!("({} row{}{})", rows.len(), if rows.len() == 1 { "" } else { "s" }, if more { ", more not shown" } else { "" });
+}
+
+/// `plumb files pull [DIR]`: the project's users' files from its server,
+/// as they are, into `storage/` (where `storage` finds them when the
+/// program runs here): `storage/data/KEY`, with `storage/meta/KEY.json`.
+pub fn files_pull(args: &[String]) -> ExitCode {
+    let (root, project, server, token) = match connect(args) {
+        Ok(x) => x,
+        Err(e) => return fail(e),
+    };
+    let dir = words(args, &["--to"]).first().map(PathBuf::from).unwrap_or_else(|| root.join("storage"));
+    match pull_files(&project, &server, &token, &dir) {
+        Ok((n, bytes)) => {
+            println!("{} file{}, {} KB, in {}", n, if n == 1 { "" } else { "s" }, bytes.div_ceil(1024), dir.strip_prefix(&root).unwrap_or(&dir).display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => fail(e),
+    }
+}
+
+/// The project's users' files into `dir` (`data/KEY`, `meta/KEY.json`):
+/// how many, and their bytes.
+pub(crate) fn pull_files(project: &ProjectConfig, server: &str, token: &str, dir: &Path) -> Result<(usize, u64), String> {
+    let (mut after, mut n, mut bytes) = (String::new(), 0, 0u64);
+    loop {
+        let body = match request("GET", &format!("{}/_platform/projects/{}/files?after={}", server, project.name, after), &token, None) {
+            Ok((200, b)) => b,
+            Ok((code, b)) => return Err(format!("{} ({})", server_error(&b), code)),
+            Err(e) => return Err(e),
+        };
+        let list = body.split("\"files\":[").nth(1).unwrap_or("");
+        let entries: Vec<&str> = list.split("},{").filter(|e| e.contains("\"key\"")).collect();
+        for e in &entries {
+            let Some(key) = json_field(e, "key") else { continue };
+            let data = dir.join("data").join(&key);
+            if let Some(d) = data.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            match download(&format!("{}/_platform/projects/{}/files/{}", server, project.name, key), &token, &data) {
+                Ok(200) => {}
+                Ok(code) => return Err(format!("{}: the server answered {}", key, code)),
+                Err(e) => return Err(e),
+            }
+            let num = |k: &str| -> u64 { e.split(&format!("\"{}\":", k)).nth(1).map(|v| v.chars().take_while(|c| c.is_ascii_digit()).collect::<String>()).and_then(|v| v.parse().ok()).unwrap_or(0) };
+            let meta = dir.join("meta").join(format!("{}.json", key));
+            if let Some(d) = meta.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            let ct = json_field(e, "content_type").unwrap_or_default();
+            let public = e.contains("\"public\":true");
+            let _ = std::fs::write(&meta, format!("{{\"key\":{},\"size\":{},\"content_type\":{},\"public\":{},\"modified_ms\":{}}}", json_str(&key), num("size"), json_str(&ct), public, num("modified_ms")));
+            n += 1;
+            bytes += num("size");
+            after = key;
+        }
+        if entries.len() < 1000 {
+            break;
+        }
+    }
+    Ok((n, bytes))
+}
+
+/// The server of the project (plumb.toml's, or `--to URL`) and its token.
+pub(crate) fn server_and_token(p: &ProjectConfig, args: &[String]) -> Result<(String, String), String> {
+    let server = server_of(p, args)?;
+    let token = token_for(&server)?;
+    Ok((server, token))
 }

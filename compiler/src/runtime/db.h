@@ -172,8 +172,19 @@ static lt_err lt_db_open(lt_text *path, lt_handle **out) {
     lt_db *d = (lt_db *)calloc(1, sizeof(lt_db));
     d->h.rc = 1;
     d->h.free = lt_db_free;
-    d->path = path;
-    lt_text_dup(path);
+    // a bare name ("main") is the app's database as on wasm-server, kept
+    // here in data/NAME.db (where `plumb db pull` and `plumb migrate` put it)
+    bool bare = *p && strpbrk(p, "./:\\") == NULL;
+    if (bare) {
+        char buf[600];
+        snprintf(buf, sizeof buf, "data/%s.db", p);
+        mkdir("data", 0755);
+        d->path = lt_text_cstr(buf);
+        p = d->path->data;
+    } else {
+        d->path = path;
+        lt_text_dup(path);
+    }
     d->file = p;
     // each handle to ":memory:" would be a database of its own
     bool memory = strcmp(p, ":memory:") == 0 || strstr(p, "mode=memory") != NULL;

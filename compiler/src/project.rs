@@ -203,6 +203,9 @@ pub fn write_manifest(root: &Path, m: &Manifest) -> Result<(), String> {
 ///     [project.schema]                # or one per database
 ///     main = "schema.sql"
 ///
+///     migrations = "migrations"       # steps run once per server, in order
+///                                     # (the default, when that directory exists)
+///
 ///     [apps.web]
 ///     main = "web/main.plumb"         # path left out: all of the domains
 ///
@@ -229,6 +232,9 @@ pub struct ProjectConfig {
     pub outbound: Option<Vec<String>>,
     /// database → schema file, relative to the project
     pub schema: BTreeMap<String, String>,
+    /// The directory of migrations (`VERSION_NAME.plumb`, with `fn before()`
+    /// and/or `fn after()`), relative to the project.
+    pub migrations: Option<String>,
     pub server: Option<String>,
     /// by name
     pub apps: Vec<AppConfig>,
@@ -295,9 +301,9 @@ pub fn read_project(root: &Path) -> Result<ProjectConfig, String> {
         Some(_) => Err(format!("{}: [{}] {} must be a list: {} = [\"...\"]", file, at, k, k)),
     };
     let allowed: &[&str] = if single {
-        &["name", "main", "domains", "databases", "schema", "outbound", "websocket", "static", "build", "spa"]
+        &["name", "main", "domains", "databases", "schema", "migrations", "outbound", "websocket", "static", "build", "spa"]
     } else {
-        &["name", "domains", "databases", "schema", "outbound"]
+        &["name", "domains", "databases", "schema", "migrations", "outbound"]
     };
     if let Some(k) = section.keys().find(|k| !allowed.contains(&k.as_str())) {
         let hint = if single { "" } else { " (an app's settings go in [apps.NAME])" };
@@ -384,6 +390,10 @@ pub fn read_project(root: &Path) -> Result<ProjectConfig, String> {
                 _ => return Err(format!("{}: [{}.schema] {} = \"file.sql\"", file, table, db)),
             }
         }
+    }
+    c.migrations = s(section, table, "migrations")?;
+    if c.migrations.is_none() && root.join("migrations").is_dir() {
+        c.migrations = Some("migrations".to_string());
     }
     if let Some(TomlValue::Str(server)) = t.get("deploy").and_then(|d| d.get("server")) {
         c.server = Some(server.trim_end_matches('/').to_string());

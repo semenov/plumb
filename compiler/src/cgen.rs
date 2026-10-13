@@ -117,6 +117,9 @@ pub struct CGen<'a> {
     wasm_missing: Vec<&'static str>,
     /// storage_wasm.h is needed (the program uses `storage` on wasm)
     storage_wasm: bool,
+    /// a one-off step (`--entry`, a migration) rather than a server: on
+    /// wasm it answers 200 when it ends, or 500 with its error
+    pub step: bool,
 }
 
 fn c_str(s: &str) -> String {
@@ -201,6 +204,7 @@ impl<'a> CGen<'a> {
             wasm: false,
             wasm_missing: vec![],
             storage_wasm: false,
+            step: false,
         }
     }
 
@@ -4009,9 +4013,10 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
     // instance doesn't have.
     pub fn generate_wasm(mut self) -> Result<String, String> {
         self.wasm = true;
+        let step = self.step;
         let c = self.generate_c(false);
         if c.1.is_empty() {
-            Ok(c.0)
+            Ok(if step { format!("#define LT_WASM_STEP 1\n{}", c.0) } else { c.0 })
         } else {
             Err(c.1)
         }
@@ -4183,13 +4188,17 @@ static void lt_panic_error(lt_err e, int line) { lt_text *m = lt_error_message(e
         out += include_str!("runtime/std.h");
         out += include_str!("runtime/io.h");
         out += include_str!("runtime/template.h");
+        if self.wasm {
+            // every component answers the host's request (wasm_handler.h)
+            out += &include_str!("runtime/wasm_handler.h").replace("#include \"guest.h\"\n", "");
+        }
         if self.http_glue || self.net {
             if self.curl {
                 out = format!("#define LT_CURL 1\n// link: -lcurl\n{}", out);
             }
             out += include_str!("runtime/http.h");
             if self.wasm {
-                out += &include_str!("runtime/http_wasm.h").replace("#include \"guest.h\"\n", "");
+                out += include_str!("runtime/http_wasm.h");
             }
         }
         if self.net {

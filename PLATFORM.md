@@ -163,6 +163,25 @@ Suggested order: 3, 4 and 1 first (a website with users, which almost
 every project is), then 2, 5, 6 and 7. After that comes 8, which is what
 makes the platform different, with the scaling steps alongside it.
 
+## No lock-in (done 2026-10-13)
+
+The developer must be able to leave, or have an AI rewrite the app in
+another language and platform, at any time:
+
+- Data is in standard formats: SQLite files (`plumb db pull`), SQL
+  (`plumb db dump`), users' files as a folder (`plumb files pull`).
+- The same code runs without the platform: natively, `db.open("main")`
+  is `data/main.db` and `storage` is the `storage/` folder.
+- Migrations are Plumb code (`fn before()`, `fn after()`): one mechanism for
+  databases, files and outside services; they run natively too (`plumb
+  migrate`).
+- `plumb export` gives one folder with the code, the API read from it
+  (Markdown and OpenAPI), all SQL with its SQLite-only parts, the data, the
+  files and the secrets' names, plus a README on running it elsewhere or
+  rewriting it against that API and data.
+- SQL is meant to run on Postgres too: `?` is numbered for Postgres by the
+  server, and `plumb sql` marks what is SQLite-only.
+
 ## To think through
 
 - **WebSockets.** The server holds connections and calls the app per
