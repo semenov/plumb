@@ -5,7 +5,7 @@
 // - wasm-server, for `plumb dev`.
 //
 // They live in $PLUMB_HOME (~/.plumb by default): toolchains/wasi-sdk-34.0/,
-// bin/wasm-server-v0.2.1. A tool already on the machine is used instead:
+// bin/wasm-server-v0.2.2. A tool already on the machine is used instead:
 // WASI_SDK, /opt/wasi-sdk or ~/wasi-sdk; WASM_SERVER or `wasm-server` on
 // the PATH.
 
@@ -22,7 +22,7 @@ const WASI_SDK_ASSETS: [(&str, &str, &str); 4] = [
 ];
 /// The wasm-server release `plumb dev` runs (its interfaces match this
 /// compiler's).
-pub const WASM_SERVER_VERSION: &str = "v0.2.1";
+pub const WASM_SERVER_VERSION: &str = "v0.2.2";
 
 pub fn home() -> PathBuf {
     if let Ok(h) = std::env::var("PLUMB_HOME") {
