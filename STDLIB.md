@@ -1034,6 +1034,31 @@ pub fn send(request: ClientRequest) throws -> Response
 
 pub fn get(url: String) throws -> Response
 
+// Starts a request and returns at once; `wait()` gives its answer. Requests
+// started together run at the same time, so several APIs take as long as
+// the slowest, not the sum (on wasm-server too: the host makes them).
+//
+//   let weather = http.start(http.ClientRequest(url: weather_url))
+//   let news = http.start(http.ClientRequest(url: news_url))
+//   let w = try weather.wait()
+//   let n = try news.wait()
+//
+// A request that is never waited for is stopped when nothing holds it.
+pub fn start(request: ClientRequest) -> Pending
+
+// A request on its way (from `http.start`).
+pub builtin type Pending {
+  // Its answer, waiting for it if it hasn't come yet; a failure to reach
+  // the server throws, as `send` does. Wait once: a second time throws.
+  fn wait(self) throws -> Response
+}
+
+// Several requests at once: their answers in the same order, after the
+// slowest. The first failure (in that order) throws, and the requests
+// still on their way are stopped.
+//   let answers = try http.send_all(urls.map(u => http.ClientRequest(url: u)))
+pub fn send_all(requests: List<ClientRequest>) throws -> List<Response>
+
 pub fn post(url: String, body: String) throws -> Response
 
 pub fn put(url: String, body: String) throws -> Response

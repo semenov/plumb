@@ -846,7 +846,7 @@ pub fn dev(args: &[String], build: &dyn Fn(&Path, Option<&str>, &Path) -> bool) 
         return if e.is_empty() { ExitCode::from(1) } else { fail(e) };
     }
     let mut server = match Command::new(&bin)
-        .args(["serve", "--listen", &format!("127.0.0.1:{}", port), "--workers", "2", "--admin-token", &token, "--data-dir"])
+        .args(["serve", "--listen", &format!("127.0.0.1:{}", port), "--workers", "2", "--outbound-private", "--admin-token", &token, "--data-dir"])
         .arg(&data)
         .stdin(Stdio::null())
         .spawn()

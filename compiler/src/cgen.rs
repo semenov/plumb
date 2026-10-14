@@ -3581,6 +3581,26 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
                 let f = &n["storage.__host_".len()..];
                 format!("lt_storage_{}({})", f, a.join(", "))
             }
+            // http.start: begun at once; a list of its own (dup'd texts) for
+            // the headers, since it outlives this call
+            "http.__start" => {
+                self.gen_http_glue();
+                let map = self.tid(&Ty::Adt(self.prog.b.map, vec![Ty::Text, Ty::Text]));
+                let mc = self.tys[map].c.clone();
+                let hs = format!("{mc} m_ = {m}; lt_texts *h_ = lt_texts_new(m_->len * 2 + 1); for (int64_t i_ = 0; i_ < m_->n; i_++) if (m_->e[i_].h) {{ lt_text_dup(m_->e[i_].k); lt_text_dup(m_->e[i_].v); lt_texts_push(&h_, m_->e[i_].k); lt_texts_push(&h_, m_->e[i_].v); }}", mc = mc, m = a[2]);
+                if self.wasm {
+                    format!("({{ {hs} lt_wasm_http_start({}, {}, h_, {}, {}, {}, {}); }})", a[0], a[1], a[3], a[4], a[5], a[8], hs = hs)
+                } else {
+                    self.curl = true;
+                    self.threads = true;
+                    format!("({{ {hs} lt_http_opts op_ = lt_http_opts_make({}, {}, {}, {}); lt_http_start({}, {}, h_, {}, {}, &op_); }})", a[5], a[6], a[7], a[8], a[0], a[1], a[3], a[4], hs = hs)
+                }
+            }
+            "http.Pending.wait" => {
+                self.gen_http_glue();
+                let wait = if self.wasm { "lt_wasm_http_wait" } else { "lt_http_wait" };
+                format!("({{ lt_http_out o_; memset(&o_, 0, sizeof o_); lt_err e_ = {wait}({}, &o_); if (!e_.obj) *{} = lt_http_response_from(&o_); e_; }})", a[0], a[1], wait = wait)
+            }
             "http.__send" if self.wasm => {
                 // through the host: wasi:http's outgoing-handler (http_wasm.h)
                 self.gen_http_glue();

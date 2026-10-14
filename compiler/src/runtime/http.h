@@ -1017,7 +1017,10 @@ typedef struct lt_pool_job {
 static pthread_mutex_t lt_pool_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t lt_pool_cv = PTHREAD_COND_INITIALIZER;
 static lt_pool_job *lt_pool_head, *lt_pool_tail;
-static int lt_pool_idle;
+// threads waiting for a job, and jobs no thread has taken yet: a new job
+// gets a new thread unless enough are waiting for every queued job (a
+// woken thread counts as waiting until it takes one)
+static int lt_pool_idle, lt_pool_queued;
 
 static void *lt_pool_thread(void *u) {
     (void)u;
@@ -1029,6 +1032,7 @@ static void *lt_pool_thread(void *u) {
             lt_pool_idle--;
         }
         lt_pool_job *j = lt_pool_head;
+        lt_pool_queued--;
         lt_pool_head = j->next;
         if (!lt_pool_head) lt_pool_tail = NULL;
         pthread_mutex_unlock(&lt_pool_mu);
@@ -1048,8 +1052,9 @@ static bool lt_pool_submit(void (*run)(void *), void *arg) {
     if (lt_pool_tail) lt_pool_tail->next = j;
     else lt_pool_head = j;
     lt_pool_tail = j;
+    lt_pool_queued++;
     bool ok = true;
-    if (lt_pool_idle > 0) {
+    if (lt_pool_idle >= lt_pool_queued) {
         pthread_cond_signal(&lt_pool_cv);
     } else {
         pthread_t th;
@@ -1151,6 +1156,124 @@ static lt_err lt_http_send_request(lt_text *method, lt_text *url, lt_texts *head
     if (!e.obj) out->body = lt_bytes_from(g.d ? g.d : "", (int64_t)g.len);
     lt_rfree(g.d);
     return e;
+}
+
+// http.start: a request run on a pool thread at once, its answer taken by
+// lt_http_wait (on a pipe, so other tasks keep running meanwhile). Dropped
+// unwaited, it's stopped.
+typedef struct {
+    lt_handle h;
+    lt_text *method, *url;
+    lt_texts *headers;
+    lt_bytes *body;
+    lt_hjob job;
+    lt_grow sink;
+    int pipe_r, pipe_w;
+    bool running, waited;
+    lt_err err; // a failure before it could start
+} lt_pending;
+
+static void lt_pending_free(lt_handle *h) {
+    lt_pending *p = (lt_pending *)h;
+    if (p->running) {
+        // stop it, and let the pool thread let go of it
+        __atomic_store_n(&p->job.cancel, 1, __ATOMIC_RELEASE);
+        char x;
+        struct pollfd pf = { p->pipe_r, POLLIN, 0 };
+        while (poll(&pf, 1, -1) < 0 && errno == EINTR) {
+        }
+        while (read(p->pipe_r, &x, 1) < 0 && errno == EINTR) {
+        }
+        if (!p->job.err.obj) lt_texts_free_all(p->job.out.headers);
+        else lt_iface_drop(p->job.err);
+        lt_rfree(p->sink.d);
+    }
+    if (p->pipe_r >= 0) close(p->pipe_r);
+    if (p->pipe_w >= 0) close(p->pipe_w);
+    if (p->err.obj) lt_iface_drop(p->err);
+    lt_text_drop(p->method);
+    lt_text_drop(p->url);
+    lt_texts_free_all(p->headers);
+    lt_bytes_drop(p->body);
+    free(p);
+}
+
+// `headers` is the request's own list (alternating names and values).
+static lt_handle *lt_http_start(lt_text *method, lt_text *url, lt_texts *headers, lt_bytes *body, int64_t timeout_ms, const lt_http_opts *o) {
+    lt_pending *p = (lt_pending *)calloc(1, sizeof(lt_pending));
+    p->h.rc = 1;
+    p->h.free = lt_pending_free;
+    p->method = method;
+    p->url = url;
+    p->headers = headers;
+    p->body = body;
+    lt_text_dup(method);
+    lt_text_dup(url);
+    lt_bytes_dup(body);
+    p->pipe_r = p->pipe_w = -1;
+    int fds[2];
+    if (pipe(fds) != 0) {
+        p->err = lt_make_failure(lt_text_cstr("http: can't start the request (no pipe)"));
+        return &p->h;
+    }
+    fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+    fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+    lt_set_nonblocking(fds[0]);
+    p->pipe_r = fds[0];
+    p->pipe_w = fds[1];
+    lt_hjob *j = &p->job;
+    j->method = p->method->data;
+    j->url = p->url->data;
+    j->body = p->body;
+    j->headers = p->headers;
+    j->timeout_ms = timeout_ms;
+    j->opts = *o;
+    j->write = lt_curl_body;
+    j->sink = &p->sink;
+    j->done_w = p->pipe_w;
+    if (!lt_pool_submit(lt_hjob_run, j)) {
+        p->err = lt_make_failure(lt_text_cstr("http: can't start the request (no thread)"));
+        return &p->h;
+    }
+    p->running = true;
+    return &p->h;
+}
+
+static lt_err lt_http_wait(lt_handle *h, lt_http_out *out) {
+    lt_pending *p = (lt_pending *)h;
+    if (p->waited) return lt_make_failure(lt_text_cstr("http: wait() was already called for this request"));
+    p->waited = true;
+    if (p->err.obj) {
+        lt_err e = p->err;
+        p->err = (lt_err){ 0 };
+        return e;
+    }
+    for (;;) {
+        char x;
+        ssize_t r = read(p->pipe_r, &x, 1);
+        if (r == 1) break;
+        if (r < 0 && errno == EINTR) continue;
+        if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+#ifdef LT_THREADS
+            if (lt_io_wait(p->pipe_r, false)) continue;
+#endif
+            struct pollfd pf = { p->pipe_r, POLLIN, 0 };
+            poll(&pf, 1, -1);
+            continue;
+        }
+        break;
+    }
+    p->running = false;
+    if (p->job.err.obj) {
+        lt_rfree(p->sink.d);
+        p->sink.d = NULL;
+        return p->job.err;
+    }
+    *out = p->job.out;
+    out->body = lt_bytes_from(p->sink.d ? p->sink.d : "", (int64_t)p->sink.len);
+    lt_rfree(p->sink.d);
+    p->sink.d = NULL;
+    return (lt_err){ 0 };
 }
 
 // Into `path` through a temporary file, so a failed download leaves no

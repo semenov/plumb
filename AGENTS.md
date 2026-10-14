@@ -437,6 +437,13 @@ try http.serve(router, port: 8080)
 let res = try http.get("https://example.com")               // client
 let api = try http.send(http.ClientRequest(url: u, method: "POST",
   headers: {"authorization": "Bearer ${key}"}, body: json.encode(x).bytes()))
+
+// several at once: the time of the slowest, not the sum (on wasm-server too)
+let weather = http.start(http.ClientRequest(url: weather_url))
+let news = http.start(http.ClientRequest(url: news_url))
+let w = try weather.wait()                                  // wait once each
+let n = try news.wait()
+let answers = try http.send_all(requests)                   // a list: answers in order
 ```
 
 Routes: `get`, `post`, `put`, `patch`, `delete`, `any` (every method),
@@ -687,7 +694,8 @@ fn main() throws {
   addresses, and hosts outside the app's `outbound` list if it has one.
 - Not available (a compile error names them): `spawn`, `Shared`,
   `Channel`, `parallel_map`, `http.open`, `http.download`, `net`, `zlib`,
-  public-key crypto. `http.file` and `http.stream` give a 500: the host
+  public-key crypto. Several HTTP requests at once still work:
+  `http.start` / `wait()` and `http.send_all` (the host makes them). `http.file` and `http.stream` give a 500: the host
   serves the app's static files itself. No processes.
 - A panic prints its message and line to the host's log, and the request
   gets a 500.

@@ -163,7 +163,10 @@ static void lt_wasm_out_free(lt_http_out *o) {
 }
 
 // One request, no redirects.
-static lt_err lt_wasm_http_once(const char *method, int64_t mlen, const char *url, int64_t ulen, lt_texts *headers, const uint8_t *body, int64_t blen, int64_t timeout_ms, lt_http_out *out) {
+// Sends a request to the host, which makes it on its own from here; the
+// answer comes through `fut` (lt_wasm_http_end). Several begun before any
+// ends run at the same time.
+static lt_err lt_wasm_http_begin(const char *method, int64_t mlen, const char *url, int64_t ulen, lt_texts *headers, const uint8_t *body, int64_t blen, int64_t timeout_ms, wasi_http_types_own_future_incoming_response_t *fut_out) {
     wasi_http_types_scheme_t scheme;
     int64_t skip;
     if (ulen >= 8 && strncasecmp(url, "https://", 8) == 0) scheme.tag = WASI_HTTP_TYPES_SCHEME_HTTPS, skip = 8;
@@ -248,7 +251,12 @@ static lt_err lt_wasm_http_once(const char *method, int64_t mlen, const char *ur
     }
     wasi_http_types_error_code_t ferr;
     wasi_http_types_static_outgoing_body_finish(ob, NULL, &ferr);
+    *fut_out = fut;
+    return (lt_err){ 0 };
+}
 
+// Waits for a begun request's answer and reads it whole.
+static lt_err lt_wasm_http_end(const char *method, int64_t mlen, const char *url, int64_t ulen, wasi_http_types_own_future_incoming_response_t fut, lt_http_out *out) {
     wasi_http_types_borrow_future_incoming_response_t bfut = wasi_http_types_borrow_future_incoming_response(fut);
     wasi_io_poll_own_pollable_t ready = wasi_http_types_method_future_incoming_response_subscribe(bfut);
     wasi_io_poll_method_pollable_block(wasi_io_poll_borrow_pollable(ready));
@@ -307,10 +315,18 @@ static lt_err lt_wasm_http_once(const char *method, int64_t mlen, const char *ur
     return (lt_err){ 0 };
 }
 
+static lt_err lt_wasm_http_once(const char *method, int64_t mlen, const char *url, int64_t ulen, lt_texts *headers, const uint8_t *body, int64_t blen, int64_t timeout_ms, lt_http_out *out) {
+    wasi_http_types_own_future_incoming_response_t fut;
+    lt_err e = lt_wasm_http_begin(method, mlen, url, ulen, headers, body, blen, timeout_ms, &fut);
+    if (e.obj) return e;
+    return lt_wasm_http_end(method, mlen, url, ulen, fut, out);
+}
+
 // http.__send: with redirects when `follow` (303, and 301/302 after a
 // POST, continue as GET without a body, as browsers and curl do)
-static lt_err lt_wasm_http_send(lt_text *method, lt_text *url, lt_texts *headers, lt_bytes *body, int64_t timeout_ms, bool follow, bool insecure, lt_http_out *out) {
-    if (insecure) return lt_wasm_http_fail(method->data, method->len, url->data, url->len, "`insecure` isn't available on wasm-server");
+// A request, following redirects; `started`: its first hop already begun
+// (http.start).
+static lt_err lt_wasm_http_send_from(lt_text *method, lt_text *url, lt_texts *headers, lt_bytes *body, int64_t timeout_ms, bool follow, wasi_http_types_own_future_incoming_response_t *started, lt_http_out *out) {
     // the current URL, NUL-terminated (strstr below)
     lt_buf cur = { 0 };
     lt_buf_put(&cur, url->data, url->len);
@@ -321,7 +337,7 @@ static lt_err lt_wasm_http_send(lt_text *method, lt_text *url, lt_texts *headers
     const uint8_t *b = body ? body->data : NULL;
     int64_t blen = body ? body->len : 0;
     for (int hop = 0;; hop++) {
-        lt_err e = lt_wasm_http_once(m, mlen, cur.d, cur.len, headers, b, blen, timeout_ms, out);
+        lt_err e = hop == 0 && started ? lt_wasm_http_end(m, mlen, cur.d, cur.len, *started, out) : lt_wasm_http_once(m, mlen, cur.d, cur.len, headers, b, blen, timeout_ms, out);
         if (e.obj) {
             lt_buf_free(&cur);
             return e;
@@ -379,4 +395,70 @@ static lt_err lt_wasm_http_send(lt_text *method, lt_text *url, lt_texts *headers
     }
     lt_buf_free(&cur);
     return (lt_err){ 0 };
+}
+
+static lt_err lt_wasm_http_send(lt_text *method, lt_text *url, lt_texts *headers, lt_bytes *body, int64_t timeout_ms, bool follow, bool insecure, lt_http_out *out) {
+    if (insecure) return lt_wasm_http_fail(method->data, method->len, url->data, url->len, "`insecure` isn't available on wasm-server");
+    return lt_wasm_http_send_from(method, url, headers, body, timeout_ms, follow, NULL, out);
+}
+
+// http.start on wasm-server: the request is handed to the host at once
+// (lt_wasm_http_begin), so several started together are made at the same
+// time by the host, though this instance has one thread; lt_http_wait
+// takes the answer (and follows redirects from there).
+typedef struct {
+    lt_handle h;
+    lt_text *method, *url;
+    lt_texts *headers;
+    lt_bytes *body;
+    int64_t timeout_ms;
+    bool follow, begun, waited;
+    lt_err err; // a failure to begin it
+    wasi_http_types_own_future_incoming_response_t fut;
+} lt_pending;
+
+static void lt_pending_free(lt_handle *h) {
+    lt_pending *p = (lt_pending *)h;
+    if (p->begun && !p->waited) wasi_http_types_future_incoming_response_drop_own(p->fut); // the host stops it
+    if (p->err.obj) lt_iface_drop(p->err);
+    lt_text_drop(p->method);
+    lt_text_drop(p->url);
+    for (int64_t i = 0; i < p->headers->len; i++) lt_text_drop(p->headers->items[i]);
+    if (p->headers->cap) lt_free(p->headers, sizeof(lt_texts) + sizeof(lt_text *) * (size_t)p->headers->cap);
+    lt_bytes_drop(p->body);
+    free(p);
+}
+
+static lt_handle *lt_wasm_http_start(lt_text *method, lt_text *url, lt_texts *headers, lt_bytes *body, int64_t timeout_ms, bool follow, bool insecure) {
+    lt_pending *p = (lt_pending *)calloc(1, sizeof(lt_pending));
+    p->h.rc = 1;
+    p->h.free = lt_pending_free;
+    p->method = method;
+    p->url = url;
+    p->headers = headers;
+    p->body = body;
+    lt_text_dup(method);
+    lt_text_dup(url);
+    lt_bytes_dup(body);
+    p->timeout_ms = timeout_ms;
+    p->follow = follow;
+    if (insecure) {
+        p->err = lt_wasm_http_fail(method->data, method->len, url->data, url->len, "`insecure` isn't available on wasm-server");
+        return &p->h;
+    }
+    p->err = lt_wasm_http_begin(method->data, method->len, url->data, url->len, headers, body ? body->data : NULL, body ? body->len : 0, timeout_ms, &p->fut);
+    p->begun = !p->err.obj;
+    return &p->h;
+}
+
+static lt_err lt_wasm_http_wait(lt_handle *h, lt_http_out *out) {
+    lt_pending *p = (lt_pending *)h;
+    if (p->waited) return lt_make_failure(lt_text_cstr("http: wait() was already called for this request"));
+    p->waited = true;
+    if (p->err.obj) {
+        lt_err e = p->err;
+        p->err = (lt_err){ 0 };
+        return e;
+    }
+    return lt_wasm_http_send_from(p->method, p->url, p->headers, p->body, p->timeout_ms, p->follow, &p->fut, out);
 }
