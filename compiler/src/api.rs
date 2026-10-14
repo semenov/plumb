@@ -50,6 +50,52 @@ pub fn sql_literals(prog: &Program, sources: &Sources, own: &dyn Fn(usize) -> bo
     out
 }
 
+/// An SQL statement of the program for the server to check against the
+/// project's database before it goes live: where it is, and for
+/// `query<T>` the fields of `T` (all, and the ones without a default).
+pub struct SqlCheck {
+    pub at: String,
+    pub sql: String,
+    pub fields: Option<(Vec<String>, Vec<String>)>,
+}
+
+pub fn sql_checks(prog: &Program, sources: &Sources, own: &dyn Fn(usize) -> bool) -> Vec<SqlCheck> {
+    let mut out: Vec<SqlCheck> = vec![];
+    let mut seen = HashSet::new();
+    for f in prog.fns.iter().filter(|f| own(f.module)) {
+        let Some(b) = &f.body else { continue };
+        walk_block(&b.block, &mut |e| {
+            // `conn.query<T>(sql, ...)`: the columns must fill T
+            if let TK::Call { callee: Callee::Fn(id, targs), args, .. } = &e.kind {
+                let callee = &prog.fns[*id];
+                let on_conn = callee.name == "query" && callee.owner.is_some_and(|o| prog.defs[o].name == "Connection" && prog.module_names.get(prog.defs[o].module).map(String::as_str) == Some("db"));
+                if let (true, Some(sql_arg), Some(t)) = (on_conn, args.get(1), targs.first()) {
+                    if let Some(sql) = sql_text(prog, sql_arg) {
+                        if seen.insert((sql_arg.span.file, sql_arg.span.lo)) {
+                            out.push(SqlCheck { at: at(sources, sql_arg), sql, fields: record_fields(prog, t) });
+                        }
+                    }
+                }
+            }
+            if let Some(sql) = sql_text(prog, e) {
+                if seen.insert((e.span.file, e.span.lo)) {
+                    out.push(SqlCheck { at: at(sources, e), sql, fields: None });
+                }
+            }
+        });
+    }
+    out
+}
+
+/// A record's field names: all, and those it can't do without.
+fn record_fields(prog: &Program, t: &Ty) -> Option<(Vec<String>, Vec<String>)> {
+    let Ty::Adt(d, _) = t else { return None };
+    let TypeKind::Record { fields } = &prog.defs[*d].kind else { return None };
+    let all = fields.iter().map(|f| f.name.clone()).collect();
+    let required = fields.iter().filter(|f| f.default.is_none() && !matches!(f.ty, Ty::Opt(_))).map(|f| f.name.clone()).collect();
+    Some((all, required))
+}
+
 fn at(sources: &Sources, e: &TExpr) -> String {
     let file = sources.files.get(e.span.file as usize).map(|f| f.path.clone()).unwrap_or_default();
     let name = std::path::Path::new(&file).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(file);

@@ -595,7 +595,14 @@ path (`/admin/style.css` is `style.css`).
 - `plumb secret set KEY=VALUE`: environment variables kept on the server,
   never in the project.
 - `plumb logs [APP] [-f]` and `plumb stats [APP]`: the project's apps
-  together, or one.
+  together, or one. `plumb stats --queries`: the costliest SQL statements;
+  one slower than 200 ms also gets a log line (with an index hint when it
+  reads a whole table).
+- A deploy checks every SQL statement of the code against the database
+  (after the migrations' `before`): a column that doesn't exist, or a
+  `query<T>` without a column for one of `T`'s fields, refuses the deploy
+  with the file and line. Name computed columns with `as`: `select count(*)
+  as n`.
 - Every deploy is a release kept on the server (only changed parts are
   uploaded): `plumb releases` lists them with their git commits, `plumb
   rollback` goes back to the previous one (or `plumb rollback ID`).

@@ -59,7 +59,8 @@ Apps on wasm-server ([app] in plumb.toml):
   plumb export [DIR] [--local]      code, API, SQL, data and files in plain formats: to run elsewhere or rewrite
   plumb secret set KEY=VALUE...     the project's secrets (environment variables); also unset, list
   plumb logs [APP] [-n N] [-f]      the apps' log on their server (-f: keep following it)
-  plumb stats [APP] [--range 24h]   requests, errors, response times and where they go (1h 6h 24h 7d 30d)
+  plumb stats [APP] [--range 24h]   requests, errors, response times and where they go (1h 6h 24h 7d 30d);
+                                    --queries: the costliest SQL statements
 
 Projects and packages:
   plumb init [name]                 make this directory a project (plumb.toml, main.plumb)

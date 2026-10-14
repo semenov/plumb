@@ -268,7 +268,7 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
         }
         h
     };
-    let (mut components, mut files, mut apps) = (vec![], vec![], vec![]);
+    let (mut components, mut files, mut apps, mut sql_checks) = (vec![], vec![], vec![], vec![]);
     for app in &p.apps {
         if let Some(main) = &app.main {
             let main = root.join(main);
@@ -282,6 +282,18 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
             let component = std::fs::read(&wasm).map_err(|e| format!("{}: {}", wasm.display(), e))?;
             let _ = std::fs::remove_file(&wasm);
             components.push(format!("{}:\"{}\"", json_str(&app.name), add(component)));
+            // its SQL, for the server to check against the database
+            let mut sources = crate::diag::Sources::default();
+            if let Some((prog, _)) = crate::front_end(&main.to_string_lossy(), &mut sources) {
+                let own = crate::api::own_modules(&prog, crate::STD_NAMES);
+                for c in crate::api::sql_checks(&prog, &sources, &|m| own.contains(&m)) {
+                    let fields = match &c.fields {
+                        Some((all, required)) => format!(",\"fields\":{},\"required\":{}", json_list(all), json_list(required)),
+                        None => String::new(),
+                    };
+                    sql_checks.push(format!("{{\"app\":{},\"at\":{},\"sql\":{}{}}}", json_str(&app.name), json_str(&c.at), json_str(&c.sql), fields));
+                }
+            }
         }
         if let Some(dir) = &app.static_dir {
             let mut list = vec![];
@@ -343,13 +355,14 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
     }
     settings.push(format!("\"apps\":{{{}}}", apps.join(",")));
     let manifest = format!(
-        "{{\"project\":{},\"settings\":{{{}}},\"components\":{{{}}},\"files\":{{{}}},\"schema\":{{{}}},\"migrations\":[{}],\"compiler\":{}}}",
+        "{{\"project\":{},\"settings\":{{{}}},\"components\":{{{}}},\"files\":{{{}}},\"schema\":{{{}}},\"migrations\":[{}],\"sql\":[{}],\"compiler\":{}}}",
         json_str(&p.name),
         settings.join(","),
         components.join(","),
         files.join(","),
         schema.join(","),
         migrations.join(","),
+        sql_checks.join(","),
         json_str(&format!("plumb {}", env!("CARGO_PKG_VERSION")))
     );
     Ok(Built { manifest, parts })
@@ -1040,6 +1053,9 @@ pub fn stats(args: &[String]) -> ExitCode {
         Ok(t) => t,
         Err(e) => return fail(e),
     };
+    if args.iter().any(|a| a == "--queries") {
+        return queries(&project, &server, &token);
+    }
     let range = args.iter().position(|a| a == "--range").and_then(|i| args.get(i + 1)).cloned().unwrap_or_else(|| "24h".into());
     let fetch = |what: &str| -> Result<String, String> {
         match request("GET", &format!("{}/_platform/metrics?{}&range={}", server, what, range), &token, None) {
@@ -1612,5 +1628,32 @@ pub fn server_add(args: &[String]) -> ExitCode {
         println!("DNS: one A record, *.{} → {}'s address (at Cloudflare: DNS only, not proxied).", domain, host);
     }
     println!("The first request to a new name waits a few seconds for its certificate.");
+    ExitCode::SUCCESS
+}
+
+/// `plumb stats --queries`: the project's costliest SQL statements on its
+/// server (since it started): runs, average and longest time, total.
+fn queries(project: &ProjectConfig, server: &str, token: &str) -> ExitCode {
+    let body = match request("GET", &format!("{}/_platform/projects/{}/queries", server, project.name), token, None) {
+        Ok((200, b)) => b,
+        Ok((code, b)) => return fail(format!("{} ({})", server_error(&b), code)),
+        Err(e) => return fail(e),
+    };
+    let list = body.split("\"queries\":[").nth(1).unwrap_or("");
+    let entries: Vec<&str> = list.split("},{").filter(|e| e.contains("\"sql\"")).collect();
+    println!("{} on {}: SQL statements by total time, since the server started", project.name, server);
+    if entries.is_empty() {
+        println!("  none yet");
+        return ExitCode::SUCCESS;
+    }
+    println!("  {:>7} {:>9} {:>9} {:>9}  statement", "runs", "avg", "max", "total");
+    let ms = |v: f64| if v >= 1000.0 { format!("{:.2} s", v / 1000.0) } else if v >= 10.0 { format!("{:.0} ms", v) } else { format!("{:.2} ms", v) };
+    for e in entries {
+        let sql = json_strings(&format!("\"s\":[\"{}\"]", e.split("\"sql\":\"").nth(1).and_then(|r| r.split("\",\"").next()).unwrap_or("")), "s").pop().unwrap_or_default();
+        let n = |k: &str| json_number(e, k).unwrap_or(0.0);
+        let short: String = sql.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(70).collect();
+        let errors = n("errors");
+        println!("  {:>7} {:>9} {:>9} {:>9}  {}{}", n("count"), ms(n("avg_ms")), ms(n("max_ms")), ms(n("total_ms")), short, if errors > 0.0 { format!("  ({} failed)", errors) } else { String::new() });
+    }
     ExitCode::SUCCESS
 }
