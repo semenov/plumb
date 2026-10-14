@@ -592,7 +592,8 @@ path (`/admin/style.css` is `style.css`).
   wasm-server on a Debian or Ubuntu server over SSH, with HTTPS, and makes
   it the default for `plumb deploy`. Projects then answer at
   `PROJECT.example.com` (one DNS record, `*.example.com`); without
-  `--domain`, at `PROJECT.1-2-3-4.sslip.io` with no DNS at all.
+  `--domain`, at `PROJECT.1-2-3-4.sslip.io` with no DNS at all. On a server
+  whose ports 80 and 443 belong to Caddy (homebase's): `--behind-caddy`.
 - `plumb dev`: runs it on a local wasm-server as the server will, with
   secrets from `.env`, rebuilt on every change (http://localhost:8080).
 - `plumb deploy`: live without downtime (`plumb login <server>` for a

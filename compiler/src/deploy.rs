@@ -1522,7 +1522,8 @@ fn sh_quote(s: &str) -> String {
 /// wasm-server on a Linux server over SSH (your keys, ~/.ssh/config), with
 /// HTTPS; keeps its admin token here and makes it the default server.
 pub fn server_add(args: &[String]) -> ExitCode {
-    let usage = "usage: plumb server add USER@HOST [--domain example.com] [--email you@example.com] [-p SSH_PORT]\n\
+    let usage = "usage: plumb server add USER@HOST [--domain example.com] [--email you@example.com] [-p SSH_PORT] [--behind-caddy]\n\
+                 (--behind-caddy: next to a Caddy that has ports 80 and 443, such as homebase's)\n\
                  (--domain: projects answer at PROJECT.example.com, after one DNS record *.example.com → the server;\n\
                  without it, PROJECT.1-2-3-4.sslip.io, which needs no DNS)";
     let Some(target) = args.first().filter(|a| !a.starts_with('-')).cloned() else { return fail(usage.into()) };
@@ -1565,13 +1566,15 @@ pub fn server_add(args: &[String]) -> ExitCode {
             }
         }
     }
-    for flag in ["--email", "--version", "--acme-directory", "--acme-ca-file"] {
+    for flag in ["--email", "--version", "--acme-directory", "--acme-ca-file", "--listen"] {
         if let Some(v) = opt(flag) {
             remote_args.extend([flag.to_string(), v]);
         }
     }
-    if args.iter().any(|a| a == "--staging") {
-        remote_args.push("--staging".into());
+    for flag in ["--staging", "--behind-caddy"] {
+        if args.iter().any(|a| a == flag) {
+            remote_args.push(flag.into());
+        }
     }
     // a binary of our own (a build not released yet)
     if let Some(bin) = opt("--binary") {
