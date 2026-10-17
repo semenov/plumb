@@ -7,5 +7,5 @@ import json
 fn main() throws {
   var router = http.Router()
   router.get("/", req => http.text(200, "${json.encode(req.query_params)}\n"))
-  try http.serve(router, port: 18104)
+  http.serve(router, port: 18104)
 }

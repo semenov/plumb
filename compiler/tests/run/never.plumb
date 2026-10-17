@@ -21,7 +21,7 @@ fn sign(x: Int) -> String {
 }
 
 fn checked(x: Int) throws -> Int {
-  let v = if x >= 0 { x } else { try reject("${x}") }
+  let v = if x >= 0 { x } else { reject("${x}") }
   return v * 2
 }
 

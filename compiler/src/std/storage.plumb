@@ -1,13 +1,13 @@
 // storage: files the app keeps (users' uploads: avatars, photos,
 // attachments), by key.
 //
-//   try storage.put_public("avatars/${user.id}.png", data: photo, content_type: "image/png")
-//   let src = try storage.url("avatars/${user.id}.png", expires: time.hours(1))
+//   storage.put_public("avatars/${user.id}.png", data: photo, content_type: "image/png")
+//   let src = storage.url("avatars/${user.id}.png", expires: time.hours(1))
 //
 //   // a big file goes from the client straight to storage, not through the app:
-//   let target = try storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
+//   let target = storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
 //   // ...the client PUTs the file to `target`; then the app checks it arrived:
-//   if try storage.info("videos/${id}.mp4") is some(video) { ... }
+//   if storage.info("videos/${id}.mp4") is some(video) { ... }
 //
 // A key is a path like `avatars/42.png`: parts of letters, digits, `.`,
 // `_` and `-`, joined by `/`. A public file is served to anyone at its URL;
@@ -49,52 +49,52 @@ pub type Upload {
 
 // Stores (or replaces) a file, readable only through `url`.
 pub fn put(key: String, data: Bytes, content_type: String) throws {
-  try store(key, data: data, content_type: content_type, public: false)
+  store(key, data: data, content_type: content_type, public: false)
 }
 
 // Stores (or replaces) a file anyone may read at its URL.
 pub fn put_public(key: String, data: Bytes, content_type: String) throws {
-  try store(key, data: data, content_type: content_type, public: true)
+  store(key, data: data, content_type: content_type, public: true)
 }
 
 // A file's content, none if there is no such file.
 pub fn get(key: String) throws -> Bytes? {
-  if try info(key) is none {
+  if info(key) is none {
     return none
   }
   if __on_host() {
-    return try __host_get(key)
+    return __host_get(key)
   }
-  return try files.read_bytes(data_path(key))
+  return files.read_bytes(data_path(key))
 }
 
 // A file's details, none if there is no such file.
 pub fn info(key: String) throws -> Object? {
   if __on_host() {
-    let text = try __host_info(key)
+    let text = __host_info(key)
     if text.is_empty() {
       return none
     }
-    return object(try json.decode<HostObject>(text))
+    return object(json.decode<HostObject>(text))
   }
-  try check(key)
+  check(key)
   let meta = meta_path(key)
   if not files.exists(meta) {
     return none
   }
-  return object(try json.decode<HostObject>(try files.read(meta)))
+  return object(json.decode<HostObject>(files.read(meta)))
 }
 
 // Removes a file; whether it was there.
 pub fn delete(key: String) throws -> Bool {
   if __on_host() {
-    return try __host_delete(key)
+    return __host_delete(key)
   }
-  if try info(key) is none {
+  if info(key) is none {
     return false
   }
-  try files.delete(data_path(key))
-  try files.delete(meta_path(key))
+  files.delete(data_path(key))
+  files.delete(meta_path(key))
   return true
 }
 
@@ -104,7 +104,7 @@ pub fn list(prefix: String) throws -> List<Object> {
   if __on_host() {
     var after = ""
     while true {
-      let page = try json.decode<List<HostObject>>(try __host_list(prefix, after: after, limit: 1000))
+      let page = json.decode<List<HostObject>>(__host_list(prefix, after: after, limit: 1000))
       for o in page {
         out.append(object(o))
       }
@@ -119,10 +119,10 @@ pub fn list(prefix: String) throws -> List<Object> {
   if not files.is_dir(dir) {
     return out
   }
-  for p in try files.walk(dir) {
+  for p in files.walk(dir) {
     let key = p.slice(dir.length + 1, p.length)
     if key.ends_with(".json") and key.starts_with(prefix) {
-      out.append(object(try json.decode<HostObject>(try files.read(p))))
+      out.append(object(json.decode<HostObject>(files.read(p))))
     }
   }
   return out.sorted_by(o => o.key)
@@ -132,9 +132,9 @@ pub fn list(prefix: String) throws -> List<Object> {
 // for another one a URL that works for `expires`.
 pub fn url(key: String, expires: time.Duration) throws -> String {
   if __on_host() {
-    return try __host_url(key, ttl_ms: expires.millis())
+    return __host_url(key, ttl_ms: expires.millis())
   }
-  try check(key)
+  check(key)
   return "/_files/local/${key}"
 }
 
@@ -142,9 +142,9 @@ pub fn url(key: String, expires: time.Duration) throws -> String {
 // the file), so it doesn't pass through the app.
 pub fn upload_url(key: String, options: Upload) throws -> String {
   if __on_host() {
-    return try __host_upload_url(key, max_bytes: options.max_bytes, content_type: options.content_type, public: options.public, ttl_ms: options.expires.millis())
+    return __host_upload_url(key, max_bytes: options.max_bytes, content_type: options.content_type, public: options.public, ttl_ms: options.expires.millis())
   }
-  try check(key)
+  check(key)
   return "/_files/local/${key}?upload"
 }
 
@@ -164,18 +164,18 @@ fn object(o: HostObject) -> Object {
 
 fn store(key: String, data: Bytes, content_type: String, public: Bool) throws {
   if __on_host() {
-    try __host_put(key, data: data, content_type: content_type, public: public)
+    __host_put(key, data: data, content_type: content_type, public: public)
     return
   }
-  try check(key)
+  check(key)
   let file = data_path(key)
-  try files.make_dir(path.parent(file))
-  try files.write_bytes(file, data: data)
+  files.make_dir(path.parent(file))
+  files.write_bytes(file, data: data)
   let meta = meta_path(key)
-  try files.make_dir(path.parent(meta))
+  files.make_dir(path.parent(meta))
   let ct = if content_type.is_empty() { "application/octet-stream" } else { content_type }
   let o = HostObject(key: key, size: data.length, content_type: ct, public: public, modified_ms: time.unix_millis())
-  try files.write(meta, text: json.encode(o))
+  files.write(meta, text: json.encode(o))
 }
 
 fn root() -> String {

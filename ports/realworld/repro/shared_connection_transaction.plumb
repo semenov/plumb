@@ -19,9 +19,9 @@ type Count {
 }
 
 fn slow_transaction(conn: db.Connection, fail: Bool) throws {
-  try conn.transaction(() => {
-    try conn.execute("insert into t (who) values ('transaction')", [])
-    try time.sleep(time.millis(100))
+  conn.transaction(() => {
+    conn.execute("insert into t (who) values ('transaction')", [])
+    time.sleep(time.millis(100))
     if fail {
       throw Failure(message: "rolled back on purpose")
     }
@@ -29,8 +29,8 @@ fn slow_transaction(conn: db.Connection, fail: Bool) throws {
 }
 
 fn main() throws {
-  with conn = try db.open(":memory:") {
-    try conn.execute("create table t (who text)", [])
+  with conn = db.open(":memory:") {
+    conn.execute("create table t (who text)", [])
 
     // 1: two transactions at once
     let a = spawn slow_transaction(conn, fail: false)
@@ -43,14 +43,14 @@ fn main() throws {
     }
 
     // 2: a plain insert from another task, rolled back with the transaction
-    try conn.execute("delete from t", [])
+    conn.execute("delete from t", [])
     let c = spawn slow_transaction(conn, fail: true)
-    try time.sleep(time.millis(20))
-    try conn.execute("insert into t (who) values ('outside')", [])
+    time.sleep(time.millis(20))
+    conn.execute("insert into t (who) values ('outside')", [])
     try c.wait() catch err {
       print("transaction: ${err}")
     }
-    let rows = try conn.query<Count>("select count(*) as n from t where who = 'outside'", [])
+    let rows = conn.query<Count>("select count(*) as n from t where who = 'outside'", [])
     print("rows inserted outside the transaction: ${rows[0].n} (expected 1)")
   }
 }

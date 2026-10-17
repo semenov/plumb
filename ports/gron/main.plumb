@@ -244,13 +244,13 @@ fn start() throws {
   let filename = flags.args.first() ?? ""
   if filename == "" or filename == "-" {
     with s = io.stdin() {
-      run(action, input: Input(read_line: () => try s.read_line(), read_all: () => try s.read_all()), opts: opts)
+      run(action, input: Input(read_line: () => s.read_line(), read_all: () => s.read_all()), opts: opts)
     }
   } else if urls.valid_url(filename) {
     with body = try urls.get_url(filename, insecure: flags.insecure, proxy_url: flags.proxy, no_proxy: flags.no_proxy, version: gron_version) catch err {
       fatal(exit_fetch_url, message: err.message())
     } {
-      run(action, input: Input(read_line: () => try body.read_line(), read_all: () => try body.read_all()), opts: opts)
+      run(action, input: Input(read_line: () => body.read_line(), read_all: () => body.read_all()), opts: opts)
     }
   } else if files.is_dir(filename) {
     // Go opens a directory without an error and fails on the first read;
@@ -261,7 +261,7 @@ fn start() throws {
     with f = try files.open(filename) catch err {
       fatal(exit_open_file, message: open_error(filename, err: err))
     } {
-      run(action, input: Input(read_line: () => try f.read_line(), read_all: () => try f.read_all()), opts: opts)
+      run(action, input: Input(read_line: () => f.read_line(), read_all: () => f.read_all()), opts: opts)
     }
   }
   process.exit(exit_ok)
@@ -293,7 +293,7 @@ fn run(action: fn(Input, Options) throws, input: Input, opts: Options) {
 fn print_statement(s: statements.Statement, opts: Options) throws {
   var out = s
   if opts.json {
-    out = try s.jsonify()
+    out = s.jsonify()
   }
   if opts.monochrome {
     print(out.to_string())
@@ -330,7 +330,7 @@ fn gron_stream(input: Input, opts: Options) throws {
     token.Token(text: "[]", typ: token.TokenType.EmptyArray),
     token.Token(text: ";", typ: token.TokenType.Semi),
   ])
-  try print_statement(top, opts: opts)
+  print_statement(top, opts: opts)
 
   var i = 0
   while true {
@@ -409,7 +409,7 @@ fn ungron_action(input: Input, opts: Options) throws {
 fn gron_values(input: Input, opts: Options) throws {
   // The Go version reads standard input here whatever the input is (a bug
   // kept for the same behavior).
-  while try io.read_line() is some(line) {
+  while io.read_line() is some(line) {
     // Go's default line limit here is 64 KB, after which it silently stops
     if line.byte_length() >= 65536 {
       break
@@ -494,36 +494,36 @@ fn go_testdata() -> List<String> {
 
 test "gron output matches the Go version's testdata" {
   for name in go_testdata() {
-    let data = try files.read_bytes("testdata/go/${name}.json")
-    let want = try files.read("testdata/go/${name}.gron")
-    let ss = statements.sort_statements(try statements.statements_from_json(data, prefix: statements.json_prefix()))
+    let data = files.read_bytes("testdata/go/${name}.json")
+    let want = files.read("testdata/go/${name}.gron")
+    let ss = statements.sort_statements(statements.statements_from_json(data, prefix: statements.json_prefix()))
     let got = ss.map(s => "${s.to_string()}\n").join("")
     expect got == want
-    let jwant = try files.read("testdata/go/${name}.jgron")
-    let jgot = try ss.map(s => "${(try s.jsonify()).to_string()}\n").join("")
+    let jwant = files.read("testdata/go/${name}.jgron")
+    let jgot = ss.map(s => "${s.jsonify().to_string()}\n").join("")
     expect jgot == jwant
   }
 }
 
 test "ungron of gron gives the same value back" {
   for name in go_testdata() {
-    let data = try files.read_bytes("testdata/go/${name}.json")
-    let lines = (try files.read("testdata/go/${name}.gron")).lines()
-    var merged = try statements.to_value(lines.map(l => statements.statement_from_string(l)))
+    let data = files.read_bytes("testdata/go/${name}.json")
+    let lines = files.read("testdata/go/${name}.gron").lines()
+    var merged = statements.to_value(lines.map(l => statements.statement_from_string(l)))
     if merged is jsonraw.Value.Object(fields) {
       merged = fields["json"] ?? merged
     }
-    expect jsonraw.encode_pretty(merged) == jsonraw.encode_pretty(try jsonraw.decode_first(data))
+    expect jsonraw.encode_pretty(merged) == jsonraw.encode_pretty(jsonraw.decode_first(data))
   }
 }
 
 test "the JSON form reads back" {
-  let lines = (try files.read("testdata/go/one.jgron")).lines()
-  let ss = try lines.map(l => try statements.statement_from_json_spec(l))
+  let lines = files.read("testdata/go/one.jgron").lines()
+  let ss = lines.map(l => statements.statement_from_json_spec(l))
   // Keys come back quoted, as in the Go version
   expect ss[1].to_string() == "json[\"abool\"] = true;"
-  let from_json = try statements.to_value(ss)
-  let from_gron = try statements.to_value((try files.read("testdata/go/one.gron")).lines().map(l => statements.statement_from_string(l)))
+  let from_json = statements.to_value(ss)
+  let from_gron = statements.to_value(files.read("testdata/go/one.gron").lines().map(l => statements.statement_from_string(l)))
   expect jsonraw.encode_pretty(from_json) == jsonraw.encode_pretty(from_gron)
 }
 
@@ -543,9 +543,9 @@ test "usage ends like Go's" {
 test "JSON 10000 levels deep, and no deeper" {
   let depth = 10000
   let deep = "${"{\"a\":".repeat(depth - 1)}[1]${"}".repeat(depth - 1)}"
-  let ss = try statements.statements_from_json(deep.bytes(), prefix: statements.json_prefix())
+  let ss = statements.statements_from_json(deep.bytes(), prefix: statements.json_prefix())
   expect ss.length == depth + 1
-  var merged = try statements.to_value(ss)
+  var merged = statements.to_value(ss)
   if merged is jsonraw.Value.Object(fields) {
     merged = fields["json"] ?? merged
   }

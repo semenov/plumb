@@ -106,7 +106,7 @@ test "get echoes args, headers, method and url" {
   let r = test_router()
   var req = new_request("GET", target: "/get?foo=foo&bar=bar")
   req.headers["user-agent"] = "test"
-  let res = try r.handle(req)
+  let res = r.handle(req)
   expect res.status == 200
   expect res.headers["content-type"] == "application/json; charset=utf-8"
   let body = body_json(res)
@@ -129,21 +129,21 @@ test "get: origin from the forwarding headers" {
   let r = test_router()
   var req = new_request("GET", target: "/get")
   req.headers["x-forwarded-for"] = "1.1.1.1, 2.2.2.2"
-  expect text_of(field(body_json(try r.handle(req)), name: "origin")) == "1.1.1.1"
+  expect text_of(field(body_json(r.handle(req)), name: "origin")) == "1.1.1.1"
   var req2 = new_request("GET", target: "/get")
   req2.headers["fly-client-ip"] = "3.3.3.3"
   req2.headers["x-forwarded-for"] = "1.1.1.1"
-  expect text_of(field(body_json(try r.handle(req2)), name: "origin")) == "3.3.3.3"
+  expect text_of(field(body_json(r.handle(req2)), name: "origin")) == "3.3.3.3"
 }
 
 test "get: scheme from X-Forwarded-Proto" {
   let r = test_router()
   var req = new_request("GET", target: "/get")
   req.headers["x-forwarded-proto"] = "https"
-  expect text_of(field(body_json(try r.handle(req)), name: "url")) == "https://host/get"
+  expect text_of(field(body_json(r.handle(req)), name: "url")) == "https://host/get"
   var req2 = new_request("GET", target: "/get")
   req2.headers["x-forwarded-ssl"] = "on"
-  expect text_of(field(body_json(try r.handle(req2)), name: "url")) == "https://host/get"
+  expect text_of(field(body_json(r.handle(req2)), name: "url")) == "https://host/get"
 }
 
 test "exclude headers" {
@@ -152,7 +152,7 @@ test "exclude headers" {
   req.headers["x-ignore-foo"] = "1"
   req.headers["x-info-this-key"] = "2"
   req.headers["x-keep"] = "3"
-  let hs = field(body_json(try r.handle(req)), name: "headers")
+  let hs = field(body_json(r.handle(req)), name: "headers")
   expect field(hs, name: "X-Ignore-Foo") == json.Value.Null
   expect field(hs, name: "X-Info-This-Key") == json.Value.Null
   expect json.encode(field(hs, name: "X-Keep")) == "[\"3\"]"
@@ -168,7 +168,7 @@ test "cors headers on every response" {
   var req = new_request("OPTIONS", target: "/get")
   req.headers["origin"] = "origin"
   req.headers["access-control-request-headers"] = "X-Test"
-  let pre = try r.handle(req)
+  let pre = r.handle(req)
   expect pre.status == 200
   expect pre.headers["access-control-allow-origin"] == "origin"
   expect pre.headers["access-control-allow-methods"] == "GET, POST, HEAD, PUT, DELETE, PATCH, OPTIONS"
@@ -182,14 +182,14 @@ test "ip as text" {
   let r = test_router()
   var req = new_request("GET", target: "/ip?format=text")
   req.headers["x-forwarded-for"] = "9.9.9.9"
-  expect (try r.handle(req)).text() == "9.9.9.9\n"
+  expect r.handle(req).text() == "9.9.9.9\n"
 }
 
 test "user agent" {
   let r = test_router()
   var req = new_request("GET", target: "/user-agent")
   req.headers["user-agent"] = "test"
-  expect text_of(field(body_json(try r.handle(req)), name: "user-agent")) == "test"
+  expect text_of(field(body_json(r.handle(req)), name: "user-agent")) == "test"
 }
 
 // ---- TestPost & co ----
@@ -199,7 +199,7 @@ test "post: form body" {
   var req = new_request("POST", target: "/post")
   req.headers["content-type"] = "application/x-www-form-urlencoded"
   req.body = "foo=foo&bar=bar1&bar=bar2&baz=a+b%21".bytes()
-  let body = body_json(try r.handle(req))
+  let body = body_json(r.handle(req))
   expect json.encode(field(body, name: "form")) == "{\"bar\":[\"bar1\",\"bar2\"],\"baz\":[\"a b!\"],\"foo\":[\"foo\"]}"
   expect text_of(field(body, name: "data")) == "foo=foo&bar=bar1&bar=bar2&baz=a+b%21"
 }
@@ -209,7 +209,7 @@ test "post: json body" {
   var req = new_request("POST", target: "/post")
   req.headers["content-type"] = "application/json; charset=utf-8"
   req.body = "{\"foo\": \"foo\", \"bar\": [1, 2, 3], \"baz\": {\"x\": true}}".bytes()
-  let body = body_json(try r.handle(req))
+  let body = body_json(r.handle(req))
   // sorted like Go's maps
   expect json.encode(field(body, name: "json")) == "{\"bar\":[1,2,3],\"baz\":{\"x\":true},\"foo\":\"foo\"}"
 }
@@ -219,7 +219,7 @@ test "post: invalid json is a 400" {
   var req = new_request("POST", target: "/post")
   req.headers["content-type"] = "application/json"
   req.body = "{\"foo".bytes()
-  expect (try r.handle(req)).status == 400
+  expect r.handle(req).status == 400
 }
 
 test "post: multipart form with files" {
@@ -227,7 +227,7 @@ test "post: multipart form with files" {
   var req = new_request("POST", target: "/post")
   req.headers["content-type"] = "multipart/form-data; boundary=XYZ"
   req.body = "--XYZ\r\nContent-Disposition: form-data; name=\"foo\"\r\n\r\nfoo\r\n--XYZ\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.txt\"\r\nContent-Type: text/plain\r\n\r\nfile content\r\n--XYZ--\r\n".bytes()
-  let res = try r.handle(req)
+  let res = r.handle(req)
   expect res.status == 200
   let body = body_json(res)
   expect json.encode(field(body, name: "form")) == "{\"foo\":[\"foo\"]}"
@@ -239,7 +239,7 @@ test "post: unknown content type becomes a data URL" {
   var req = new_request("POST", target: "/post")
   req.headers["content-type"] = "application/x-foo"
   req.body = "abc".bytes()
-  expect text_of(field(body_json(try r.handle(req)), name: "data")) == "data:application/x-foo;base64,YWJj"
+  expect text_of(field(body_json(r.handle(req)), name: "data")) == "data:application/x-foo;base64,YWJj"
 }
 
 test "post: body too large" {
@@ -247,7 +247,7 @@ test "post: body too large" {
   var req = new_request("POST", target: "/post")
   req.headers["content-type"] = "text/plain"
   req.body = "0123456789".bytes()
-  expect (try r.handle(req)).status == 400
+  expect r.handle(req).status == 400
 }
 
 test "put, patch, delete and anything" {
@@ -267,7 +267,7 @@ test "upload counts bytes" {
   let r = test_router()
   var req = new_request("POST", target: "/upload")
   req.body = "hello".bytes()
-  expect text_of(field(body_json(try r.handle(req)), name: "bytes_received")) == "5"
+  expect text_of(field(body_json(r.handle(req)), name: "bytes_received")) == "5"
 }
 
 // ---- TestStatus ----
@@ -311,7 +311,7 @@ test "status: weighted choice" {
 }
 
 test "weighted random choice picks by weight" {
-  let choices = try helpers.parse_weighted_choices("100:1,200:2,300:1")
+  let choices = helpers.parse_weighted_choices("100:1,200:2,300:1")
   expect helpers.weighted_random_choice(choices, r: 0.0) == 100
   expect helpers.weighted_random_choice(choices, r: 0.3) == 200
   expect helpers.weighted_random_choice(choices, r: 0.74) == 200
@@ -423,7 +423,7 @@ test "cookies echo" {
   let r = test_router()
   var req = new_request("GET", target: "/cookies")
   req.headers["cookie"] = "k1=v1; k2=v2"
-  expect json.encode(field(body_json(try r.handle(req)), name: "cookies")) == "{\"k1\":\"v1\",\"k2\":\"v2\"}"
+  expect json.encode(field(body_json(r.handle(req)), name: "cookies")) == "{\"k1\":\"v1\",\"k2\":\"v2\"}"
 }
 
 test "set cookies redirects and sets" {
@@ -440,12 +440,12 @@ test "basic auth" {
   let r = test_router()
   var req = new_request("GET", target: "/basic-auth/user/pass")
   req.headers["authorization"] = "Basic ${"user:pass".bytes().base64()}"
-  let res = try r.handle(req)
+  let res = r.handle(req)
   expect res.status == 200
   expect res.text() == "{\n  \"authenticated\": true,\n  \"user\": \"user\",\n  \"authorized\": true\n}\n"
   var bad = new_request("GET", target: "/basic-auth/user/pass")
   bad.headers["authorization"] = "Basic ${"user:bad".bytes().base64()}"
-  let denied = try r.handle(bad)
+  let denied = r.handle(bad)
   expect denied.status == 401
   expect denied.headers["www-authenticate"] == "Basic realm=\"Fake Realm\""
   expect do(r, method: "GET", target: "/hidden-basic-auth/user/pass").status == 404
@@ -455,11 +455,11 @@ test "bearer" {
   let r = test_router()
   var req = new_request("GET", target: "/bearer")
   req.headers["authorization"] = "Bearer abc123"
-  expect text_of(field(body_json(try r.handle(req)), name: "token")) == "abc123"
+  expect text_of(field(body_json(r.handle(req)), name: "token")) == "abc123"
   for header in ["", "Bearer", "Bearer a b", "Basic abc", "bearer abc"] {
     var bad = new_request("GET", target: "/bearer")
     bad.headers["authorization"] = header
-    let res = try r.handle(bad)
+    let res = r.handle(bad)
     expect res.status == 401
     expect res.headers["www-authenticate"] == "Bearer"
   }
@@ -477,7 +477,7 @@ test "digest auth" {
   // captured from a browser login, from the original test suite
   var ok = new_request("GET", target: "/digest-auth/auth/user/pass/MD5")
   ok.headers["authorization"] = "Digest username=\"user\", realm=\"go-httpbin\", nonce=\"6fb213c6593975c877bb1247370527ad\", uri=\"/digest-auth/auth/user/pass/MD5\", algorithm=MD5, response=\"9b7a05d78051b4f668356eedf32f55d6\", opaque=\"fd1c386a015a2bb7c41585f54329ce91\", qop=auth, nc=00000001, cnonce=\"aaab705226af5bd4\""
-  expect (try r.handle(ok)).status == 200
+  expect r.handle(ok).status == 200
 }
 
 // ---- TestGzip, TestDeflate ----
@@ -486,11 +486,11 @@ test "gzip and deflate" {
   let r = test_router()
   let gz = do(r, method: "GET", target: "/gzip")
   expect gz.headers["content-encoding"] == "gzip"
-  let body = try json.parse(try zlib.gunzip(gz.body).text())
+  let body = json.parse(zlib.gunzip(gz.body).text())
   expect field(body, name: "gzipped") == json.Value.Bool(value: true)
   let df = do(r, method: "GET", target: "/deflate")
   expect df.headers["content-encoding"] == "deflate"
-  let dbody = try json.parse(try zlib.inflate(df.body).text())
+  let dbody = json.parse(zlib.inflate(df.body).text())
   expect field(dbody, name: "deflated") == json.Value.Bool(value: true)
 }
 
@@ -528,21 +528,21 @@ test "range" {
   expect all.headers["accept-ranges"] == "bytes"
   var part = new_request("GET", target: "/range/100")
   part.headers["range"] = "bytes=10-24"
-  let res = try r.handle(part)
+  let res = r.handle(part)
   expect res.status == 206
   expect res.text() == "klmnopqrstuvwxy"
   expect res.headers["content-range"] == "bytes 10-24/100"
   var suffix = new_request("GET", target: "/range/26")
   suffix.headers["range"] = "bytes=-5"
-  expect (try r.handle(suffix)).text() == "vwxyz"
+  expect r.handle(suffix).text() == "vwxyz"
   var multi = new_request("GET", target: "/range/26")
   multi.headers["range"] = "bytes=0-1,5-6"
-  let m = try r.handle(multi)
+  let m = r.handle(multi)
   expect m.status == 206
   expect (m.headers["content-type"] ?? "").starts_with("multipart/byteranges; boundary=")
   var bad = new_request("GET", target: "/range/26")
   bad.headers["range"] = "bytes=30-40"
-  expect (try r.handle(bad)).status == 416
+  expect r.handle(bad).status == 416
   expect do(r, method: "GET", target: "/range/0").status == 400
   expect do(r, method: "GET", target: "/range/foo").status == 400
 }
@@ -557,7 +557,7 @@ test "cache" {
   expect not (res.headers["etag"] is none)
   var cached = new_request("GET", target: "/cache")
   cached.headers["if-none-match"] = "x"
-  expect (try r.handle(cached)).status == 304
+  expect r.handle(cached).status == 304
   expect do(r, method: "GET", target: "/cache/60").headers["cache-control"] == "public, max-age=60"
   expect do(r, method: "GET", target: "/cache/foo").status == 400
 }
@@ -568,16 +568,16 @@ test "etag" {
   expect res.headers["etag"] == "\"abc\""
   var inm = new_request("GET", target: "/etag/abc")
   inm.headers["if-none-match"] = "\"abc\""
-  expect (try r.handle(inm)).status == 304
+  expect r.handle(inm).status == 304
   var other = new_request("GET", target: "/etag/abc")
   other.headers["if-none-match"] = "\"xyz\""
-  expect (try r.handle(other)).status == 200
+  expect r.handle(other).status == 200
   var im = new_request("GET", target: "/etag/abc")
   im.headers["if-match"] = "\"xyz\""
-  expect (try r.handle(im)).status == 412
+  expect r.handle(im).status == 412
   var im_ok = new_request("GET", target: "/etag/abc")
   im_ok.headers["if-match"] = "\"abc\""
-  expect (try r.handle(im_ok)).status == 200
+  expect r.handle(im_ok).status == 200
 }
 
 // ---- TestBytes, TestStreamBytes ----
@@ -627,10 +627,10 @@ test "images" {
   expect do(r, method: "GET", target: "/image/gif").status == 404
   var accept = new_request("GET", target: "/image")
   accept.headers["accept"] = "image/webp"
-  expect (try r.handle(accept)).headers["content-type"] == "image/webp"
+  expect r.handle(accept).headers["content-type"] == "image/webp"
   var bad = new_request("GET", target: "/image")
   bad.headers["accept"] = "text/html"
-  expect (try r.handle(bad)).status == 415
+  expect r.handle(bad).status == 415
 }
 
 test "base64" {
@@ -685,9 +685,9 @@ test "trailers: forbidden names" {
 
 test "helpers: go-style parsing" {
   expect helpers.canonical_header_key("x-forwarded-FOR") == "X-Forwarded-For"
-  expect try helpers.atoi("+12") == 12
-  expect (try helpers.parse_duration("1.5")).millis() == 1500
-  expect (try helpers.parse_duration("250ms")).millis() == 250
+  expect helpers.atoi("+12") == 12
+  expect helpers.parse_duration("1.5").millis() == 1500
+  expect helpers.parse_duration("250ms").millis() == 250
   expect helpers.compute_pause_per_write(time_seconds(1), count: 11).millis() == 100
   expect helpers.encode_server_timings([helpers.ServerTiming(name: "a", dur: time_seconds(1), desc: "d")]) == "a;dur=1000.00;desc=\"d\""
 }

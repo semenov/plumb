@@ -17,11 +17,11 @@ type StatsOptions {
 fn run(args: List<String>) throws {
   match args.first() ?? "" {
     "add" => {
-      let o = try cli.decode_from<AddOptions>(args.drop(1))
+      let o = cli.decode_from<AddOptions>(args.drop(1))
       print("add ${o.name} x${o.count} dry=${o.dry_run}")
     }
     "stats" => {
-      let o = try cli.decode_from<StatsOptions>(args.drop(1))
+      let o = cli.decode_from<StatsOptions>(args.drop(1))
       print("stats top=${o.top} dirs=${o.args}")
     }
     _ => print("usage: tool add|stats")

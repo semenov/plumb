@@ -8,6 +8,6 @@ type Options {
 }
 
 fn main() throws {
-  let o = try cli.decode<Options>()
+  let o = cli.decode<Options>()
   print("${o.n} ${o.h} ${o.disable_keepalive} ${o.args}")
 }

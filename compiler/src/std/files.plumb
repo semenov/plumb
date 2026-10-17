@@ -90,7 +90,7 @@ pub fn glob(pattern: String) throws -> List<String> {
   if not is_dir(dir) {
     return []
   }
-  return (try walk(dir)).filter(f => path.matches(f, pattern: pattern))
+  return walk(dir).filter(f => path.matches(f, pattern: pattern))
 }
 // Deletes a file or an empty directory.
 pub fn delete(path: String) throws
@@ -111,7 +111,7 @@ pub type FileInfo {
 // The size, permissions and time of the last change of a file or directory
 // (following symlinks).
 pub fn info(file_path: String) throws -> FileInfo {
-  let f = try __stat(file_path)
+  let f = __stat(file_path)
   return FileInfo(size: f[0], mode: f[1], modified: f[2], is_dir: f[3] == 1)
 }
 
@@ -124,7 +124,7 @@ pub fn rename(from: String, to: String) throws
 // Working with the text of paths: see the `path` module.
 
 // A file as a stream (see the `io` module), for reading or writing it
-// piece by piece: `with f = try files.open(path) { ... }`.
+// piece by piece: `with f = files.open(path) { ... }`.
 pub fn open(path: String) throws -> io.Stream
 // Creates (or empties) a file for writing.
 pub fn create(path: String) throws -> io.Stream

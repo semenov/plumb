@@ -25,7 +25,7 @@ type Found {
 }
 
 fn find(app: api.App, username: String, viewer: Int) throws -> Found {
-  let found = try app.conn.query<Found>(
+  let found = app.conn.query<Found>(
     """
     select u.id, u.username, u.bio, u.image,
       exists(select 1 from follows where follower_id = ?1 and followed_id = u.id) as following
@@ -43,29 +43,29 @@ fn answer(user: Found) -> http.Response {
 
 // GET /api/profiles/:username
 pub fn get(req: http.Request, app: api.App) throws -> http.Response {
-  let viewer = try auth.viewer(req, app) ?? 0
-  return answer(try find(app, username: req.param("username") ?? "", viewer: viewer))
+  let viewer = auth.viewer(req, app) ?? 0
+  return answer(find(app, username: req.param("username") ?? "", viewer: viewer))
 }
 
 // POST /api/profiles/:username/follow
 pub fn follow(req: http.Request, app: api.App) throws -> http.Response {
-  let viewer = try auth.require(req, app)
-  var user = try find(app, username: req.param("username") ?? "", viewer: viewer)
+  let viewer = auth.require(req, app)
+  var user = find(app, username: req.param("username") ?? "", viewer: viewer)
   if user.id == viewer {
     throw api.invalid("profile", problem: "can't follow yourself")
   }
   let followed = user.id
-  try app.write(() => try app.conn.execute("insert or ignore into follows (follower_id, followed_id) values (?, ?)", [viewer, followed]))
+  app.write(() => app.conn.execute("insert or ignore into follows (follower_id, followed_id) values (?, ?)", [viewer, followed]))
   user.following = true
   return answer(user)
 }
 
 // DELETE /api/profiles/:username/follow
 pub fn unfollow(req: http.Request, app: api.App) throws -> http.Response {
-  let viewer = try auth.require(req, app)
-  var user = try find(app, username: req.param("username") ?? "", viewer: viewer)
+  let viewer = auth.require(req, app)
+  var user = find(app, username: req.param("username") ?? "", viewer: viewer)
   let followed = user.id
-  try app.write(() => try app.conn.execute("delete from follows where follower_id = ? and followed_id = ?", [viewer, followed]))
+  app.write(() => app.conn.execute("delete from follows where follower_id = ? and followed_id = ?", [viewer, followed]))
   user.following = false
   return answer(user)
 }

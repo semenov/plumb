@@ -94,7 +94,7 @@ fn login(req: http.Request, conn: db.Connection) throws -> http.Response {
   let input = try json.decode<Login>(req.text()) catch err {
     return failure(400, message: err.message())
   }
-  let users = try conn.query<User>("select id, name, email from users where email = ?", [input.email])
+  let users = conn.query<User>("select id, name, email from users where email = ?", [input.email])
   if users.is_empty() {
     return failure(404, message: "no such user")
   }
@@ -108,7 +108,7 @@ fn list_notes(req: http.Request, conn: db.Connection) throws -> http.Response {
   }
   var limit = try (req.query("limit") ?? "20").to_int() catch _ { 20 }
   limit = max(1, b: min(limit, b: 100))
-  let notes = try conn.query<Note>("select id, user_id, title, body, created_at from notes where user_id = ? order by id desc limit ?", [user, limit])
+  let notes = conn.query<Note>("select id, user_id, title, body, created_at from notes where user_id = ? order by id desc limit ?", [user, limit])
   return http.json(200, notes)
 }
 
@@ -120,7 +120,7 @@ fn get_note(req: http.Request, conn: db.Connection) throws -> http.Response {
   let id = try (req.param("id") ?? "").to_int() catch _ {
     return failure(400, message: "id: not a number")
   }
-  let notes = try conn.query<Note>("select id, user_id, title, body, created_at from notes where id = ? and user_id = ?", [id, user])
+  let notes = conn.query<Note>("select id, user_id, title, body, created_at from notes where id = ? and user_id = ?", [id, user])
   if notes.is_empty() {
     return failure(404, message: "no such note")
   }
@@ -142,26 +142,26 @@ fn create_note(req: http.Request, conn: db.Connection) throws -> http.Response {
     return failure(422, message: "body: at most 10000 characters")
   }
   let now = time.unix_now()
-  let id = try conn.insert("insert into notes (user_id, title, body, created_at) values (?, ?, ?, ?)", [user, input.title, input.body, now])
+  let id = conn.insert("insert into notes (user_id, title, body, created_at) values (?, ?, ?, ?)", [user, input.title, input.body, now])
   return http.json(201, Note(id: id, user_id: user, title: input.title, body: input.body, created_at: now))
 }
 
 fn main() throws {
-  let port = try (env.get("PORT") ?? "8300").to_int()
+  let port = (env.get("PORT") ?? "8300").to_int()
   let path = env.get("DB") ?? "notes.db"
-  with conn = try db.open(path) {
-    try conn.execute("pragma journal_mode = wal", [])
-    try conn.execute("pragma synchronous = normal", [])
-    try conn.execute("create table if not exists users (id integer primary key, name text not null, email text not null unique)", [])
-    try conn.execute("create table if not exists notes (id integer primary key, user_id integer not null, title text not null, body text not null, created_at integer not null)", [])
-    try conn.execute("create index if not exists notes_user on notes (user_id, id)", [])
+  with conn = db.open(path) {
+    conn.execute("pragma journal_mode = wal", [])
+    conn.execute("pragma synchronous = normal", [])
+    conn.execute("create table if not exists users (id integer primary key, name text not null, email text not null unique)", [])
+    conn.execute("create table if not exists notes (id integer primary key, user_id integer not null, title text not null, body text not null, created_at integer not null)", [])
+    conn.execute("create index if not exists notes_user on notes (user_id, id)", [])
     var router = http.Router()
     router.use(http.log_requests())
-    router.post("/users", req => try create_user(req, conn))
-    router.post("/login", req => try login(req, conn))
-    router.get("/notes", req => try list_notes(req, conn))
-    router.post("/notes", req => try create_note(req, conn))
-    router.get("/notes/:id", req => try get_note(req, conn))
-    try http.serve(router, port: port)
+    router.post("/users", req => create_user(req, conn))
+    router.post("/login", req => login(req, conn))
+    router.get("/notes", req => list_notes(req, conn))
+    router.post("/notes", req => create_note(req, conn))
+    router.get("/notes/:id", req => get_note(req, conn))
+    http.serve(router, port: port)
   }
 }

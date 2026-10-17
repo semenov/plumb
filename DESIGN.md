@@ -58,8 +58,8 @@ contain another `Shared` in its value (a compile error).
 ### Resources: `with`, enforced by the compiler
 
 ```
-with conn = try db.open(path) {
-  let users = try conn.query<User>("select …", [])
+with conn = db.open(path) {
+  let users = conn.query<User>("select …", [])
 }
 // conn is closed here, even if an error was thrown
 ```
@@ -75,7 +75,7 @@ goes in a `with` around all of `main`.
 - **Handing a resource over:** a function may return a new resource, and
   its caller then needs `with`. To set one up and close it only if the
   setup fails, return the `with` variable itself: `with c = Client(...) {
-  try login(c); return c }`. An error closes it; the `return` moves it out
+  login(c); return c }`. An error closes it; the `return` moves it out
   open. No new keyword, and the reader sees both paths.
 
 ### Data: mutable values (Swift-style)
@@ -195,7 +195,7 @@ used result is always a mutation or an action. The rule also catches the
   them.
 - Lambdas are `x => expr` or an indented block. They capture values by copy.
   Changing a captured `var` is an error.
-- `throws` passes through lambdas: `try users.map(u => try load(u))`.
+- `throws` passes through lambdas: `users.map(u => load(u))`.
   Higher-order functions declare this once in the standard library.
 
 ### Modules and packages
@@ -269,18 +269,27 @@ used result is always a mutation or an action. The rule also catches the
 
 ### Errors: checked, untyped `throws`
 
-- A function that can fail says `throws` (without a list of types). Every call
-  to it starts with `try`.
+- A function that can fail says `throws` (without a list of types). Inside
+  a `throws` function, an error from a call goes up to the caller by
+  itself: the call has nothing in front of it. In a function that isn't
+  `throws`, a call that can fail is a compile error until it's handled.
 - `Error` is an interface (`fn message(self) -> String`) that any record can
   implement. Handling checks the type: `if err is NotFound`.
-- **`try` covers the whole expression after it** (like Swift): in
-  `try encoding.from_hex(t).text()` both calls may fail. The reader still
-  sees at the start of the line that something in it can fail. A `try`
-  over an expression where nothing can fail is an error.
+- **`try` only handles, and always comes with `catch`.** A reader from
+  Python, JS or Java sees `try` and expects the handler; a `try` that only
+  passed the error up (three in four of them, when it existed) was noise
+  that read as unfinished code. `try f(x)` alone is an error ("remove
+  `try`"), and so is `try ... catch` over an expression where nothing can
+  fail. `try ... catch` covers every call between them: in
+  `try encoding.from_hex(t).text() catch err { "" }` both calls are handled.
+- What's given up: the line that can fail isn't marked. The signature
+  still says `throws`, the compiler knows every such call, and the
+  editor is to mark them (TODO) (Vlad's choice B, 2026-10-18; Swift and Rust mark
+  each call, Python, Kotlin and C# don't).
 - Two forms only:
 
   ```
-  let text = try files.read(path)          # pass it up
+  let text = files.read(path)              # pass it up
 
   let user = try load(id) catch err        # handle it here
     if err is NotFound
@@ -316,7 +325,7 @@ used result is always a mutation or an action. The rule also catches the
   fn dashboard(id: Int) throws -> Dashboard {
     let user = spawn load_user(id)
     let orders = spawn load_orders(id)
-    return Dashboard(user: try user.wait(), orders: try orders.wait())
+    return Dashboard(user: user.wait(), orders: orders.wait())
   }
   ```
 
@@ -325,7 +334,7 @@ used result is always a mutation or an action. The rule also catches the
 - **A `Task` can't leave the function:** it can't be returned, stored in a
   record or captured by a lambda (compile errors). Local variables and lists
   are fine: `pending.append(spawn fetch(url))`.
-- **Errors aren't lost.** An error arrives in `try task.wait()`. If a task
+- **Errors aren't lost.** An error arrives in `task.wait()`. If a task
   fails and nobody waits for it, the other tasks are cancelled and the error
   comes out of the function, so `spawn` of a failing call requires `throws`.
 - **Results must be used:** a `Task<T>` nobody waits for is an error.
@@ -335,13 +344,13 @@ used result is always a mutation or an action. The rule also catches the
   cancelled: nothing is lost silently. A background worker is stopped
   explicitly, e.g. by closing its queue. On an early exit (`return` or an
   error before `wait`) unfinished tasks are cancelled, then waited for.
-- For lists: `urls.parallel_map(limit: 10, transform: url => try fetch(url))`.
+- For lists: `urls.parallel_map(limit: 10, transform: url => fetch(url))`.
 - **All cores are used:** tasks run on a pool of threads (like Go), so `spawn`
   and `parallel_map` speed up computation too, not only waiting.
 - Cancellation is automatic: a waiting operation in a cancelled task throws
   `Cancelled`.
 - Tasks share data only through `Shared<T>` or pass it through `Channel<T>`.
-- Timeouts: `try time.timeout(time.seconds(5), () => try http.get(url))`
+- Timeouts: `time.timeout(time.seconds(5), () => http.get(url))`
   runs the work as a task and cancels it at the deadline (its own tasks
   too); every wait is cancellable, including sockets and HTTP requests.
 - **Ctrl-C cancels `main`'s task.** Waits stop with `Cancelled`, `with`
@@ -392,10 +401,10 @@ used result is always a mutation or an action. The rule also catches the
   the conversion into a record:
 
   ```
-  let opts = try cli.decode<Options>()     # flags from fields, generated --help
-  let config = try env.decode<Config>()
-  let user = try json.decode<User>(body)
-  let users = try conn.query<User>("select * from users where age > ?", [18])
+  let opts = cli.decode<Options>()     # flags from fields, generated --help
+  let config = env.decode<Config>()
+  let user = json.decode<User>(body)
+  let users = conn.query<User>("select * from users where age > ?", [18])
   ```
 
   A missing required field is an error that names the field. A `T?` field or
@@ -537,7 +546,7 @@ cgen (C) → clang`.
 - **Decided while building:** bit operations are `Int` methods
   (`bit_and`, `bit_or`, `bit_xor`, `shift_left`, `shift_right`), not
   operators. The prelude marks higher-order functions `rethrows`, so
-  `xs.map(x => try f(x))` throws only when the lambda can.
+  `xs.map(x => f(x))` throws only when the lambda can.
 
 **Not implemented yet:** the items in `TODO.md`.
 

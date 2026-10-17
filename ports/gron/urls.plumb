@@ -56,7 +56,7 @@ pub fn get_url(u: String, insecure: Bool, proxy_url: String, no_proxy: String, v
   if configure_proxy(u, proxy: proxy_url, no_proxy: no_proxy) is some(p) {
     throw Failure(message: "can't use proxy ${p}: plumb's HTTP client has no proxy support")
   }
-  with res = try http.open(http.ClientRequest(
+  with res = http.open(http.ClientRequest(
     url: u,
     headers: {"user-agent": "gron/${version}", "accept": "application/json"},
     timeout: time.seconds(20),

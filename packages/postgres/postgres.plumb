@@ -1,9 +1,9 @@
 // postgres: a PostgreSQL client (the wire protocol over TCP), written in
 // the language itself.
 //
-//   with db = try postgres.connect("postgres://ada:secret@localhost:5432/app") {
-//     try db.execute("insert into users (name, age) values ($1, $2)", ["Ada", 36])
-//     let adults = try db.query<User>("select id, name, age from users where age >= $1", [18])
+//   with db = postgres.connect("postgres://ada:secret@localhost:5432/app") {
+//     db.execute("insert into users (name, age) values ($1, $2)", ["Ada", 36])
+//     let adults = db.query<User>("select id, name, age from users where age >= $1", [18])
 //   }
 //
 // Like the built-in `db`: SQL is written right in the call ($1, $2, ... for
@@ -23,7 +23,7 @@ import net
 import sql
 import url
 
-// A connection. Get one with `with db = try postgres.connect(...)`.
+// A connection. Get one with `with db = postgres.connect(...)`.
 pub type Connection {
   conn: io.Stream
 
@@ -31,17 +31,17 @@ pub type Connection {
     // tell the server we're leaving; it's fine if it's already gone
     try self.conn.write(message("X", Bytes())) catch err {
     }
-    try self.conn.close()
+    self.conn.close()
   }
 
   // A statement without rows: create, insert, update, delete.
   pub fn execute(self, query: sql.Query, params: List<sql.Value>) throws {
-    let _ = try run(self.conn, query: query.value, params: params)
+    let _ = run(self.conn, query: query.value, params: params)
   }
 
   // The same, returning the number of rows it changed.
   pub fn execute_counting(self, query: sql.Query, params: List<sql.Value>) throws -> Int {
-    let r = try run(self.conn, query: query.value, params: params)
+    let r = run(self.conn, query: query.value, params: params)
     let words = r.tag.split(" ")
     return try (words.last() ?? "0").to_int() catch err {
       return 0
@@ -50,33 +50,33 @@ pub type Connection {
 
   // Rows as records, columns matched to fields by name.
   pub fn query<T>(self, query: sql.Query, params: List<sql.Value>) throws -> List<T> {
-    let r = try run(self.conn, query: query.value, params: params)
-    return try sql.decode<T>(r.columns, rows: r.rows)
+    let r = run(self.conn, query: query.value, params: params)
+    return sql.decode<T>(r.columns, rows: r.rows)
   }
 
   // The first row, or none.
   pub fn query_one<T>(self, query: sql.Query, params: List<sql.Value>) throws -> T? {
-    let r = try run(self.conn, query: query.value, params: params)
-    let rows = try sql.decode<T>(r.columns, rows: r.rows.take(1))
+    let r = run(self.conn, query: query.value, params: params)
+    let rows = sql.decode<T>(r.columns, rows: r.rows.take(1))
     return rows.first()
   }
 
   // Runs `work` in a transaction: everything or nothing. An error inside
   // rolls the changes back and comes out of `transaction`.
   pub fn transaction<R>(self, work: fn() throws -> R) throws -> R {
-    try self.execute("begin", [])
+    self.execute("begin", [])
     let result = try work() catch err {
-      try self.execute("rollback", [])
+      self.execute("rollback", [])
       throw err
     }
-    try self.execute("commit", [])
+    self.execute("commit", [])
     return result
   }
 }
 
 // Connects to "postgres://user:password@host:port/database?sslmode=prefer".
 pub fn connect(address: String) throws -> Connection {
-  let u = try url.parse(address)
+  let u = url.parse(address)
   if u.scheme != "postgres" and u.scheme != "postgresql" {
     throw Failure(message: "postgres: the address must start with postgres://")
   }
@@ -87,13 +87,13 @@ pub fn connect(address: String) throws -> Connection {
     database = user
   }
   let mode = u.query["sslmode"] ?? "prefer"
-  with c = Connection(conn: try net.connect(u.host, u.port ?? 5432)) {
+  with c = Connection(conn: net.connect(u.host, u.port ?? 5432)) {
     if mode != "disable" {
       var req = Bytes()
       req.append_int(8, size: 4)
       req.append_int(80877103, size: 4)
-      try c.conn.write(req)
-      let answer = try c.conn.read_exact(1)
+      c.conn.write(req)
+      let answer = c.conn.read_exact(1)
       if answer.int_at(0, size: 1) == 83 {
         try net.start_tls(c.conn, host: u.host) catch err {
           throw Failure(message: "postgres: TLS failed (a self-signed certificate? on a trusted network, add ?sslmode=disable to the address)", cause: err)
@@ -114,8 +114,8 @@ pub fn connect(address: String) throws -> Connection {
     var packet = Bytes()
     packet.append_int(startup.length + 4, size: 4)
     packet.append_all(startup)
-    try c.conn.write(packet)
-    try authenticate(c.conn, user: user, password: password)
+    c.conn.write(packet)
+    authenticate(c.conn, user: user, password: password)
     return c
   }
 }
@@ -128,7 +128,7 @@ fn authenticate(conn: io.Stream, user: String, password: String) throws {
   var salted = Bytes()
   var auth_message = ""
   while true {
-    let m = try read_message(conn)
+    let m = read_message(conn)
     if m.kind == "E" {
       throw server_error(m.body)
     }
@@ -147,7 +147,7 @@ fn authenticate(conn: io.Stream, user: String, password: String) throws {
       var body = Bytes()
       body.append_text(password)
       body.append(0)
-      try conn.write(message("p", body))
+      conn.write(message("p", body))
     } else if code == 10 {
       // SCRAM-SHA-256 (RFC 5802)
       nonce = crypto.random_bytes(18).base64()
@@ -158,9 +158,9 @@ fn authenticate(conn: io.Stream, user: String, password: String) throws {
       body.append(0)
       body.append_int(first.byte_length(), size: 4)
       body.append_text(first)
-      try conn.write(message("p", body))
+      conn.write(message("p", body))
     } else if code == 11 {
-      let server_first = try r.rest().text()
+      let server_first = r.rest().text()
       var fields: Map<String, String> = {}
       for part in server_first.split(",") {
         if part.byte_length() > 2 {
@@ -171,8 +171,8 @@ fn authenticate(conn: io.Stream, user: String, password: String) throws {
       if not server_nonce.starts_with(nonce) {
         throw Failure(message: "postgres: the server's login answer doesn't match")
       }
-      let salt = try encoding.from_base64(fields["s"] ?? "")
-      let iterations = try (fields["i"] ?? "4096").to_int()
+      let salt = encoding.from_base64(fields["s"] ?? "")
+      let iterations = (fields["i"] ?? "4096").to_int()
       salted = crypto.pbkdf2_sha256(password.bytes(), salt: salt, iterations: iterations, length: 32)
       let client_key = crypto.hmac_sha256(salted, data: "Client Key".bytes())
       let stored_key = crypto.sha256(client_key)
@@ -185,9 +185,9 @@ fn authenticate(conn: io.Stream, user: String, password: String) throws {
       }
       var body = Bytes()
       body.append_text("${final_bare},p=${proof.base64()}")
-      try conn.write(message("p", body))
+      conn.write(message("p", body))
     } else if code == 12 {
-      let server_final = try r.rest().text()
+      let server_final = r.rest().text()
       let server_key = crypto.hmac_sha256(salted, data: "Server Key".bytes())
       let expected = crypto.hmac_sha256(server_key, data: auth_message.bytes()).base64()
       if server_final != "v=${expected}" {
@@ -245,12 +245,12 @@ fn run(conn: io.Stream, query: String, params: List<sql.Value>) throws -> Result
   execute.append_int(0, size: 4)
   out.append_all(message("E", execute))
   out.append_all(message("S", Bytes()))
-  try conn.write(out)
+  conn.write(out)
 
   var result = Result(columns: [], types: [], rows: [], tag: "")
   var failure: Error? = none
   while true {
-    let m = try read_message(conn)
+    let m = read_message(conn)
     if m.kind == "Z" {
       break
     }
@@ -260,7 +260,7 @@ fn run(conn: io.Stream, query: String, params: List<sql.Value>) throws -> Result
       var r = Reader(data: m.body)
       let n = r.int16()
       for _ in 0..<n {
-        result.columns.append(try r.cstring())
+        result.columns.append(r.cstring())
         r.skip(6)
         result.types.append(r.int32())
         r.skip(8)
@@ -274,13 +274,13 @@ fn run(conn: io.Stream, query: String, params: List<sql.Value>) throws -> Result
         if len < 0 {
           row.append(sql.Value.Null)
         } else {
-          row.append(try column_value(r.take(len), type_id: result.types[i]))
+          row.append(column_value(r.take(len), type_id: result.types[i]))
         }
       }
       result.rows.append(row)
     } else if m.kind == "C" {
       var r = Reader(data: m.body)
-      result.tag = try r.cstring()
+      result.tag = r.cstring()
     }
   }
   if failure is some(e) {
@@ -302,18 +302,18 @@ fn param_text(v: sql.Value) -> String? {
 
 // String from the server -> a value, by the column's type
 fn column_value(data: Bytes, type_id: Int) throws -> sql.Value {
-  let text = try data.text()
+  let text = data.text()
   if type_id == 16 {
     return sql.Value.Boolean(value: text == "t")
   }
   if type_id == 20 or type_id == 21 or type_id == 23 or type_id == 26 {
-    return sql.Value.Integer(value: try text.to_int())
+    return sql.Value.Integer(value: text.to_int())
   }
   if type_id == 700 or type_id == 701 {
-    return sql.Value.Real(value: try text.to_float())
+    return sql.Value.Real(value: text.to_float())
   }
   if type_id == 17 and text.starts_with("\\x") {
-    return sql.Value.Blob(value: try encoding.from_hex(text.slice(from: 2, to: text.length)))
+    return sql.Value.Blob(value: encoding.from_hex(text.slice(from: 2, to: text.length)))
   }
   return sql.Value.String(value: text)
 }
@@ -364,10 +364,10 @@ fn message(kind: String, body: Bytes) -> Bytes {
 }
 
 fn read_message(conn: io.Stream) throws -> Message {
-  let head = try conn.read_exact(5)
+  let head = conn.read_exact(5)
   let length = head.int_at(1, size: 4) - 4
-  let body = if length > 0 { try conn.read_exact(length) } else { Bytes() }
-  return Message(kind: try head.slice(from: 0, to: 1).text(), body: body)
+  let body = if length > 0 { conn.read_exact(length) } else { Bytes() }
+  return Message(kind: head.slice(from: 0, to: 1).text(), body: body)
 }
 
 type Reader {
@@ -409,6 +409,6 @@ type Reader {
     let rest = self.data.slice(from: self.pos, to: self.data.length)
     let end = rest.index_of(Bytes([0])) ?? rest.length
     self.pos += end + 1
-    return try rest.slice(from: 0, to: end).text()
+    return rest.slice(from: 0, to: end).text()
   }
 }

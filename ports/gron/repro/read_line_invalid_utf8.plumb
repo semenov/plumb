@@ -8,7 +8,7 @@
 import io
 
 fn main() throws {
-  while try io.read_line() is some(line) {
+  while io.read_line() is some(line) {
     print("read_line: ${line.byte_length()} bytes: ${line.bytes().hex()}")
     let again = try line.bytes().text() catch err { "text() failed: ${err.message()}" }
     print(again)

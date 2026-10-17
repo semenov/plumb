@@ -5,6 +5,13 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
 
 ## Now
 
+- [x] **No `try` without `catch`** (Vlad chose B, 2026-10-18): in a
+      `throws` function a failing call passes its error up by itself;
+      `try` only handles (`try f() catch err { ... }`), and `try f()` alone
+      is an error. All code, docs and std comments changed (not
+      `experiments/`, which keep what the agents wrote then)
+  - [ ] the editor marks the calls that can fail (an LSP inlay hint or
+        semantic token), since the line no longer says it
 - [x] `plumb init` instead of `plumb new` (the current directory becomes the
       project) (Vlad, 2026-09-29)
 - [x] **Compile time vs Go**: benchmark, fix what's slow (Vlad, 2026-09-29):

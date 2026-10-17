@@ -38,5 +38,5 @@ pub fn viewer(req: http.Request, app: api.App) throws -> Int? {
 
 // The signed-in user's id; a 401 without a valid token.
 pub fn require(req: http.Request, app: api.App) throws -> Int {
-  return try viewer(req, app) ?? throw api.unauthorized("is missing")
+  return viewer(req, app) ?? throw api.unauthorized("is missing")
 }

@@ -1,16 +1,16 @@
 // net: TCP and UDP. Waiting on the network doesn't block other tasks.
 //
-//   with conn = try net.connect("example.com", 80) {
-//     try conn.write_text("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
-//     print(try conn.read(4096).text())
+//   with conn = net.connect("example.com", 80) {
+//     conn.write_text("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
+//     print(conn.read(4096).text())
 //   }
 //
-//   try net.serve(7000, conn => try echo(conn))     // a task per connection
+//   net.serve(7000, conn => echo(conn))             // a task per connection
 
 import io
 
 // A TCP connection is an `io.Stream`. Get one with
-// `with conn = try net.connect(...)`, or in the handler of `net.serve`
+// `with conn = net.connect(...)`, or in the handler of `net.serve`
 // (which closes it when the handler returns).
 pub fn connect(host: String, port: Int) throws -> io.Stream
 
@@ -36,7 +36,7 @@ pub type Datagram {
   from: String
 }
 
-// A UDP socket. Get one with `with sock = try net.udp(port)`; port 0 picks
+// A UDP socket. Get one with `with sock = net.udp(port)`; port 0 picks
 // a free one.
 pub builtin type UdpSocket {
   // Sends to "host:port".

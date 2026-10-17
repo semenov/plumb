@@ -15,7 +15,7 @@ type Count {
 }
 
 fn slow_query(conn: db.Connection) throws -> Int {
-  let rows = try conn.query<Count>(
+  let rows = conn.query<Count>(
     "with recursive c(x) as (select 1 union all select x + 1 from c where x < 2000000) select count(*) as n from c",
     [],
   )
@@ -23,9 +23,9 @@ fn slow_query(conn: db.Connection) throws -> Int {
 }
 
 fn main() throws {
-  with conn = try db.open("/tmp/serialized_queries.db") {
+  with conn = db.open("/tmp/serialized_queries.db") {
     let one = time.now()
-    let _ = try slow_query(conn)
+    let _ = slow_query(conn)
     print("one query: ${one.elapsed()}")
 
     let many = time.now()
@@ -34,7 +34,7 @@ fn main() throws {
       tasks.append(spawn slow_query(conn))
     }
     for t in tasks {
-      let _ = try t.wait()
+      let _ = t.wait()
     }
     print("8 queries in 8 tasks: ${many.elapsed()} (parallel would be close to one query)")
   }

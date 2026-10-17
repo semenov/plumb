@@ -174,11 +174,11 @@ two places hold it; `if m.take(k) is some(v) { m[k] = grow(v) }` doesn't.
 
 ```
 fn load(path: String) throws -> Config {          // can fail: `throws`
-  let text = try files.read(path)               // every failing call: `try`
-  return try json.decode<Config>(text)
+  let text = files.read(path)                   // an error here goes up
+  return json.decode<Config>(text)              // to the caller by itself
 }
 
-let text = try files.read(path) catch err {     // handle it here
+let text = try files.read(path) catch err {     // or handle it here
   if err is NotFound { return none }            // flow typing after `is`
   throw Failure(message: "can't load ${path}", cause: err)
 }
@@ -188,12 +188,15 @@ let text = try files.read(path) catch err {     // handle it here
   an error in its `cause` chain (`Failure(message:, cause: err)`, or your
   own error type's `cause: Error?` field) is a `NotFound`, and inside the
   `if`, `err` is that `NotFound`.
-- `catch` always follows `try`: `try f() catch err { ... }`. Never
-  `f() catch ...`.
+- A failing call needs nothing in front of it: in a `throws` function
+  its error goes up by itself. In a function that isn't `throws` it's a
+  compile error: add `throws`, or handle the error with `try ... catch`.
+- `try` is only for handling, and always comes with `catch`:
+  `try f() catch err { ... }`. Never `f() catch ...`, never `try f()` alone.
 - A `catch` block ends with a value, or with `return`, `throw`, `break` or
   `continue`.
-- `try` covers the whole expression after it: `try (try f()).text()` is
-  needless; `try f().text()` checks both calls.
+- `try ... catch` covers the whole expression between them:
+  `try f().text() catch err { "" }` handles both calls.
 - Your own errors: a type with `fn message(self) -> String`, or
   `Failure(message: "...")` from the prelude:
 
@@ -218,8 +221,8 @@ fn price(item: Item, count: Int) -> Float { ... }
 price(item, count: 3)            // with 3+ parameters, name every argument
                                  // after the first: f(a, b: 1, c: 2)
 xs.map(x => x * 2)               // lambdas: x => expr, or x => { ... }
-xs.map(x => try parse(x))        // a failing lambda needs `try` inside,
-                                 // and the call is `try xs.map(...)`
+xs.map(x => parse(x))            // a lambda that calls a failing function
+                                 // can fail too, and so can this `map`
 ```
 
 - **A function never changes its arguments.** Return the new value and
@@ -247,7 +250,7 @@ fn usage(msg: String) -> Never {
   eprint("error: ${msg}")
   process.exit(2)
 }
-let n = if args.length > 0 { try args[0].to_int() } else { usage("no count") }
+let n = if args.length > 0 { args[0].to_int() } else { usage("no count") }
 ```
 
 ## Numbers
@@ -261,7 +264,7 @@ let n = if args.length > 0 { try args[0].to_int() } else { usage("no count") }
   porting code that handles negative numbers).
 - Bits: `a.bit_and(b)`, `bit_or`, `bit_xor`, `shift_left`, `shift_right`;
   `0xFF`, `0b1010`, `0o755`, `1_000_000`.
-- String to numbers: `try text.to_int()`, `try text.to_float()`. They are
+- String to numbers: `text.to_int()`, `text.to_float()`. They are
   strict: `" 42"` (trim first), `"1_000"`, `"nan"`, `"inf"` and `"1e400"` are errors.
 - **Money is `Decimal`**, never `Float`: `let price: Decimal = 19.99`;
   `+ -` are exact, `*` is exact up to 18 digits after the point (then it
@@ -277,8 +280,8 @@ Files, connections, processes and anything else with a `close()` must be
 opened with `with`. It's closed at the end of the block, even on an error.
 
 ```
-with f = try files.create("out.txt") {
-  try f.write_text("hello\n")
+with f = files.create("out.txt") {
+  f.write_text("hello\n")
 }
 
 with conn = try postgres.connect(url) catch err {     // handle failure to open
@@ -289,19 +292,19 @@ with conn = try postgres.connect(url) catch err {     // handle failure to open
 }
 ```
 
-- `let f = try files.open(p)` is an error: use `with`.
+- `let f = files.open(p)` is an error: use `with`.
 - A lambda that uses the resource can't be kept after the block (put in
   a variable from outside, passed to `router.get` of an outside router,
   returned): it would find the resource closed.
 - A record with a `close(self)` method is a resource too. Its fields may
-  take other resources: `Client(conn: try net.connect(host, port))`.
+  take other resources: `Client(conn: net.connect(host, port))`.
 - A function may return a new resource (`fn open_db() throws -> db.Connection`).
   To set it up first and close it only on failure, return the `with`
   variable itself:
 
   ```
-  with c = Client(conn: try net.connect(host, port)) {
-    try login(c)          // an error closes it
+  with c = Client(conn: net.connect(host, port)) {
+    login(c)              // an error closes it
     return c              // success gives it to the caller, open
   }
   ```
@@ -311,8 +314,8 @@ with conn = try postgres.connect(url) catch err {     // handle failure to open
 ```
 let a = spawn fetch(url1)                 // a Task<T>, running in parallel
 let b = spawn fetch(url2)
-let pages = [try a.wait(), try b.wait()]
-let sizes = try urls.parallel_map(limit: 8, transform: u => try fetch(u).length)
+let pages = [a.wait(), b.wait()]
+let sizes = urls.parallel_map(limit: 8, transform: u => fetch(u).length)
 
 let counter = Shared<Int>(0)              // shared state: only through a lock
 with n = counter.lock() {                 // one task at a time: may change it
@@ -333,7 +336,7 @@ for u in urls {
   tasks.append(spawn http.get(u))
 }
 for t in tasks {
-  let res = try t.wait()
+  let res = t.wait()
 }
 ```
 
@@ -363,9 +366,9 @@ fn main() throws {
     let _ = emails.try_send(req.text())         // queued: the reply doesn't wait
     http.text(201, "welcome")
   })
-  try http.serve(router, port: 8080)
+  http.serve(router, port: 8080)
   emails.close()                                // then the worker finishes
-  try worker.wait()
+  worker.wait()
 }
 ```
 
@@ -387,7 +390,7 @@ with ls = listeners.read() {
 ## Data in and out: `decode<T>`
 
 ```
-let user = try json.decode<User>(body)          // missing fields: an error
+let user = json.decode<User>(body)              // missing fields: an error
                                                 // naming the field
 let text = json.encode(user)
                                                 // `createdAt` in JSON fills
@@ -396,17 +399,17 @@ let text = json.encode(user)
 let api_body = json.encode_camel(user)          // keys as createdAt
 let out = json.encode_with(user, options: json.EncodeOptions(keys: json.Keys.Kebab, omit_none: true))
                                                 // created-at; fields that are none left out
-let config = try env.decode<Config>()           // CONFIG fields from env
-let opts = try cli.decode<Options>()            // --flag or -flag (-n for a field `n`),
+let config = env.decode<Config>()               // CONFIG fields from env
+let opts = cli.decode<Options>()                // --flag or -flag (-n for a field `n`),
                                                 // --help generated: a comment
                                                 // above a field describes it
-let sub = try cli.decode_from<AddOptions>(args.drop(1)) // subcommands: match on args[0]
-let rows = try conn.query<User>("select id, name from users where age > ?", [18])
+let sub = cli.decode_from<AddOptions>(args.drop(1)) // subcommands: match on args[0]
+let rows = conn.query<User>("select id, name from users where age > ?", [18])
 ```
 
-JSON of unknown shape: `let v = try json.parse(text)` gives a `json.Value`
+JSON of unknown shape: `let v = json.parse(text)` gives a `json.Value`
 (`Null`, `Bool`, `Number`, `String`, `Array`, `Object`). A number stays as
-written: `if v is json.Value.Number(n) { let id = try n.to_int() }`. To
+written: `if v is json.Value.Number(n) { let id = n.to_int() }`. To
 build one: `json.number(0.7)`, `json.integer(512)`.
 
 SQL is always written right in the call, with `?` (SQLite) or `$1`
@@ -422,28 +425,28 @@ a request or job: `let l = log.with_fields({"request": "${id}"})`, then
 
 ```
 fn get_note(req: http.Request) throws -> http.Response {
-  let id = try (req.param("id") ?? "").to_int()
-  return http.json(200, try load_note(id))
+  let id = (req.param("id") ?? "").to_int()
+  return http.json(200, load_note(id))
 }
 
 var router = http.Router()
 router.get("/notes/:id", get_note)
 router.files("/static", dir: "public")
-try http.serve(router, port: 8080)
+http.serve(router, port: 8080)
 // or: http.serve_with(router, options: http.ServerOptions(port: 8080,
 //   host: "127.0.0.1", max_body: 10_000_000, idle_timeout: time.seconds(30)))
 // (slow or idle clients are closed: idle / read / write timeouts, 60 s)
 
-let res = try http.get("https://example.com")               // client
-let api = try http.send(http.ClientRequest(url: u, method: "POST",
+let res = http.get("https://example.com")                   // client
+let api = http.send(http.ClientRequest(url: u, method: "POST",
   headers: {"authorization": "Bearer ${key}"}, body: json.encode(x).bytes()))
 
 // several at once: the time of the slowest, not the sum (on wasm-server too)
 let weather = http.start(http.ClientRequest(url: weather_url))
 let news = http.start(http.ClientRequest(url: news_url))
-let w = try weather.wait()                                  // wait once each
-let n = try news.wait()
-let answers = try http.send_all(requests)                   // a list: answers in order
+let w = weather.wait()                                      // wait once each
+let n = news.wait()
+let answers = http.send_all(requests)                       // a list: answers in order
 ```
 
 Routes: `get`, `post`, `put`, `patch`, `delete`, `any` (every method),
@@ -463,18 +466,18 @@ add `log_requests` first):
 router.use(http.log_requests())
 router.use(http.cors(["https://app.example"]))
 router.use((req, next) => {
-  if req.header("authorization") is none { http.text(401, "log in") } else { try next(req) }
+  if req.header("authorization") is none { http.text(401, "log in") } else { next(req) }
 })
 ```
 
-WebSockets: `router.websocket("/chat", ws => try chat(ws))`; in `chat`,
-`while try ws.receive() is some(msg) { try ws.send_text(...) }`. Client:
-`with ws = try http.websocket("wss://...") { ... }`.
+WebSockets: `router.websocket("/chat", ws => chat(ws))`; in `chat`,
+`while ws.receive() is some(msg) { ws.send_text(...) }`. Client:
+`with ws = http.websocket("wss://...") { ... }`.
 
-Forms as records: `try req.decode_form<SignUp>()` (urlencoded or multipart;
+Forms as records: `req.decode_form<SignUp>()` (urlencoded or multipart;
 an unchecked box is `false`, an empty field is missing, a repeated name
-fills a `List`), the query: `try req.decode_query<Search>()`. As a Map:
-`try req.form()`; with files: `try req.parts()`. Cookies:
+fills a `List`), the query: `req.decode_query<Search>()`. As a Map:
+`req.form()`; with files: `req.parts()`. Cookies:
 `req.cookie("session")`, `res.with_cookie(http.Cookie(name: "session", value: v))`.
 
 Bodies are `Bytes`: `req.text()`, `res.text()` give them as text. A handler's error
@@ -490,7 +493,7 @@ type Store {
 }
 
 fn add_todo(req: http.Request, store: Shared<Store>) throws -> http.Response {
-  let input = try json.decode<NewTodo>(req.text())
+  let input = json.decode<NewTodo>(req.text())
   with s = store.lock() {               // fields change in place under the lock
     let todo = Todo(id: s.next_id, title: input.title)
     s.next_id += 1
@@ -501,19 +504,19 @@ fn add_todo(req: http.Request, store: Shared<Store>) throws -> http.Response {
 
 fn make_router(store: Shared<Store>) -> http.Router {
   var router = http.Router()
-  router.post("/todos", req => try add_todo(req, store))
+  router.post("/todos", req => add_todo(req, store))
   return router
 }
 
 fn main() throws {
-  try http.serve(make_router(Shared<Store>(Store())), port: 8080)
+  http.serve(make_router(Shared<Store>(Store())), port: 8080)
 }
 
 test "adding a todo" {                  // handlers are tested without a network
   let router = make_router(Shared<Store>(Store()))
   var req = http.request("POST", "/todos")
   req.body = "{\"title\": \"milk\"}".bytes()
-  let res = try router.handle(req)
+  let res = router.handle(req)
   expect res.status == 201
 }
 ```
@@ -521,8 +524,8 @@ test "adding a todo" {                  // handlers are tested without a network
 ## Templates (Handlebars style)
 
 ```
-let views = try template.load("views")             // views/*.html escape values
-let html = try views.render("menu", data: menu)    // {{name}} {{#each items}}...{{/each}}
+let views = template.load("views")                 // views/*.html escape values
+let html = views.render("menu", data: menu)        // {{name}} {{#each items}}...{{/each}}
                                                    // {{#if x}}...{{else}}...{{/if}} {{> header}}
 ```
 
@@ -622,16 +625,16 @@ path (`/admin/style.css` is `style.css`).
   import db
 
   fn before() throws {          // before the new version goes live; a failure refuses the deploy
-    with conn = try db.open("main") {
-      try conn.transaction(() => {   // all or nothing
-        try conn.execute("alter table notes add column tag text", [])
+    with conn = db.open("main") {
+      conn.transaction(() => {       // all or nothing
+        conn.execute("alter table notes add column tag text", [])
       })
     }
   }
 
   fn after() throws {           // after it's live, in the background: backfills, moving files
-    with conn = try db.open("main") {
-      try conn.execute("update notes set tag = 'old' where tag is null", [])
+    with conn = db.open("main") {
+      conn.execute("update notes set tag = 'old' where tag is null", [])
     }
   }
   ```
@@ -665,10 +668,10 @@ ordinary server:
 
 ```
 fn main() throws {
-  with conn = try db.open("notes") {        // a database granted to the app
+  with conn = db.open("notes") {            // a database granted to the app
     var router = http.Router()
-    router.get("/notes", req => http.json(200, try conn.query<Note>("select id, text from notes", [])))
-    try http.serve(router, port: 8080)      // the port is ignored there
+    router.get("/notes", req => http.json(200, conn.query<Note>("select id, text from notes", [])))
+    http.serve(router, port: 8080)          // the port is ignored there
   }
 }
 ```
@@ -677,9 +680,9 @@ fn main() throws {
   never into the database or the static files:
 
   ```
-  try storage.put_public("avatars/${id}.png", data: part.data, content_type: part.content_type)
-  let link = try storage.url("docs/${id}.pdf", expires: time.hours(1))  // private files: a link that expires
-  let target = try storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
+  storage.put_public("avatars/${id}.png", data: part.data, content_type: part.content_type)
+  let link = storage.url("docs/${id}.pdf", expires: time.hours(1))      // private files: a link that expires
+  let target = storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
   // the client PUTs a big file to `target` itself; then `storage.info(key)` shows it arrived
   ```
 
@@ -705,14 +708,15 @@ fn main() throws {
 
 | error | fix |
 |---|---|
-| `a \`Stream\` must be closed: get it with \`with\`` | `with f = try ... { }` |
+| `a \`Stream\` must be closed: get it with \`with\`` | `with f = ... { }` |
 | `/` on two `Int`s is not allowed | `a.div(b)` or `a.to_float() / b.to_float()` |
 | there are no global variables | a fixed value: top-level `let`; changing state: `Shared<T>` made in `main` |
 | a top-level `let` holds a fixed value | compute it in a function or in `main` |
 | `?.` can't change the value inside an optional | `var v = x ?? ...`, change `v`, then `x = v` |
 | `?.` reaches into an optional value, and this is a `T` | use `.` |
 | `catch` needs `try` before the call | `try f(x) catch err { ... }` |
-| this call can fail | put `try` in front |
+| this can fail, and the function isn't declared `throws` | `fn f() throws -> T`, or `try f(x) catch err { ... }` |
+| `try` goes with `catch` | remove `try` |
 | the result is not used | `let _ = f()` |
 | `f` has 3 or more parameters: name every argument after the first | `f(a, b: 1, c: 2)` |
 | the SQL must be written right here | put values in the parameter list |

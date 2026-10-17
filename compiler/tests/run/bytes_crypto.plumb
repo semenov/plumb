@@ -16,7 +16,7 @@ fn main() throws {
   b.append_text("ello")
   b.append_int(258, size: 2)
   print("${b.length} ${b.hex()} ${b[0]} ${b.int_at(5, size: 2)}")
-  print(try b.slice(from: 0, to: 5).text())
+  print(b.slice(from: 0, to: 5).text())
   print("${Bytes([1, 2, 255]).to_list()} ${"hé".bytes().length} ${b.index_of("llo".bytes()) ?? -1}")
   print(crypto.sha256("".bytes()).hex())
   print(crypto.sha256("abc".bytes()).hex())
@@ -24,7 +24,7 @@ fn main() throws {
   print(crypto.pbkdf2_sha256("password".bytes(), salt: "salt".bytes(), iterations: 2, length: 32).hex())
   let stored = crypto.hash_password("s3cret")
   print("${stored.starts_with("pbkdf2-sha256$210000$")} ${crypto.verify_password("s3cret", stored)} ${crypto.verify_password("wrong", stored)}")
-  print("${try encoding.from_hex("68656c6c6f").text()} ${try encoding.from_base64("aGVsbG8").text()} ${encoding.base64_url(Bytes([251, 255]))}")
+  print("${encoding.from_hex("68656c6c6f").text()} ${encoding.from_base64("aGVsbG8").text()} ${encoding.base64_url(Bytes([251, 255]))}")
   let _ = try encoding.from_hex("zz") catch err {
     print(err.message())
     Bytes()
@@ -33,11 +33,11 @@ fn main() throws {
   let blob = Blob(name: "x", data: "hi!".bytes())
   let j = json.encode(blob)
   print(j)
-  print("${(try json.decode<Blob>(j)) == blob}")
-  with dir = try files.temp_dir() {
+  print("${(json.decode<Blob>(j)) == blob}")
+  with dir = files.temp_dir() {
     let file = path.join(dir.path, "b.bin")
-    try files.write_bytes(file, Bytes([0, 1, 2, 250]))
-    print("${try files.read_bytes(file)}")
+    files.write_bytes(file, Bytes([0, 1, 2, 250]))
+    print("${files.read_bytes(file)}")
   }
   let invalid = try Bytes([255, 254]).text() catch err {
     err.message()

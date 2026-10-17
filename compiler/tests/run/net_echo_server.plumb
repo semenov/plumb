@@ -2,25 +2,25 @@ import io
 import net
 
 fn echo(conn: io.Stream) throws {
-  try conn.write_text("hello ${conn.peer().starts_with("127.0.0.1") or conn.peer().starts_with("::1")}\n")
-  while try conn.read_line() is some(line) {
+  conn.write_text("hello ${conn.peer().starts_with("127.0.0.1") or conn.peer().starts_with("::1")}\n")
+  while conn.read_line() is some(line) {
     if line == "quit" {
       return
     }
-    try conn.write_text("${line.upper()}\n")
+    conn.write_text("${line.upper()}\n")
   }
 }
 
 fn main() throws {
   spawn udp_echo()
-  try net.serve(17000, conn => try echo(conn))
+  net.serve(17000, conn => echo(conn))
 }
 
 fn udp_echo() throws {
-  with sock = try net.udp(17001) {
+  with sock = net.udp(17001) {
     while true {
-      let d = try sock.receive()
-      try sock.send_to("got ${try d.data.text()}".bytes(), address: d.from)
+      let d = sock.receive()
+      sock.send_to("got ${d.data.text()}".bytes(), address: d.from)
     }
   }
 }

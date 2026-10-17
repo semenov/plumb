@@ -3,9 +3,9 @@ import time
 
 fn listen() throws -> List<String> {
   var got: List<String> = []
-  with sub = try redis.subscribe("localhost:6379", channels: ["news"]) {
+  with sub = redis.subscribe("localhost:6379", channels: ["news"]) {
     for _ in 0..<3 {
-      let m = try sub.receive()
+      let m = sub.receive()
       got.append("${m.channel}: ${m.text}")
     }
   }
@@ -14,19 +14,19 @@ fn listen() throws -> List<String> {
 
 fn main() throws {
   let listener = spawn listen()
-  try time.sleep(time.millis(200))
-  with db = try redis.connect("localhost:6379") {
+  time.sleep(time.millis(200))
+  with db = redis.connect("localhost:6379") {
     for i in 0..<3 {
-      let _ = try db.publish("news", message: "story ${i}")
+      let _ = db.publish("news", message: "story ${i}")
     }
   }
-  for line in try listener.wait() {
+  for line in listener.wait() {
     print(line)
   }
-  with db = try redis.connect("localhost:6379") {
+  with db = redis.connect("localhost:6379") {
     let start = time.now()
     for i in 0..<20000 {
-      try db.set("k${i}", value: "v")
+      db.set("k${i}", value: "v")
     }
     let ms = start.elapsed().millis()
     print("20000 sets one by one: ${(20000 * 1000).div(ms + 1)} per second")
@@ -35,7 +35,7 @@ fn main() throws {
       batch.append(["SET", "k${i}", "v"])
     }
     let s2 = time.now()
-    let _ = try db.pipeline(batch)
+    let _ = db.pipeline(batch)
     print("20000 sets pipelined: ${(20000 * 1000).div(s2.elapsed().millis() + 1)} per second")
   }
 }

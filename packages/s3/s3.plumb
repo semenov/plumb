@@ -2,8 +2,8 @@
 // Backblaze B2, DigitalOcean Spaces...), written in the language itself.
 //
 //   let store = s3.aws("eu-central-1", access_key: id, secret_key: secret)
-//   try store.put("my-bucket", key: "reports/2026.pdf", data: pdf, content_type: "application/pdf")
-//   let data = try store.get("my-bucket", key: "reports/2026.pdf") ?? Bytes()
+//   store.put("my-bucket", key: "reports/2026.pdf", data: pdf, content_type: "application/pdf")
+//   let data = store.get("my-bucket", key: "reports/2026.pdf") ?? Bytes()
 //   let url = store.presign_get("my-bucket", key: "reports/2026.pdf", expires: time.hours(1))
 //
 // Requests are signed with AWS Signature Version 4.
@@ -24,24 +24,24 @@ pub type Client {
   secret_key: String
 
   pub fn put(self, bucket: String, key: String, data: Bytes, content_type: String) throws {
-    let res = try self.call("PUT", path: "/${bucket}/${escape_path(key)}", query: {}, body: data, headers: {"content-type": content_type})
-    try check(res, what: "put ${bucket}/${key}")
+    let res = self.call("PUT", path: "/${bucket}/${escape_path(key)}", query: {}, body: data, headers: {"content-type": content_type})
+    check(res, what: "put ${bucket}/${key}")
   }
 
   // The object's data; none if there's no such key.
   pub fn get(self, bucket: String, key: String) throws -> Bytes? {
-    let res = try self.call("GET", path: "/${bucket}/${escape_path(key)}", query: {}, body: Bytes(), headers: {})
+    let res = self.call("GET", path: "/${bucket}/${escape_path(key)}", query: {}, body: Bytes(), headers: {})
     if res.status == 404 {
       return none
     }
-    try check(res, what: "get ${bucket}/${key}")
+    check(res, what: "get ${bucket}/${key}")
     return res.body
   }
 
   // Deleting a key that isn't there is fine.
   pub fn delete(self, bucket: String, key: String) throws {
-    let res = try self.call("DELETE", path: "/${bucket}/${escape_path(key)}", query: {}, body: Bytes(), headers: {})
-    try check(res, what: "delete ${bucket}/${key}")
+    let res = self.call("DELETE", path: "/${bucket}/${escape_path(key)}", query: {}, body: Bytes(), headers: {})
+    check(res, what: "delete ${bucket}/${key}")
   }
 
   // The keys starting with `prefix` ("" for all), all of them (page by page).
@@ -53,11 +53,11 @@ pub type Client {
       if not token.is_empty() {
         query["continuation-token"] = token
       }
-      let res = try self.call("GET", path: "/${bucket}", query: query, body: Bytes(), headers: {})
-      try check(res, what: "list ${bucket}")
-      let doc = try xml.parse(res.text())
+      let res = self.call("GET", path: "/${bucket}", query: query, body: Bytes(), headers: {})
+      check(res, what: "list ${bucket}")
+      let doc = xml.parse(res.text())
       for c in doc.elements_named("Contents") {
-        out.append(Object(key: c.child_text("Key") ?? "", size: try (c.child_text("Size") ?? "0").to_int(), modified: c.child_text("LastModified") ?? "", etag: (c.child_text("ETag") ?? "").replace("\"", "")))
+        out.append(Object(key: c.child_text("Key") ?? "", size: (c.child_text("Size") ?? "0").to_int(), modified: c.child_text("LastModified") ?? "", etag: (c.child_text("ETag") ?? "").replace("\"", "")))
       }
       if (doc.child_text("IsTruncated") ?? "false") != "true" {
         break
@@ -72,12 +72,12 @@ pub type Client {
 
   pub fn create_bucket(self, bucket: String) throws {
     let body = if self.region == "us-east-1" { "" } else { "<CreateBucketConfiguration><LocationConstraint>${self.region}</LocationConstraint></CreateBucketConfiguration>" }
-    let res = try self.call("PUT", path: "/${bucket}", query: {}, body: body.bytes(), headers: {})
+    let res = self.call("PUT", path: "/${bucket}", query: {}, body: body.bytes(), headers: {})
     if res.status == 409 {
       // it exists already (and is ours)
       return
     }
-    try check(res, what: "create bucket ${bucket}")
+    check(res, what: "create bucket ${bucket}")
   }
 
   // A URL anyone can GET the object with until it expires (at most 7 days).
@@ -124,7 +124,7 @@ pub type Client {
     send_headers["authorization"] = "AWS4-HMAC-SHA256 Credential=${self.access_key}/${scope}, SignedHeaders=${signed}, Signature=${signature}"
     let qs = canonical_query(query)
     let url = "${self.endpoint}${path}${if qs.is_empty() { "" } else { "?${qs}" }}"
-    return try http.send(http.ClientRequest(url: url, method: method, headers: send_headers, body: body, follow_redirects: false))
+    return http.send(http.ClientRequest(url: url, method: method, headers: send_headers, body: body, follow_redirects: false))
   }
 
   fn signature(self, canonical: String, stamp: String, scope: String) -> String {

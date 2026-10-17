@@ -13,7 +13,7 @@ type Big {
 }
 
 fn main() throws {
-  let v = try json.parse("[-0, -0.0, 1.50, 1e5, 12345678901234567890, 1e400, 3]")
+  let v = json.parse("[-0, -0.0, 1.50, 1e5, 12345678901234567890, 1e400, 3]")
   print(json.encode(v))
   if v is json.Value.Array(items) {
     for it in items {
@@ -24,7 +24,7 @@ fn main() throws {
       }
     }
   }
-  let p = try json.decode<P>("{\"n\": -0, \"f\": -0}")
+  let p = json.decode<P>("{\"n\": -0, \"f\": -0}")
   print("${p.n} ${p.f}")
   let big = try json.decode<Big>("{\"f\": 1e400}") catch e {
     print(e.message())

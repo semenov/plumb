@@ -1,6 +1,6 @@
 // xml: reading and writing XML documents.
 //
-//   let feed = try xml.parse(text)
+//   let feed = xml.parse(text)
 //   let channel = feed.child("channel") ?? xml.Element(name: "channel")
 //   for item in channel.elements_named("item") {
 //     print(item.child_text("title") ?? "")
@@ -87,7 +87,7 @@ pub enum Node {
 // Reads a document; errors say where: `xml: line 3: the closing tag doesn't
 // match the open element`.
 pub fn parse(text: String) throws -> Element {
-  let events = try __scan(text)
+  let events = __scan(text)
   var open: List<Element> = []
   var i = 0
   while i < events.length {

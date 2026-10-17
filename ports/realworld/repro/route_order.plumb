@@ -11,6 +11,6 @@ fn main() throws {
   var router = http.Router()
   router.get("/articles/:slug", req => http.text(200, "article ${req.param("slug") ?? ""}"))
   router.get("/articles/feed", req => http.text(200, "feed"))
-  let res = try router.handle(http.request("GET", "/articles/feed"))
-  print(try res.text())
+  let res = router.handle(http.request("GET", "/articles/feed"))
+  print(res.text())
 }

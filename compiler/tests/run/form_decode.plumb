@@ -21,8 +21,8 @@ type Search {
 
 fn router() -> http.Router {
   var r = http.Router()
-  r.post("/signup", req => http.json(200, try req.decode_form<SignUp>()))
-  r.get("/search", req => http.json(200, try req.decode_query<Search>()))
+  r.post("/signup", req => http.json(200, req.decode_form<SignUp>()))
+  r.get("/search", req => http.json(200, req.decode_query<Search>()))
   return r
 }
 
@@ -30,26 +30,26 @@ fn post(body: String, kind: String) throws -> http.Response {
   var req = http.request("POST", "/signup")
   req.body = body.bytes()
   req.headers["content-type"] = kind
-  return try router().handle(req)
+  return router().handle(req)
 }
 
 fn form(body: String) throws -> String {
-  let res = try post(body, kind: "application/x-www-form-urlencoded")
+  let res = post(body, kind: "application/x-www-form-urlencoded")
   return "${res.status} ${res.text()}"
 }
 
 test "a urlencoded form fills the record; a missing box is false despite its default" {
-  expect try form("email=ada%40example.com&age=36&agree=on&tags=a&tags=b+c&ids=1&ids=&ids=3&submit=Send") == "200 {\"email\":\"ada@example.com\",\"age\":36,\"agree\":true,\"news\":false,\"nickname\":null,\"city\":\"Berlin\",\"score\":null,\"tags\":[\"a\",\"b c\"],\"ids\":[1,3]}"
+  expect form("email=ada%40example.com&age=36&agree=on&tags=a&tags=b+c&ids=1&ids=&ids=3&submit=Send") == "200 {\"email\":\"ada@example.com\",\"age\":36,\"agree\":true,\"news\":false,\"nickname\":null,\"city\":\"Berlin\",\"score\":null,\"tags\":[\"a\",\"b c\"],\"ids\":[1,3]}"
 }
 
 test "an unchecked box is false; empty values are missing, but not for a required String" {
-  expect try form("email=&age=7&nickname=&city=&score=&News=off") == "200 {\"email\":\"\",\"age\":7,\"agree\":false,\"news\":false,\"nickname\":null,\"city\":\"Berlin\",\"score\":null,\"tags\":[],\"ids\":[]}"
+  expect form("email=&age=7&nickname=&city=&score=&News=off") == "200 {\"email\":\"\",\"age\":7,\"agree\":false,\"news\":false,\"nickname\":null,\"city\":\"Berlin\",\"score\":null,\"tags\":[],\"ids\":[]}"
 }
 
 test "errors name the field" {
-  let e1 = try __decode_check("email=a&age=old")
+  let e1 = __decode_check("email=a&age=old")
   expect e1 == "form: at $.age: expected a whole number, found \"old\""
-  let e2 = try __decode_check("email=a")
+  let e2 = __decode_check("email=a")
   expect e2 == "form: at $: the field `age` is missing"
 }
 
@@ -64,13 +64,13 @@ fn __decode_check(body: String) throws -> String {
 
 test "a multipart form, files left out" {
   let body = "--XX\r\nContent-Disposition: form-data; name=\"email\"\r\n\r\nb@example.com\r\n--XX\r\nContent-Disposition: form-data; name=\"age\"\r\n\r\n40\r\n--XX\r\nContent-Disposition: form-data; name=\"tags\"; filename=\"t.txt\"\r\nContent-Type: text/plain\r\n\r\nfile\r\n--XX--\r\n"
-  let res = try post(body, kind: "multipart/form-data; boundary=XX")
+  let res = post(body, kind: "multipart/form-data; boundary=XX")
   expect res.text() == "{\"email\":\"b@example.com\",\"age\":40,\"agree\":false,\"news\":false,\"nickname\":null,\"city\":\"Berlin\",\"score\":null,\"tags\":[],\"ids\":[]}"
 }
 
 test "the query: a missing Bool takes its default" {
-  let res = try router().handle(http.request("GET", "/search?q=caf%C3%A9+au+lait&page=3&utm=x&exact=1&safe=false"))
+  let res = router().handle(http.request("GET", "/search?q=caf%C3%A9+au+lait&page=3&utm=x&exact=1&safe=false"))
   expect res.text() == "{\"q\":\"café au lait\",\"page\":3,\"exact\":true,\"safe\":false}"
-  let res2 = try router().handle(http.request("GET", "/search?q=x"))
+  let res2 = router().handle(http.request("GET", "/search?q=x"))
   expect res2.text() == "{\"q\":\"x\",\"page\":1,\"exact\":false,\"safe\":true}"
 }

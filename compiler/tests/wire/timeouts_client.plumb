@@ -21,23 +21,23 @@ fn closed_in_time(conn: io.Stream) throws -> Bool {
 }
 
 fn main() throws {
-  let port = try process.args()[0].to_int()
-  with c = try net.connect("127.0.0.1", port: port) {
-    try c.write_text("GET /slow HTTP/1.1\r\nhost: x\r\n")
-    print("half a head: closed in time: ${try closed_in_time(c)}")
+  let port = process.args()[0].to_int()
+  with c = net.connect("127.0.0.1", port: port) {
+    c.write_text("GET /slow HTTP/1.1\r\nhost: x\r\n")
+    print("half a head: closed in time: ${closed_in_time(c)}")
   }
-  with c = try net.connect("127.0.0.1", port: port) {
-    print("idle: closed in time: ${try closed_in_time(c)}")
+  with c = net.connect("127.0.0.1", port: port) {
+    print("idle: closed in time: ${closed_in_time(c)}")
   }
-  with c = try net.connect("127.0.0.1", port: port) {
-    try c.write_text("POST /echo HTTP/1.1\r\nhost: x\r\ncontent-length: 10\r\n\r\nab")
-    try time.sleep(time.seconds(1))
-    try c.write_text("cd")
-    print("slow body: closed in time: ${try closed_in_time(c)}")
+  with c = net.connect("127.0.0.1", port: port) {
+    c.write_text("POST /echo HTTP/1.1\r\nhost: x\r\ncontent-length: 10\r\n\r\nab")
+    time.sleep(time.seconds(1))
+    c.write_text("cd")
+    print("slow body: closed in time: ${closed_in_time(c)}")
   }
-  with c = try net.connect("127.0.0.1", port: port) {
-    try c.write_text("GET /slow HTTP/1.1\r\nhost: x\r\nconnection: close\r\n\r\n")
-    let answer = try c.read_all()
-    print("a slow handler: ${(try answer.text()).contains("slow but fine")}")
+  with c = net.connect("127.0.0.1", port: port) {
+    c.write_text("GET /slow HTTP/1.1\r\nhost: x\r\nconnection: close\r\n\r\n")
+    let answer = c.read_all()
+    print("a slow handler: ${answer.text().contains("slow but fine")}")
   }
 }

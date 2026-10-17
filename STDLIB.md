@@ -85,7 +85,7 @@ pub fn copy(from: String, to: String) throws
 pub fn rename(from: String, to: String) throws
 
 // A file as a stream (see the `io` module), for reading or writing it
-// piece by piece: `with f = try files.open(path) { ... }`.
+// piece by piece: `with f = files.open(path) { ... }`.
 pub fn open(path: String) throws -> io.Stream
 // Creates (or empties) a file for writing.
 pub fn create(path: String) throws -> io.Stream
@@ -143,7 +143,7 @@ program's standard input and output are all a `Stream`:
 
 ```
 // a filter: `cat app.log | errors`
-while try io.read_line() is some(line) {
+while io.read_line() is some(line) {
   if line.contains("ERROR") {
     print(line)
   }
@@ -151,9 +151,9 @@ while try io.read_line() is some(line) {
 ```
 
 ```
-with from = try files.open("big.iso") {
-  with to = try files.create("copy.iso") {
-    let _ = try io.copy(from, to)
+with from = files.open("big.iso") {
+  with to = files.create("copy.iso") {
+    let _ = io.copy(from, to)
   }
 }
 ```
@@ -215,15 +215,15 @@ pub type Output {
 // exits with a non-zero status is not an error: check `output.status`.
 pub fn run(program: String, args: List<String>) throws -> Output
 
-// A running program; get one with `with p = try process.start(...)`.
+// A running program; get one with `with p = process.start(...)`.
 // Reading reads its output (stdout); writing writes to its input (stdin).
 // Its error output goes to this program's error output. Leaving `with`
 // stops it if it is still running.
 //
-//   with p = try process.start("sort", []) {
-//     try p.write_text("b\na\n")
-//     try p.close_input()
-//     while try p.read_line() is some(line) { print(line) }
+//   with p = process.start("sort", []) {
+//     p.write_text("b\na\n")
+//     p.close_input()
+//     while p.read_line() is some(line) { print(line) }
 //   }
 pub builtin type Process {
   fn read(self, max: Int) throws -> Bytes
@@ -255,7 +255,7 @@ pub type Command {
 }
 
 // Runs a `Command` to the end, like `run`:
-//   let out = try process.run_command(process.Command(program: "git", args: ["status"], dir: repo))
+//   let out = process.run_command(process.Command(program: "git", args: ["status"], dir: repo))
 pub fn run_command(command: Command) throws -> Output
 
 // Where a program is on PATH ("/usr/bin/git"), like `which`; none if it
@@ -310,7 +310,7 @@ type Options {
   output_dir: String? = none // --output-dir out (optional)
   args: List<String> = []    // everything that isn't an option
 }
-let opts = try cli.decode<Options>()
+let opts = cli.decode<Options>()
 ```
 
 `--help` prints the options and exits. Unknown options and missing
@@ -323,7 +323,7 @@ pub fn decode<T>() throws -> T
 // subcommands.
 //   let args = process.args()
 //   match args.first() ?? "" {
-//     "add" => { let opts = try cli.decode_from<AddOptions>(args.drop(1)) ... }
+//     "add" => { let opts = cli.decode_from<AddOptions>(args.drop(1)) ... }
 //     "list" => { ... }
 //     _ => eprint("usage: tool add|list [options]")
 //   }
@@ -336,8 +336,8 @@ term: the terminal: colors, questions, tables and progress for CLI tools.
 
 ```
 print("${term.green("ok")} ${term.bold(name)}")
-let name = try term.ask("Project name?")
-if try term.confirm("Delete ${n} files?") { ... }
+let name = term.ask("Project name?")
+if term.confirm("Delete ${n} files?") { ... }
 print(term.table([["name", "size"], ["a.txt", term.size(1536)]]))
 ```
 
@@ -484,14 +484,14 @@ pub fn sleep(duration: Duration) throws
 // Waits until a moment (now or in the past: doesn't wait). For steady
 // ticks, sleep until start + interval × n rather than a fixed interval,
 // so the time the work takes doesn't add up:
-//   for n in 1..=10 { try time.sleep_until(start.plus(interval.times(n))) ... }
+//   for n in 1..=10 { time.sleep_until(start.plus(interval.times(n))) ... }
 pub fn sleep_until(moment: Instant) throws
 
 // Runs `work`, giving up after `duration`: the work is cancelled (whatever
 // it waits for stops with an error, its own tasks too) and `timeout`
 // throws `TimedOut`.
 //
-//   let page = try time.timeout(time.seconds(5), () => try http.get(url))
+//   let page = time.timeout(time.seconds(5), () => http.get(url))
 pub fn timeout<R>(duration: Duration, work: fn() throws -> R) throws -> R
 
 // The error of `timeout`.
@@ -517,7 +517,7 @@ pub type DateTime {
   // toISOString).
   pub fn iso_millis(self) -> String
   // The same moment on the wall clock of a time zone:
-  //   let berlin = try moment.in_zone("Europe/Berlin")   // 14:05 UTC -> 16:05 +02:00
+  //   let berlin = moment.in_zone("Europe/Berlin")   // 14:05 UTC -> 16:05 +02:00
   pub fn in_zone(self, zone: String) throws -> Zoned
   // The calendar day.
   pub fn date(self) -> Date
@@ -604,7 +604,7 @@ pub fn today() -> Date
 pub fn parse_date(text: String) throws -> Date
 
 // Reads a date and time written as `pattern` says (see `DateTime.format`):
-//   try time.parse("29/09/2026 14:05", pattern: "%d/%m/%Y %H:%M")
+//   time.parse("29/09/2026 14:05", pattern: "%d/%m/%Y %H:%M")
 // Fields the pattern doesn't have are 0 (or 1 for month and day); with %z
 // the result is converted to UTC.
 pub fn parse(text: String, pattern: String) throws -> DateTime
@@ -635,7 +635,7 @@ pub type Zoned {
 }
 
 // The moment when the wall clock in `zone` shows this date and time:
-//   let meeting = try time.in_zone("Europe/Berlin", date: d, hour: 9, minute: 30)
+//   let meeting = time.in_zone("Europe/Berlin", date: d, hour: 9, minute: 30)
 // A time skipped by a clock change moves forward; a repeated one takes
 // the first.
 pub fn in_zone(zone: String, date: Date, hour: Int, minute: Int) throws -> DateTime
@@ -743,7 +743,7 @@ http: a server and a client.
 
 ```
 fn get_note(req: http.Request) throws -> http.Response {
-  let id = try (req.param("id") ?? "").to_int()
+  let id = (req.param("id") ?? "").to_int()
   return http.json(200, note)
 }
 ```
@@ -751,7 +751,7 @@ fn get_note(req: http.Request) throws -> http.Response {
 ```
 var router = http.Router()
 router.get("/notes/:id", get_note)
-try http.serve(router, port: 8080)
+http.serve(router, port: 8080)
 ```
 
 Every request runs in its own task. An error thrown by a handler becomes a
@@ -796,7 +796,7 @@ pub type Request {
   pub fn form(self) throws -> Map<String, String>
   // The form's fields as a record, as `json.decode` does with JSON:
   //   type SignUp { email: String  age: Int  agree: Bool  tags: List<String> = [] }
-  //   let input = try req.decode_form<SignUp>()
+  //   let input = req.decode_form<SignUp>()
   // Names match fields as in JSON (case, _ and - ignored); other names are
   // ignored. Text becomes numbers and true/false ("on" from a checkbox). A
   // missing Bool is false even with a default, since an unchecked box isn't
@@ -808,7 +808,7 @@ pub type Request {
   // The query parameters as a record, by the rules of `decode_form`, except
   // that a missing Bool takes its default (false without one):
   //   type Search { q: String  page: Int = 1 }
-  //   let search = try req.decode_query<Search>()
+  //   let search = req.decode_query<Search>()
   pub fn decode_query<T>(self) throws -> T
   // The parts of a multipart/form-data body: form fields and uploaded
   // files. A field has `filename` none; `text()` reads its value.
@@ -901,8 +901,8 @@ pub fn bytes(status: Int, data: Bytes, content_type: String) -> Response
 //
 //   fn send_ticks(out: io.Stream) throws {
 //     for i in 0..<10 {
-//       try out.write_text("data: tick ${i}\n\n")
-//       try time.sleep(time.seconds(1))
+//       out.write_text("data: tick ${i}\n\n")
+//       time.sleep(time.seconds(1))
 //     }
 //   }
 //
@@ -923,7 +923,7 @@ pub fn file(path: String) -> Response
 // Runs around every request: gets the request and `next` (the rest of the
 // chain: other middleware, then the route) and returns a response.
 //   router.use((req, next) => {
-//     if req.header("authorization") is none { http.text(401, "log in") } else { try next(req) }
+//     if req.header("authorization") is none { http.text(401, "log in") } else { next(req) }
 //   })
 pub type Middleware = fn(Request, fn(Request) throws -> Response) throws -> Response
 
@@ -947,7 +947,7 @@ pub type Router {
   pub mutating fn any(pattern: String, handler: fn(Request) throws -> Response)
   // A WebSocket endpoint: the connection is upgraded and `handler` talks
   // over it until it returns (the connection then closes).
-  //   router.websocket("/chat", ws => try chat(ws))
+  //   router.websocket("/chat", ws => chat(ws))
   pub mutating fn websocket(pattern: String, handler: fn(WebSocket) throws)
   // Serves the files in `dir` under `prefix`: files("/static", dir: "public")
   // answers /static/css/site.css with public/css/site.css. Paths can't leave
@@ -1040,8 +1040,8 @@ pub fn get(url: String) throws -> Response
 //
 //   let weather = http.start(http.ClientRequest(url: weather_url))
 //   let news = http.start(http.ClientRequest(url: news_url))
-//   let w = try weather.wait()
-//   let n = try news.wait()
+//   let w = weather.wait()
+//   let n = news.wait()
 //
 // A request that is never waited for is stopped when nothing holds it.
 pub fn start(request: ClientRequest) -> Pending
@@ -1056,7 +1056,7 @@ pub builtin type Pending {
 // Several requests at once: their answers in the same order, after the
 // slowest. The first failure (in that order) throws, and the requests
 // still on their way are stopped.
-//   let answers = try http.send_all(urls.map(u => http.ClientRequest(url: u)))
+//   let answers = http.send_all(urls.map(u => http.ClientRequest(url: u)))
 pub fn send_all(requests: List<ClientRequest>) throws -> List<Response>
 
 pub fn post(url: String, body: String) throws -> Response
@@ -1069,8 +1069,8 @@ pub fn delete(url: String) throws -> Response
 // body is then read piece by piece: event streams, streamed answers of AI
 // APIs, large responses.
 //
-//   with res = try http.open(http.ClientRequest(url: u)) {
-//     while try res.read_line() is some(line) { ... }
+//   with res = http.open(http.ClientRequest(url: u)) {
+//     while res.read_line() is some(line) { ... }
 //   }
 pub fn open(request: ClientRequest) throws -> ResponseStream
 
@@ -1123,9 +1123,9 @@ pub type WebSocketMessage {
 }
 
 // Connects to a WebSocket server: "ws://host:port/path" or "wss://..." (TLS).
-//   with ws = try http.websocket("wss://echo.example/socket") {
-//     try ws.send_text("hi")
-//     if try ws.receive() is some(m) {
+//   with ws = http.websocket("wss://echo.example/socket") {
+//     ws.send_text("hi")
+//     if ws.receive() is some(m) {
 //       print(m.text())
 //     }
 //   }
@@ -1137,19 +1137,19 @@ pub fn websocket(address: String) throws -> WebSocket
 net: TCP and UDP. Waiting on the network doesn't block other tasks.
 
 ```
-with conn = try net.connect("example.com", 80) {
-  try conn.write_text("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
-  print(try conn.read(4096).text())
+with conn = net.connect("example.com", 80) {
+  conn.write_text("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
+  print(conn.read(4096).text())
 }
 ```
 
 ```
-try net.serve(7000, conn => try echo(conn))     // a task per connection
+net.serve(7000, conn => echo(conn))             // a task per connection
 ```
 
 ```
 // A TCP connection is an `io.Stream`. Get one with
-// `with conn = try net.connect(...)`, or in the handler of `net.serve`
+// `with conn = net.connect(...)`, or in the handler of `net.serve`
 // (which closes it when the handler returns).
 pub fn connect(host: String, port: Int) throws -> io.Stream
 
@@ -1175,7 +1175,7 @@ pub type Datagram {
   from: String
 }
 
-// A UDP socket. Get one with `with sock = try net.udp(port)`; port 0 picks
+// A UDP socket. Get one with `with sock = net.udp(port)`; port 0 picks
 // a free one.
 pub builtin type UdpSocket {
   // Sends to "host:port".
@@ -1250,10 +1250,10 @@ pub fn decode<T>(columns: List<String>, rows: List<List<Value>>) throws -> List<
 db: SQLite databases (a file, or ":memory:").
 
 ```
-with conn = try db.open("app.db") {
-  try conn.execute("create table if not exists users (id integer primary key, name text, age integer)", [])
-  try conn.execute("insert into users (name, age) values (?, ?)", ["Ada", 36])
-  let adults = try conn.query<User>("select id, name, age from users where age >= ?", [18])
+with conn = db.open("app.db") {
+  conn.execute("create table if not exists users (id integer primary key, name text, age integer)", [])
+  conn.execute("insert into users (name, age) values (?, ?)", ["Ada", 36])
+  let adults = conn.query<User>("select id, name, age from users where age >= ?", [18])
 }
 ```
 
@@ -1275,7 +1275,7 @@ pub builtin type Connection {
   fn execute_counting(self, query: sql.Query, params: List<sql.Value>) throws -> Int
   // The rows as records, columns matched to fields by name.
   fn query<T>(self, query: sql.Query, params: List<sql.Value>) throws -> List<T>
-  // An insert, returning the new row's id: `let id = try conn.insert(...)`.
+  // An insert, returning the new row's id: `let id = conn.insert(...)`.
   fn insert(self, query: sql.Query, params: List<sql.Value>) throws -> Int
   // The id of the row inserted last on this connection (by any task: when
   // tasks share the connection, use `insert`).
@@ -1412,7 +1412,7 @@ pub fn uuid_v7() -> String
 regex: patterns for finding and replacing text.
 
 ```
-let date = try regex.compile("(\\d{4})-(\\d{2})-(\\d{2})")
+let date = regex.compile("(\\d{4})-(\\d{2})-(\\d{2})")
 if date.find(line) is some(m) {
   print("year ${m.groups[1] ?? "?"}")
 }
@@ -1474,7 +1474,7 @@ pub fn encode(rows: List<List<String>>) -> String
 xml: reading and writing XML documents.
 
 ```
-let feed = try xml.parse(text)
+let feed = xml.parse(text)
 let channel = feed.child("channel") ?? xml.Element(name: "channel")
 for item in channel.elements_named("item") {
   print(item.child_text("title") ?? "")
@@ -1528,8 +1528,8 @@ template: text from templates and data, in the Handlebars / Mustache
 style most web developers know.
 
 ```
-let page = try template.compile("<h1>{{title}}</h1>{{#each items}}<li>{{name}}: {{price}}</li>{{/each}}")
-let html = try page.render(Page(title: "Menu", items: items))
+let page = template.compile("<h1>{{title}}</h1>{{#each items}}<li>{{name}}: {{price}}</li>{{/each}}")
+let html = page.render(Page(title: "Menu", items: items))
 ```
 
 {{name}}, {{user.email}}      a value (HTML-escaped in HTML templates)
@@ -1638,21 +1638,21 @@ archive: tar and zip files, read and written in memory, and tar files
 written piece by piece.
 
 ```
-let entries = try archive.read_tar(try zlib.gunzip(try files.read_bytes("app.tar.gz")))
-try archive.extract(entries, to: "out")
+let entries = archive.read_tar(zlib.gunzip(files.read_bytes("app.tar.gz")))
+archive.extract(entries, to: "out")
 ```
 
 ```
-let zip = archive.write_zip(try archive.from_dir("site"))
-try files.write_bytes("site.zip", zip)
+let zip = archive.write_zip(archive.from_dir("site"))
+files.write_bytes("site.zip", zip)
 ```
 
 A big directory without holding it in memory (".tar.gz" / ".tgz" are
 compressed):
 
 ```
-with tar = try archive.create_tar("backup.tar.gz") {
-  try tar.add_dir("photos", name: "photos")
+with tar = archive.create_tar("backup.tar.gz") {
+  tar.add_dir("photos", name: "photos")
 }
 ```
 
@@ -1739,15 +1739,15 @@ storage: files the app keeps (users' uploads: avatars, photos,
 attachments), by key.
 
 ```
-try storage.put_public("avatars/${user.id}.png", data: photo, content_type: "image/png")
-let src = try storage.url("avatars/${user.id}.png", expires: time.hours(1))
+storage.put_public("avatars/${user.id}.png", data: photo, content_type: "image/png")
+let src = storage.url("avatars/${user.id}.png", expires: time.hours(1))
 ```
 
 ```
 // a big file goes from the client straight to storage, not through the app:
-let target = try storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
+let target = storage.upload_url("videos/${id}.mp4", options: storage.Upload(max_bytes: 500_000_000))
 // ...the client PUTs the file to `target`; then the app checks it arrived:
-if try storage.info("videos/${id}.mp4") is some(video) { ... }
+if storage.info("videos/${id}.mp4") is some(video) { ... }
 ```
 
 A key is a path like `avatars/42.png`: parts of letters, digits, `.`,

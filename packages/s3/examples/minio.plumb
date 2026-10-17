@@ -4,20 +4,20 @@ import time
 
 fn main() throws {
   let store = s3.Client(endpoint: "http://127.0.0.1:9027", access_key: "admin", secret_key: "secret123")
-  try store.create_bucket("test-bucket")
-  try store.put("test-bucket", key: "hello.txt", data: "hello s3".bytes(), content_type: "text/plain")
-  try store.put("test-bucket", key: "dir/with space & ü.bin", data: Bytes([0, 1, 2, 255]), content_type: "application/octet-stream")
+  store.create_bucket("test-bucket")
+  store.put("test-bucket", key: "hello.txt", data: "hello s3".bytes(), content_type: "text/plain")
+  store.put("test-bucket", key: "dir/with space & ü.bin", data: Bytes([0, 1, 2, 255]), content_type: "application/octet-stream")
   for i in 0..<3 {
-    try store.put("test-bucket", key: "logs/${i}.txt", data: "log ${i}".bytes(), content_type: "text/plain")
+    store.put("test-bucket", key: "logs/${i}.txt", data: "log ${i}".bytes(), content_type: "text/plain")
   }
-  print("get: ${try (try store.get("test-bucket", key: "hello.txt") ?? Bytes()).text()}")
-  print("odd key: ${(try store.get("test-bucket", key: "dir/with space & ü.bin") ?? Bytes()).to_list()}")
-  print("missing: ${(try store.get("test-bucket", key: "nope")) is none}")
-  print("list logs/: ${(try store.list("test-bucket", prefix: "logs/")).map(o => "${o.key}:${o.size}")}")
+  print("get: ${(store.get("test-bucket", key: "hello.txt") ?? Bytes()).text()}")
+  print("odd key: ${(store.get("test-bucket", key: "dir/with space & ü.bin") ?? Bytes()).to_list()}")
+  print("missing: ${(store.get("test-bucket", key: "nope")) is none}")
+  print("list logs/: ${store.list("test-bucket", prefix: "logs/").map(o => "${o.key}:${o.size}")}")
   let url = store.presign_get("test-bucket", key: "hello.txt", expires: time.minutes(5))
-  print("presigned GET: ${(try http.get(url)).text()}")
-  try store.delete("test-bucket", key: "hello.txt")
-  print("after delete: gone: ${(try store.get("test-bucket", key: "hello.txt")) is none}")
+  print("presigned GET: ${http.get(url).text()}")
+  store.delete("test-bucket", key: "hello.txt")
+  print("after delete: gone: ${(store.get("test-bucket", key: "hello.txt")) is none}")
   let bad = s3.Client(endpoint: "http://127.0.0.1:9027", access_key: "admin", secret_key: "wrong")
   let _ = try bad.get("test-bucket", key: "logs/0.txt") catch err {
     print(err.message())

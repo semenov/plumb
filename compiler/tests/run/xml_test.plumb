@@ -12,7 +12,7 @@ fn main() throws {
   </channel>
 </rss>
 """
-  let rss = try xml.parse(doc)
+  let rss = xml.parse(doc)
   print("${rss.name} ${rss.attribute("version") ?? "?"}")
   let channel = rss.child("channel") ?? panic("no channel")
   print(channel.child_text("title") ?? "")
@@ -24,7 +24,7 @@ fn main() throws {
     .add(xml.Element(name: "to").add_text("Ann & Bob"))
     .add(xml.Element(name: "empty"))
   print(xml.render(built))
-  print(try xml.parse(xml.render(built)).text())
+  print(xml.parse(xml.render(built)).text())
   for bad in ["<a><b></a>", "<a>", "<a x=1/>", "<a>&nope;</a>", "<a/><b/>", "text", "<a>\n\n</b>"] {
     let _ = try xml.parse(bad) catch err {
       print(err.message())

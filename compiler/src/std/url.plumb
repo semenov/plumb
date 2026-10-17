@@ -41,7 +41,7 @@ pub fn parse(text: String) throws -> Url {
         continue
       }
       let kv = pair.split("=")
-      query[try decode(kv[0])] = try decode(kv.drop(1).join("="))
+      query[decode(kv[0])] = decode(kv.drop(1).join("="))
     }
     rest = q_parts[0]
   }
@@ -55,9 +55,9 @@ pub fn parse(text: String) throws -> Url {
   let at = authority.split("@")
   if at.length > 1 {
     let info = at.take(at.length - 1).join("@").split(":")
-    user = try decode(info[0])
+    user = decode(info[0])
     if info.length > 1 {
-      password = try decode(info.drop(1).join(":"))
+      password = decode(info.drop(1).join(":"))
     }
     authority = at[at.length - 1]
   }

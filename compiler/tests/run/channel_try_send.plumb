@@ -7,7 +7,7 @@ fn main() throws {
   ch.close()
   print("${ch.try_send("e")}")
   var got: List<String> = []
-  while try ch.receive() is some(x) {
+  while ch.receive() is some(x) {
     got.append(x)
   }
   print("${got}")

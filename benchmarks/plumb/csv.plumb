@@ -27,9 +27,9 @@ fn main() throws {
     var out: List<String> = []
     for line in text.trim().split("\n") {
       let f = line.split(",")
-      let id = try f[0].to_int()
+      let id = f[0].to_int()
       let parts = f[2].split(".")
-      let amount = (try parts[0].to_int()) * 100 + (try parts[1].to_int())
+      let amount = (parts[0].to_int()) * 100 + (parts[1].to_int())
       total += amount + id % 3
       out.append("${f[1].upper()}=${amount}")
     }

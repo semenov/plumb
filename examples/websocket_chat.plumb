@@ -1,19 +1,19 @@
 import http
 
 fn chat(ws: http.WebSocket) throws {
-  try ws.send_text("welcome")
-  while try ws.receive() is some(msg) {
+  ws.send_text("welcome")
+  while ws.receive() is some(msg) {
     if msg.is_text {
-      try ws.send_text("echo: ${msg.text()}")
+      ws.send_text("echo: ${msg.text()}")
     } else {
-      try ws.send(msg.data)
+      ws.send(msg.data)
     }
   }
 }
 
 fn main() throws {
   var router = http.Router()
-  router.websocket("/chat", ws => try chat(ws))
+  router.websocket("/chat", ws => chat(ws))
   router.get("/", req => http.text(200, "hi"))
-  try http.serve(router, port: 8116)
+  http.serve(router, port: 8116)
 }

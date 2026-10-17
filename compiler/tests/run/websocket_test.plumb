@@ -1,26 +1,26 @@
 import http
 
 fn chat(ws: http.WebSocket) throws {
-  while try ws.receive() is some(msg) {
-    try ws.send_text("echo: ${msg.text()}")
+  while ws.receive() is some(msg) {
+    ws.send_text("echo: ${msg.text()}")
   }
 }
 
 fn server() throws {
   var router = http.Router()
-  router.websocket("/chat", ws => try chat(ws))
-  try http.serve(router, port: 8117)
+  router.websocket("/chat", ws => chat(ws))
+  http.serve(router, port: 8117)
 }
 
 test "a handshake is required" {
   var router = http.Router()
-  router.websocket("/chat", ws => try chat(ws))
-  let plain = try router.handle(http.request("GET", "/chat"))
+  router.websocket("/chat", ws => chat(ws))
+  let plain = router.handle(http.request("GET", "/chat"))
   expect plain.status == 400
   var req = http.request("GET", "/chat")
   req.headers["upgrade"] = "websocket"
   req.headers["sec-websocket-key"] = "dGhlIHNhbXBsZSBub25jZQ=="
-  let res = try router.handle(req)
+  let res = router.handle(req)
   expect res.status == 101
   // the example from RFC 6455
   expect res.headers["sec-websocket-accept"] == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="

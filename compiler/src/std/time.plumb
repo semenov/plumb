@@ -196,7 +196,7 @@ fn __monotonic_nanos() -> Int
 
 // Wait without blocking other tasks. Fails with `Cancelled` if the task is cancelled.
 pub fn sleep(duration: Duration) throws {
-  try __sleep_nanos(duration.nanos)
+  __sleep_nanos(duration.nanos)
 }
 
 fn __sleep_nanos(nanos: Int) throws
@@ -204,16 +204,16 @@ fn __sleep_nanos(nanos: Int) throws
 // Waits until a moment (now or in the past: doesn't wait). For steady
 // ticks, sleep until start + interval × n rather than a fixed interval,
 // so the time the work takes doesn't add up:
-//   for n in 1..=10 { try time.sleep_until(start.plus(interval.times(n))) ... }
+//   for n in 1..=10 { time.sleep_until(start.plus(interval.times(n))) ... }
 pub fn sleep_until(moment: Instant) throws {
-  try __sleep_nanos(moment.nanos - __monotonic_nanos())
+  __sleep_nanos(moment.nanos - __monotonic_nanos())
 }
 
 // Runs `work`, giving up after `duration`: the work is cancelled (whatever
 // it waits for stops with an error, its own tasks too) and `timeout`
 // throws `TimedOut`.
 //
-//   let page = try time.timeout(time.seconds(5), () => try http.get(url))
+//   let page = time.timeout(time.seconds(5), () => http.get(url))
 pub fn timeout<R>(duration: Duration, work: fn() throws -> R) throws -> R {
   let task = spawn work()
   let deadline = __cancel_after(task, duration.nanos)
@@ -273,10 +273,10 @@ pub type DateTime {
   }
 
   // The same moment on the wall clock of a time zone:
-  //   let berlin = try moment.in_zone("Europe/Berlin")   // 14:05 UTC -> 16:05 +02:00
+  //   let berlin = moment.in_zone("Europe/Berlin")   // 14:05 UTC -> 16:05 +02:00
   pub fn in_zone(self, zone: String) throws -> Zoned {
     var abbr: List<String> = []
-    let f = try __zone_fields(zone, unix: self.to_unix(), abbreviation: abbr)
+    let f = __zone_fields(zone, unix: self.to_unix(), abbreviation: abbr)
     return Zoned(year: f[0], month: f[1], day: f[2], hour: f[3], minute: f[4], second: f[5], offset: f[6], zone: zone, abbreviation: abbr.first() ?? zone)
   }
 
@@ -564,7 +564,7 @@ pub fn today() -> Date {
 
 // "2026-09-29"
 pub fn parse_date(text: String) throws -> Date {
-  return (try parse_iso(text.trim().slice(from: 0, to: min(text.trim().length, 10)))).date()
+  return parse_iso(text.trim().slice(from: 0, to: min(text.trim().length, 10))).date()
 }
 
 fn format_parts(dt: DateTime, pattern: String, offset: Int, zone: String) -> String {
@@ -610,7 +610,7 @@ fn format_parts(dt: DateTime, pattern: String, offset: Int, zone: String) -> Str
 }
 
 // Reads a date and time written as `pattern` says (see `DateTime.format`):
-//   try time.parse("29/09/2026 14:05", pattern: "%d/%m/%Y %H:%M")
+//   time.parse("29/09/2026 14:05", pattern: "%d/%m/%Y %H:%M")
 // Fields the pattern doesn't have are 0 (or 1 for month and day); with %z
 // the result is converted to UTC.
 pub fn parse(text: String, pattern: String) throws -> DateTime {
@@ -779,16 +779,16 @@ pub type Zoned {
 }
 
 // The moment when the wall clock in `zone` shows this date and time:
-//   let meeting = try time.in_zone("Europe/Berlin", date: d, hour: 9, minute: 30)
+//   let meeting = time.in_zone("Europe/Berlin", date: d, hour: 9, minute: 30)
 // A time skipped by a clock change moves forward; a repeated one takes
 // the first.
 pub fn in_zone(zone: String, date: Date, hour: Int, minute: Int) throws -> DateTime {
-  return from_unix(try __zone_unix(zone, fields: [date.year, date.month, date.day, hour, minute, 0]))
+  return from_unix(__zone_unix(zone, fields: [date.year, date.month, date.day, hour, minute, 0]))
 }
 
 // Now, on the wall clock of `zone`.
 pub fn now_in(zone: String) throws -> Zoned {
-  return try utc_now().in_zone(zone)
+  return utc_now().in_zone(zone)
 }
 
 // This machine's zone ("Europe/Berlin"): TZ, else the system setting,

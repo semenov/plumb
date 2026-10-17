@@ -7,23 +7,23 @@ import random
 import time
 
 fn main() throws {
-  with dir = try files.temp_dir() {
+  with dir = files.temp_dir() {
     let file = path.join(dir.path, "notes.txt")
-    try files.write(file, "first\nsecond\n")
-    try files.append(file, "third\n")
-    print(try files.read(file))
-    with f = try files.open(file) {
+    files.write(file, "first\nsecond\n")
+    files.append(file, "third\n")
+    print(files.read(file))
+    with f = files.open(file) {
       var n = 0
-      while try f.read_line() is some(line) {
+      while f.read_line() is some(line) {
         n += 1
         print("${n}: ${line}")
       }
     }
-    with out = try files.create(path.join(dir.path, "out.txt")) {
-      try out.write_text("written piece by piece")
+    with out = files.create(path.join(dir.path, "out.txt")) {
+      out.write_text("written piece by piece")
     }
-    try files.make_dir(path.join(dir.path, "a/b/c"))
-    print("${try files.list(dir.path)}")
+    files.make_dir(path.join(dir.path, "a/b/c"))
+    print("${files.list(dir.path)}")
     print("${path.name(file)} in ${path.name(path.parent(file)).starts_with("program-")}, ext ${path.extension(file) ?? "-"}")
     let missing = try files.read(path.join(dir.path, "nope.txt")) catch err {
       print("error: ${err.message().contains("No such file")}")
@@ -31,9 +31,9 @@ fn main() throws {
     }
     print("missing = '${missing}'")
   }
-  let r = try process.run("echo", ["hello", "from echo"])
+  let r = process.run("echo", ["hello", "from echo"])
   print("status ${r.status}: ${r.stdout.trim()}")
-  let bad = try process.run("sh", ["-c", "echo oops >&2; exit 3"])
+  let bad = process.run("sh", ["-c", "echo oops >&2; exit 3"])
   print("status ${bad.status}: ${bad.stderr.trim()}")
   print("HOME set: ${env.get("HOME") != none}, NOPE: ${env.get("NO_SUCH_VARIABLE_X") ?? "none"}")
   let dice = random.between(1, 6)

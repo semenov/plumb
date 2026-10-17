@@ -62,7 +62,7 @@ type Point {
 }
 
 fn parse_all(texts: List<String>) throws -> List<Int> {
-  return try texts.map(t => try t.to_int())
+  return texts.map(t => t.to_int())
 }
 
 fn make_counter(start: Int) -> fn(Int) -> Int {
@@ -117,7 +117,7 @@ test "values are copied" {
 }
 
 test "errors through lambdas" {
-  expect (try parse_all(["1", "2"])) == [1, 2]
+  expect (parse_all(["1", "2"])) == [1, 2]
   let err = expect throws parse_all(["1", "x"])
   expect err.message() == "\"x\" is not a whole number"
 }

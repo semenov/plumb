@@ -32,10 +32,10 @@ fn completions(req: http.Request) throws -> http.Response {
   if (req.header("authorization") ?? "") != "Bearer test" {
     return http.text(401, "{\"error\": {\"message\": \"bad key\"}}")
   }
-  let r = try json.decode<Req>(req.text())
+  let r = json.decode<Req>(req.text())
   let last = r.messages.last() ?? throw Failure(message: "no messages")
   if r.stream {
-    return http.stream(200, content_type: "text/event-stream", writer: out => try stream_words(out, text: last.content ?? ""))
+    return http.stream(200, content_type: "text/event-stream", writer: out => stream_words(out, text: last.content ?? ""))
   }
   if r.response_format is some(_) {
     return answer("{\"name\": \"Soup\", \"minutes\": 20, \"steps\": [\"boil\", \"eat\"]}", finish: "stop", calls: "")
@@ -58,16 +58,16 @@ fn answer(content: String, finish: String, calls: String) -> http.Response {
 }
 
 fn stream_words(out: io.Stream, text: String) throws {
-  try out.write_text(": PROCESSING\n\n")
+  out.write_text(": PROCESSING\n\n")
   for w in "streamed answer to: ${text}".split(" ") {
-    try out.write_text("data: {\"choices\": [{\"delta\": {\"content\": ${json.encode("${w} ")}}}]}\n\n")
-    try time.sleep(time.millis(20))
+    out.write_text("data: {\"choices\": [{\"delta\": {\"content\": ${json.encode("${w} ")}}}]}\n\n")
+    time.sleep(time.millis(20))
   }
-  try out.write_text("data: {\"choices\": [{\"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n")
+  out.write_text("data: {\"choices\": [{\"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n")
 }
 
 fn embeddings(req: http.Request) throws -> http.Response {
-  let r = try json.decode<EmbedReq>(req.text())
+  let r = json.decode<EmbedReq>(req.text())
   var items: List<String> = []
   for i in 0..<r.input.length {
     items.append("{\"index\": ${i}, \"embedding\": [${r.input[i].length}, 0.5]}")
@@ -80,5 +80,5 @@ fn main() throws {
   var router = http.Router()
   router.post("/v1/chat/completions", completions)
   router.post("/v1/embeddings", embeddings)
-  try http.serve(router, port: 8096)
+  http.serve(router, port: 8096)
 }

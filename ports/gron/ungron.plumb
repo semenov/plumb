@@ -440,7 +440,7 @@ pub fn recursive_merge(a: jsonraw.Value, b: jsonraw.Value) throws -> jsonraw.Val
           // whole tree below it) while the map still holds it
           if out.take(entry.key) is some(existing) {
             if down {
-              out[entry.key] = try recursive_merge(existing, b: entry.value)
+              out[entry.key] = recursive_merge(existing, b: entry.value)
             } else {
               down = true
               down_key = entry.key
@@ -482,7 +482,7 @@ pub fn recursive_merge(a: jsonraw.Value, b: jsonraw.Value) throws -> jsonraw.Val
           let current = out[k]
           out[k] = jsonraw.Value.Null
           if down {
-            out[k] = try recursive_merge(current, b: b_items[k])
+            out[k] = recursive_merge(current, b: b_items[k])
           } else {
             down = true
             down_index = k
@@ -537,18 +537,18 @@ test "lexing statements" {
 }
 
 test "ungronning tokens" {
-  let v = try ungron_tokens(lex("json.a[1] = \"x\";"))
+  let v = ungron_tokens(lex("json.a[1] = \"x\";"))
   expect jsonraw.encode_pretty(v) == "{\n  \"json\": {\n    \"a\": [\n      null,\n      \"x\"\n    ]\n  }\n}"
 }
 
 test "merging" {
-  let a = try ungron_tokens(lex("json.a[0] = 1;"))
-  let b = try ungron_tokens(lex("json.a[2] = 3;"))
-  let c = try ungron_tokens(lex("json.b = true;"))
-  let m = try recursive_merge(try recursive_merge(a, b: b), b: c)
+  let a = ungron_tokens(lex("json.a[0] = 1;"))
+  let b = ungron_tokens(lex("json.a[2] = 3;"))
+  let c = ungron_tokens(lex("json.b = true;"))
+  let m = recursive_merge(recursive_merge(a, b: b), b: c)
   expect jsonraw.encode_pretty(m) == "{\n  \"json\": {\n    \"a\": [\n      1,\n      null,\n      3\n    ],\n    \"b\": true\n  }\n}"
-  let bad = try ungron_tokens(lex("json.a = 1;"))
-  let err = try recursive_merge(m, b: try ungron_tokens(lex("json[0] = 1;"))) catch e { jsonraw.Value.String(value: e.message()) }
+  let bad = ungron_tokens(lex("json.a = 1;"))
+  let err = try recursive_merge(m, b: ungron_tokens(lex("json[0] = 1;"))) catch e { jsonraw.Value.String(value: e.message()) }
   expect err == jsonraw.Value.String(value: "cannot merge object with non-object")
   expect bad != m
 }

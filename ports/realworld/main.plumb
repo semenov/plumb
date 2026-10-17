@@ -23,14 +23,14 @@ type Options {
 }
 
 fn main() throws {
-  let opts = try cli.decode<Options>()
+  let opts = cli.decode<Options>()
   var secret = env.get("CONDUIT_SECRET") ?? ""
   if secret.is_empty() {
     log.warn("CONDUIT_SECRET is not set: using a random secret; tokens won't survive a restart")
     secret = crypto.random_bytes(32).hex()
   }
-  with conn = try db.open(opts.db) {
-    try schema.create(conn)
-    try http.serve(server.router(api.App(conn: conn, secret: secret)), port: opts.port)
+  with conn = db.open(opts.db) {
+    schema.create(conn)
+    http.serve(server.router(api.App(conn: conn, secret: secret)), port: opts.port)
   }
 }

@@ -7,22 +7,22 @@ import time
 fn main() throws {
   var router = http.Router()
   router.get("/slow/:name", req => {
-    try time.sleep(time.millis(500))
+    time.sleep(time.millis(500))
     http.text(200, req.param("name") ?? "")
   })
   let server = spawn http.serve(router, port: 18577)
-  try time.sleep(time.millis(300))
+  time.sleep(time.millis(300))
   let base = "http://127.0.0.1:18577/slow"
   let started = time.now()
   let a = http.start(http.ClientRequest(url: "${base}/a"))
   let b = http.start(http.ClientRequest(url: "${base}/b"))
-  print("${(try b.wait()).text()} ${(try a.wait()).text()}")
+  print("${b.wait().text()} ${a.wait().text()}")
   let again = try a.wait() catch err {
     print("${err}")
     http.text(200, "")
   }
   let _ = again
-  let answers = try http.send_all([http.ClientRequest(url: "${base}/c"), http.ClientRequest(url: "${base}/d"), http.ClientRequest(url: "${base}/e"), http.ClientRequest(url: "${base}/f")])
+  let answers = http.send_all([http.ClientRequest(url: "${base}/c"), http.ClientRequest(url: "${base}/d"), http.ClientRequest(url: "${base}/e"), http.ClientRequest(url: "${base}/f")])
   print("${answers.map(r => r.text())}")
   let unwaited = http.start(http.ClientRequest(url: "${base}/never"))
   let _ = unwaited

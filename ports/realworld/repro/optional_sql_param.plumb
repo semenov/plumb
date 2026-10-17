@@ -13,9 +13,9 @@
 import db
 
 fn main() throws {
-  with conn = try db.open(":memory:") {
-    try conn.execute("create table users (name text, bio text)", [])
+  with conn = db.open(":memory:") {
+    conn.execute("create table users (name text, bio text)", [])
     let bio: String? = none
-    try conn.execute("insert into users (name, bio) values (?, ?)", ["ada", bio])
+    conn.execute("insert into users (name, bio) values (?, ?)", ["ada", bio])
   }
 }

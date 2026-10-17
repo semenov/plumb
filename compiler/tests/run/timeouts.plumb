@@ -1,7 +1,7 @@
 import time
 
 fn slow() throws -> Int {
-  try time.sleep(time.seconds(10))
+  time.sleep(time.seconds(10))
   return 1
 }
 
@@ -16,22 +16,22 @@ fn failing() throws -> Int {
 fn nested() throws -> Int {
   let a = spawn slow()
   let b = spawn slow()
-  return try a.wait() + try b.wait()
+  return a.wait() + b.wait()
 }
 
 fn main() throws {
-  print("quick: ${try time.timeout(time.seconds(1), () => try quick())}")
+  print("quick: ${time.timeout(time.seconds(1), () => quick())}")
   let start = time.now()
-  let _ = try time.timeout(time.millis(100), () => try slow()) catch err {
+  let _ = try time.timeout(time.millis(100), () => slow()) catch err {
     print("slow: ${err.message()}, promptly: ${start.elapsed().millis() < 1000}")
     0
   }
-  let _ = try time.timeout(time.seconds(1), () => try failing()) catch err {
+  let _ = try time.timeout(time.seconds(1), () => failing()) catch err {
     print("own: ${err.message()}")
     0
   }
   let s2 = time.now()
-  let _ = try time.timeout(time.millis(100), () => try nested()) catch err {
+  let _ = try time.timeout(time.millis(100), () => nested()) catch err {
     print("its tasks too: ${err is time.TimedOut}, promptly: ${s2.elapsed().millis() < 1000}")
     0
   }

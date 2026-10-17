@@ -1138,7 +1138,7 @@ pub fn migration_new(args: &[String]) -> ExitCode {
          import db\n\n\
          // Before the new version goes live; if it fails, the deploy is refused.\n\
          // Keep database changes in a transaction: all or nothing.\n\
-         fn before() throws {{\n  with conn = try db.open(\"{db}\") {{\n    try conn.transaction(() => {{\n      try conn.execute(\"alter table ... add column ...\", [])\n    }})\n  }}\n}}\n\n\
+         fn before() throws {{\n  with conn = db.open(\"{db}\") {{\n    conn.transaction(() => {{\n      conn.execute(\"alter table ... add column ...\", [])\n    }})\n  }}\n}}\n\n\
          // After the new version is live, in the background (backfills, moving\n\
          // files). It may run again if it fails halfway: make it safe to repeat.\n\
          // Delete it if there's nothing to do.\n\

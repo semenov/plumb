@@ -99,7 +99,7 @@ fn write_err(text: String) {
 // A `with` needs a throwing function: closing a stream can fail.
 fn write_stderr(text: String) throws {
   with e = io.stderr() {
-    try e.write_text(text)
+    e.write_text(text)
   }
 }
 
@@ -308,7 +308,7 @@ fn redirected(req: http.ClientRequest, status: Int, location: String) throws -> 
   if location.contains("://") {
     next.url = location
   } else {
-    let u = try url.parse(req.url)
+    let u = url.parse(req.url)
     let origin = if u.port is some(port) { "${u.scheme}://${u.host}:${port}" } else { "${u.scheme}://${u.host}" }
     if location.starts_with("//") {
       next.url = "${u.scheme}:${location}"
@@ -395,7 +395,7 @@ fn run_worker(w: Work, count: Int, results: Channel<Result>) throws -> Int {
     if period > 0 {
       let now = time.now().nanos
       if next_tick > now {
-        try time.sleep(time.Duration(nanos: next_tick - now))
+        time.sleep(time.Duration(nanos: next_tick - now))
         next_tick += period
       } else {
         // behind schedule: this tick was waiting, the next is on the grid
@@ -407,7 +407,7 @@ fn run_worker(w: Work, count: Int, results: Channel<Result>) throws -> Int {
     let result = try make_request(w) catch err {
       Result(error: err.message(), offset: since(w.start, at: s), duration: s.elapsed().seconds())
     }
-    try results.send(result)
+    results.send(result)
     done += 1
   }
   return done
@@ -431,7 +431,7 @@ type Collected {
 
 fn run_reporter(results: Channel<Result>) throws -> Collected {
   var r = Collected()
-  while try results.receive() is some(res) {
+  while results.receive() is some(res) {
     r.num_res += 1
     if res.error is some(message) {
       r.error_dist[message] = (r.error_dist[message] ?? 0) + 1
@@ -718,13 +718,13 @@ fn main() throws {
     workers.append(spawn run_worker(work, count: num.div(conc), results: results))
   }
   for w in workers {
-    let _ = try w.wait()
+    let _ = w.wait()
   }
   results.close()
   let total = start.elapsed()
-  let collected = try reporter.wait()
+  let collected = reporter.wait()
   let text = if o.output == "csv" { csv(collected) } else { summary(collected, total: total) }
   with out = io.stdout() {
-    try out.write_text("${text}\n")
+    out.write_text("${text}\n")
   }
 }

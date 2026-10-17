@@ -2,19 +2,19 @@
 // speak: OpenAI, OpenRouter, Groq, Together, DeepSeek, Mistral, and local
 // servers (Ollama, LM Studio, vLLM, llama.cpp).
 //
-//   let ai = try llm.from_env()
-//   print(try ai.ask("openai/gpt-4o-mini", prompt: "Say hi"))
+//   let ai = llm.from_env()
+//   print(ai.ask("openai/gpt-4o-mini", prompt: "Say hi"))
 //
 //   // typed answers: the model must fill a `Recipe`
-//   let r = try ai.object<Recipe>(llm.Chat(model: m, messages: [llm.user("A soup recipe")]))
+//   let r = ai.object<Recipe>(llm.Chat(model: m, messages: [llm.user("A soup recipe")]))
 //
 //   // tools: the model calls them, `run` feeds the results back
 //   let weather = llm.tool<City>("weather", description: "Weather in a city", handler: get_weather)
-//   let reply = try ai.run(llm.Chat(model: m, messages: [llm.user("Rain in Oslo?")], tools: [weather]), max_steps: 5)
+//   let reply = ai.run(llm.Chat(model: m, messages: [llm.user("Rain in Oslo?")], tools: [weather]), max_steps: 5)
 //
 //   // streaming: text as it's written
-//   with s = try ai.stream(chat) {
-//     while try s.next() is some(piece) { ... }
+//   with s = ai.stream(chat) {
+//     while s.next() is some(piece) { ... }
 //   }
 //
 // Install: plumb add llm https://github.com/semenov/plumb --path packages/llm
@@ -38,8 +38,8 @@ pub type Client {
   // One answer.
   pub fn chat(self, chat: Chat) throws -> Reply {
     let body = request_json(chat, stream: false, schema: none)
-    let res = try self.post("/chat/completions", body: body)
-    let parsed = try json.decode<ChatResponse>(res.text())
+    let res = self.post("/chat/completions", body: body)
+    let parsed = json.decode<ChatResponse>(res.text())
     let choice = parsed.choices.first() ?? throw Failure(message: "llm: the answer has no choices")
     let calls = (choice.message.tool_calls ?? []).map(c => ToolCall(id: c.id, name: c.function.name, arguments: c.function.arguments))
     let message = Message(role: "assistant", content: choice.message.content ?? "", tool_calls: calls)
@@ -50,15 +50,15 @@ pub type Client {
 
   // The shortest way: one question, the text of the answer.
   pub fn ask(self, model: String, prompt: String) throws -> String {
-    return (try self.chat(Chat(model: model, messages: [user(prompt)]))).text
+    return self.chat(Chat(model: model, messages: [user(prompt)])).text
   }
 
   // An answer of type T: the model is given T's JSON Schema and must
   // follow it (structured outputs); the answer is decoded into T.
   pub fn object<T>(self, chat: Chat) throws -> T {
     let body = request_json(chat, stream: false, schema: json.schema<T>())
-    let res = try self.post("/chat/completions", body: body)
-    let parsed = try json.decode<ChatResponse>(res.text())
+    let res = self.post("/chat/completions", body: body)
+    let parsed = json.decode<ChatResponse>(res.text())
     let choice = parsed.choices.first() ?? throw Failure(message: "llm: the answer has no choices")
     let text = choice.message.content ?? ""
     return try json.decode<T>(strip_fences(text)) catch err {
@@ -72,25 +72,25 @@ pub type Client {
   pub fn run(self, chat: Chat, max_steps: Int) throws -> Reply {
     var current = chat
     for _ in 0..<max_steps {
-      let reply = try self.chat(current)
+      let reply = self.chat(current)
       if reply.tool_calls.is_empty() {
         return reply
       }
       current.messages = reply.messages
       for call in reply.tool_calls {
-        let result = try call_tool(chat.tools, call: call)
+        let result = call_tool(chat.tools, call: call)
         current.messages.append(Message(role: "tool", content: result, tool_call_id: call.id))
       }
     }
     throw Failure(message: "llm: no final answer after ${max_steps} steps")
   }
 
-  // The answer's text as it's written. Get it with `with s = try ai.stream(chat)`.
+  // The answer's text as it's written. Get it with `with s = ai.stream(chat)`.
   pub fn stream(self, chat: Chat) throws -> TextStream {
     let body = request_json(chat, stream: true, schema: none)
-    with s = TextStream(response: try http.open(self.request("/chat/completions", body: body))) {
+    with s = TextStream(response: http.open(self.request("/chat/completions", body: body))) {
       if s.response.status() >= 400 {
-        throw api_error(s.response.status(), body: try s.response.read_all().text())
+        throw api_error(s.response.status(), body: s.response.read_all().text())
       }
       return s
     }
@@ -99,8 +99,8 @@ pub type Client {
   // Embeddings: a vector of numbers per input text.
   pub fn embed(self, model: String, inputs: List<String>) throws -> List<List<Float>> {
     let body = json.Value.Object(fields: {"model": text_value(model), "input": json.Value.Array(items: inputs.map(t => text_value(t)))})
-    let res = try self.post("/embeddings", body: body)
-    let parsed = try json.decode<EmbeddingResponse>(res.text())
+    let res = self.post("/embeddings", body: body)
+    let parsed = json.decode<EmbeddingResponse>(res.text())
     return parsed.data.sorted_by(d => d.index).map(d => d.embedding)
   }
 
@@ -114,7 +114,7 @@ pub type Client {
   }
 
   fn post(self, path: String, body: json.Value) throws -> http.Response {
-    let res = try http.send(self.request(path, body: body))
+    let res = http.send(self.request(path, body: body))
     if res.status >= 400 {
       throw api_error(res.status, body: res.text())
     }
@@ -221,7 +221,7 @@ pub type Tool {
 // its arguments are decoded into an A for `handler`, whose text goes back
 // to the model.
 pub fn tool<A>(name: String, description: String, handler: fn(A) throws -> String) -> Tool {
-  return Tool(name: name, description: description, schema: json.schema<A>(), handler: args => try handler(try json.decode<A>(args)))
+  return Tool(name: name, description: description, schema: json.schema<A>(), handler: args => handler(json.decode<A>(args)))
 }
 
 // The answer's text in pieces, from `Client.stream`.
@@ -230,7 +230,7 @@ pub type TextStream {
 
   // The next piece of text; none at the end.
   pub fn next(self) throws -> String? {
-    while try self.response.read_line() is some(line) {
+    while self.response.read_line() is some(line) {
       if not line.starts_with("data:") {
         continue
       }
@@ -238,7 +238,7 @@ pub type TextStream {
       if data == "[DONE]" {
         return none
       }
-      let chunk = try json.decode<StreamChunk>(data)
+      let chunk = json.decode<StreamChunk>(data)
       for c in chunk.choices {
         if c.delta.content is some(text) {
           if not text.is_empty() {
@@ -251,7 +251,7 @@ pub type TextStream {
   }
 
   pub fn close(self) throws {
-    try self.response.close()
+    self.response.close()
   }
 }
 

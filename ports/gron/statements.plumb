@@ -131,13 +131,13 @@ pub fn statement_from_json_spec(text: String) throws -> Statement {
   // json.parse has Float numbers too, but it turns -0 into 0 and 1e400 into
   // Infinity without an error, so the numbers are read as text here and
   // converted one by one.
-  let top = try jsonraw.decode_all(text.bytes())
+  let top = jsonraw.decode_all(text.bytes())
   let parts = match top {
     Array(items) => items
     _ => throw Failure(message: "json: cannot unmarshal ${json_kind(top)} into Go value of type []interface {}")
   }
   for item in parts.indexed() {
-    try check_numbers(item.value, path: ".${item.index}", in_object: false)
+    check_numbers(item.value, path: ".${item.index}", in_object: false)
   }
   if parts.length != 2 {
     throw layout_error()
@@ -151,7 +151,7 @@ pub fn statement_from_json_spec(text: String) throws -> Statement {
     ts.append(token.Token(text: "[", typ: token.TokenType.LBrace))
     match e {
       String(value) => ts.append(token.Token(text: token.quote_string(value), typ: token.TokenType.QuotedKey))
-      Number(value) => ts.append(token.Token(text: try float_text(value), typ: token.TokenType.NumericKey))
+      Number(value) => ts.append(token.Token(text: float_text(value), typ: token.TokenType.NumericKey))
       _ => throw layout_error()
     }
     ts.append(token.Token(text: "]", typ: token.TokenType.RBrace))
@@ -160,7 +160,7 @@ pub fn statement_from_json_spec(text: String) throws -> Statement {
   let v = parts[1]
   let value = match v {
     Bool(value) => if value { token.Token(text: "true", typ: token.TokenType.True) } else { token.Token(text: "false", typ: token.TokenType.False) }
-    Number(value) => token.Token(text: try float_text(value), typ: token.TokenType.Number)
+    Number(value) => token.Token(text: float_text(value), typ: token.TokenType.Number)
     String(value) => token.Token(text: jsonraw.encode_string(value), typ: token.TokenType.Str)
     Array(items) => if items.is_empty() { token.Token(text: "[]", typ: token.TokenType.EmptyArray) } else { throw layout_error() }
     Object(fields) => if fields.is_empty() { token.Token(text: "{}", typ: token.TokenType.EmptyObject) } else { throw layout_error() }
@@ -173,7 +173,7 @@ pub fn statement_from_json_spec(text: String) throws -> Statement {
 
 // A JSON number as Go writes it after reading it into a float64.
 fn float_text(number: String) throws -> String {
-  return go_float(try number.to_float())
+  return go_float(number.to_float())
 }
 
 // Whether a JSON number fits in a Float (1e400 doesn't).
@@ -320,7 +320,7 @@ pub fn to_value(ss: List<Statement>) throws -> jsonraw.Value {
 // Reads the first JSON value of `data` and makes its statements, each path
 // starting with `prefix`.
 pub fn statements_from_json(data: Bytes, prefix: Statement) throws -> List<Statement> {
-  let top = try jsonraw.decode_first(data)
+  let top = jsonraw.decode_first(data)
   var f = Filler()
   f.fill(prefix, v: top)
   return f.ss
@@ -372,7 +372,7 @@ pub fn json_prefix() -> Statement {
 }
 
 test "statements from JSON" {
-  let ss = try statements_from_json("{\"dotted\": \"A dotted value\", \"a quoted\": \"value\", \"bool1\": true, \"arr\": [\"one\", 2.0, null]}".bytes(), prefix: json_prefix())
+  let ss = statements_from_json("{\"dotted\": \"A dotted value\", \"a quoted\": \"value\", \"bool1\": true, \"arr\": [\"one\", 2.0, null]}".bytes(), prefix: json_prefix())
   let text = sort_statements(ss).map(s => s.to_string())
   expect text == [
     "json = {};",
@@ -387,7 +387,7 @@ test "statements from JSON" {
 }
 
 test "natural sort of indexes" {
-  let ss = try statements_from_json("[0,1,2,3,4,5,6,7,8,9,10,11]".bytes(), prefix: json_prefix())
+  let ss = statements_from_json("[0,1,2,3,4,5,6,7,8,9,10,11]".bytes(), prefix: json_prefix())
   let text = sort_statements(ss).map(s => s.to_string())
   expect text[2] == "json[1] = 1;"
   expect text[3] == "json[2] = 2;"
@@ -396,14 +396,14 @@ test "natural sort of indexes" {
 
 test "jsonify" {
   let s = statement_from_string("json.a[\"b c\"][0] = 1;")
-  expect (try s.jsonify()).to_string() == "[[\"a\",\"b c\",0],1]"
-  expect (try statement_from_string("json = {};").jsonify()).to_string() == "[[],{}]"
+  expect s.jsonify().to_string() == "[[\"a\",\"b c\",0],1]"
+  expect statement_from_string("json = {};").jsonify().to_string() == "[[],{}]"
 }
 
 test "statements from the JSON form" {
-  let s = try statement_from_json_spec("[[\"a\",0,\"b c\"],1.0]")
+  let s = statement_from_json_spec("[[\"a\",0,\"b c\"],1.0]")
   expect s.to_string() == "json[\"a\"][0][\"b c\"] = 1;"
-  expect (try statement_from_json_spec("[[],{}]")).to_string() == "json = {};"
+  expect statement_from_json_spec("[[],{}]").to_string() == "json = {};"
   let layout = try statement_from_json_spec("[[],{\"a\":1}]").to_string() catch e { e.message() }
   expect layout == "invalid JSON layout"
   let big = try statement_from_json_spec("[[\"a\",1e400],1]").to_string() catch e { e.message() }
@@ -427,6 +427,6 @@ test "Go float formatting" {
 
 test "ungronning statements" {
   let ss = ["json.a[1] = 2;", "json.a[0] = 1;", "--", "", "json.b = \"x\";"].map(l => statement_from_string(l))
-  let v = try to_value(ss)
+  let v = to_value(ss)
   expect jsonraw.encode_pretty(v) == "{\n  \"json\": {\n    \"a\": [\n      1,\n      2\n    ],\n    \"b\": \"x\"\n  }\n}"
 }

@@ -216,7 +216,7 @@ builtin type List<T> {
   }
   fn find(self, test: fn(T) throws -> Bool) rethrows -> T? {
     for x in self {
-      if try test(x) {
+      if test(x) {
         return x
       }
     }
@@ -224,7 +224,7 @@ builtin type List<T> {
   }
   fn any(self, test: fn(T) throws -> Bool) rethrows -> Bool {
     for x in self {
-      if try test(x) {
+      if test(x) {
         return true
       }
     }
@@ -232,7 +232,7 @@ builtin type List<T> {
   }
   fn all(self, test: fn(T) throws -> Bool) rethrows -> Bool {
     for x in self {
-      if not (try test(x)) {
+      if not (test(x)) {
         return false
       }
     }
@@ -241,7 +241,7 @@ builtin type List<T> {
   fn count(self, test: fn(T) throws -> Bool) rethrows -> Int {
     var n = 0
     for x in self {
-      if try test(x) {
+      if test(x) {
         n += 1
       }
     }
@@ -250,14 +250,14 @@ builtin type List<T> {
   fn map<R>(self, transform: fn(T) throws -> R) rethrows -> List<R> {
     var out: List<R> = __list_with_capacity(self.length)
     for x in self {
-      out.append(try transform(x))
+      out.append(transform(x))
     }
     return out
   }
   fn filter(self, test: fn(T) throws -> Bool) rethrows -> List<T> {
     var out: List<T> = []
     for x in self {
-      if try test(x) {
+      if test(x) {
         out.append(x)
       }
     }
@@ -266,7 +266,7 @@ builtin type List<T> {
   fn fold<A>(self, start: A, step: fn(A, T) throws -> A) rethrows -> A {
     var acc = start
     for x in self {
-      acc = try step(acc, x)
+      acc = step(acc, x)
     }
     return acc
   }
@@ -279,14 +279,14 @@ builtin type List<T> {
   // Largest first: `xs.sorted_by(x => x.score).reversed()`.
   fn sorted_by<K>(self, key: fn(T) throws -> K) rethrows -> List<T> {
     var out = self
-    try out.sort_by(key)
+    out.sort_by(key)
     return out
   }
   // Each item's list, one after another: `orders.flat_map(o => o.items)`.
   fn flat_map<R>(self, transform: fn(T) throws -> List<R>) rethrows -> List<R> {
     var out: List<R> = []
     for x in self {
-      out.append_all(try transform(x))
+      out.append_all(transform(x))
     }
     return out
   }
@@ -334,7 +334,7 @@ builtin type List<T> {
   // The position of the first item that passes `test`.
   fn find_index(self, test: fn(T) throws -> Bool) rethrows -> Int? {
     for i in 0..<self.length {
-      if try test(self[i]) {
+      if test(self[i]) {
         return i
       }
     }
@@ -345,7 +345,7 @@ builtin type List<T> {
     var yes: List<T> = []
     var no: List<T> = []
     for x in self {
-      if try test(x) {
+      if test(x) {
         yes.append(x)
       } else {
         no.append(x)
@@ -391,9 +391,9 @@ builtin type List<T> {
       return none
     }
     var best = self[0]
-    var best_key = try key(best)
+    var best_key = key(best)
     for x in self.drop(1) {
-      let k = try key(x)
+      let k = key(x)
       if __less(k, best_key) {
         best = x
         best_key = k
@@ -406,9 +406,9 @@ builtin type List<T> {
       return none
     }
     var best = self[0]
-    var best_key = try key(best)
+    var best_key = key(best)
     for x in self.drop(1) {
-      let k = try key(x)
+      let k = key(x)
       if __less(best_key, k) {
         best = x
         best_key = k
@@ -428,7 +428,7 @@ builtin type List<T> {
         batch.append(spawn transform(self[i]))
       }
       for task in batch {
-        out.append(try task.wait())
+        out.append(task.wait())
       }
       start = end
     }
@@ -437,7 +437,7 @@ builtin type List<T> {
   fn group_by<K>(self, key: fn(T) throws -> K) rethrows -> Map<K, List<T>> {
     var groups: Map<K, List<T>> = {}
     for x in self {
-      let k = try key(x)
+      let k = key(x)
       if groups.contains_key(k) {
         groups[k].append(x)
       } else {

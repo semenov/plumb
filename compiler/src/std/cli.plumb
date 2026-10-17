@@ -7,7 +7,7 @@
 //     output_dir: String? = none // --output-dir out (optional)
 //     args: List<String> = []    // everything that isn't an option
 //   }
-//   let opts = try cli.decode<Options>()
+//   let opts = cli.decode<Options>()
 //
 // `--help` prints the options and exits. Unknown options and missing
 // required ones are errors that show the usage.
@@ -17,7 +17,7 @@ pub fn decode<T>() throws -> T
 // subcommands.
 //   let args = process.args()
 //   match args.first() ?? "" {
-//     "add" => { let opts = try cli.decode_from<AddOptions>(args.drop(1)) ... }
+//     "add" => { let opts = cli.decode_from<AddOptions>(args.drop(1)) ... }
 //     "list" => { ... }
 //     _ => eprint("usage: tool add|list [options]")
 //   }

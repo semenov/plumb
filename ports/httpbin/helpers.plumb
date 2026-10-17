@@ -171,7 +171,7 @@ pub fn exclude_headers_regex(exclude: String) throws -> regex.Regex? {
   if parts.is_empty() {
     return none
   }
-  return try regex.compile("(?i)(${parts.join("|")})")
+  return regex.compile("(?i)(${parts.join("|")})")
 }
 
 fn wildcard_to_regexp(pattern: String) -> String {
@@ -498,7 +498,7 @@ pub fn atoi(input: String) throws -> Int {
 }
 
 pub fn parse_status_code(input: String) throws -> Int {
-  return try parse_bounded_status_code(input, min: 100, max: 599)
+  return parse_bounded_status_code(input, min: 100, max: 599)
 }
 
 pub fn parse_bounded_status_code(input: String, min: Int, max: Int) throws -> Int {
@@ -523,7 +523,7 @@ pub fn parse_duration(input: String) throws -> time.Duration {
 }
 
 pub fn parse_bounded_duration(input: String, min: time.Duration, max: time.Duration) throws -> time.Duration {
-  let d = try parse_duration(input)
+  let d = parse_duration(input)
   if d.is_longer_than(max) {
     throw BadInput(text: "duration ${go_duration(d)} longer than ${go_duration(max)}")
   }
@@ -703,5 +703,5 @@ pub fn decode_base64(text: String) throws -> Bytes {
   if text.length % 4 != 0 {
     throw BadInput(text: "illegal base64 data at input byte ${text.length - text.length % 4}")
   }
-  return try encoding.from_base64(text)
+  return encoding.from_base64(text)
 }

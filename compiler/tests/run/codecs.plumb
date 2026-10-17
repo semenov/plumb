@@ -43,14 +43,14 @@ fn main() throws {
   let u = User(id: 1, name: "Ada \"Countess\"", role: Admin, tags: ["math", "code"], address: Address(city: "London"), scores: {"chess": 3})
   let text = json.encode(u)
   print(text)
-  let back = try json.decode<User>(text)
+  let back = json.decode<User>(text)
   print("round trip equal: ${back == u}")
   print(json.encode_pretty(Address(city: "Paris", zip: "75001")))
 
-  let minimal = try json.decode<User>("{\"id\": 7, \"name\": \"Bob\"}")
+  let minimal = json.decode<User>("{\"id\": 7, \"name\": \"Bob\"}")
   print("${minimal.name}: role ${minimal.role}, ${minimal.tags.length} tags, address given: ${minimal.address is some(_)}")
 
-  let shapes = try json.decode<List<Shape>>("[{\"type\": \"Circle\", \"radius\": 1.5}, {\"type\": \"Square\", \"side\": 2}]")
+  let shapes = json.decode<List<Shape>>("[{\"type\": \"Circle\", \"radius\": 1.5}, {\"type\": \"Square\", \"side\": 2}]")
   print("${shapes}")
   print(json.encode(shapes))
 
@@ -61,7 +61,7 @@ fn main() throws {
     }
   }
 
-  let v = try json.parse("{\"a\": [1, 2.5, true, null, \"x\"], \"b\": {\"c\": 1}}")
+  let v = json.parse("{\"a\": [1, 2.5, true, null, \"x\"], \"b\": {\"c\": 1}}")
   match v {
     json.Value.Object(fields) => print("object with ${fields.length} fields: ${json.encode(v)}")
     _ => print("not an object")

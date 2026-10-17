@@ -901,7 +901,7 @@ impl Parser {
                     e = Expr { kind: ExprKind::Field(Box::new(e), name, nsp), span };
                 }
                 Tok::Question => {
-                    return Err(self.err_here("unexpected `?`").help("for a choice write `if c { a } else { b }`; `try f()` passes an error up, `??` gives a fallback, `?.` reaches into an optional value"));
+                    return Err(self.err_here("unexpected `?`").help("for a choice write `if c { a } else { b }`; `??` gives a fallback, `?.` reaches into an optional value"));
                 }
                 _ => break,
             }

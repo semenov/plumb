@@ -32,7 +32,7 @@ fn parse_people(text: String) throws -> List<Person> {
 }
 
 test "parses valid rows and skips malformed ones" {
-  let people = try parse_people("name,age\nAda,36\nAlan,41\nBad,row,extra\nEve,notanumber")
+  let people = parse_people("name,age\nAda,36\nAlan,41\nBad,row,extra\nEve,notanumber")
   expect people.length == 2
   expect people[1].name == "Alan"
 }
@@ -46,7 +46,7 @@ test "a wrong header is an error" {
 }
 
 fn main() throws {
-  let people = try parse_people("name,age\nAda,36\nAlan,41\nGrace,x")
+  let people = parse_people("name,age\nAda,36\nAlan,41\nGrace,x")
   for person in people {
     print("${person.name} is ${person.age}")
   }

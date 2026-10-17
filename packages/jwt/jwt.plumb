@@ -3,11 +3,11 @@
 //   type Claims { sub: String, exp: Int, admin: Bool = false }
 //
 //   let token = jwt.sign(Claims(sub: "42", exp: time.unix_now() + 3600), secret: key)
-//   let claims = try jwt.verify<Claims>(token, secret: key)
+//   let claims = jwt.verify<Claims>(token, secret: key)
 //
 //   // tokens from an identity provider (Google, Auth0, ...): its published keys
-//   let keys = try jwt.key_set((try http.get(jwks_url)).text())
-//   let user = try jwt.verify_with_keys<GoogleClaims>(token, keys: keys)
+//   let keys = jwt.key_set(http.get(jwks_url).text())
+//   let user = jwt.verify_with_keys<GoogleClaims>(token, keys: keys)
 //
 // Verifying checks the signature, and `exp` (expired) and `nbf` (not yet
 // valid) when the token has them, allowing 60 seconds of clock difference.
@@ -49,7 +49,7 @@ pub type Invalid implements Error {
 }
 
 pub fn verify<T>(token: String, secret: String) throws -> T {
-  let t = try split(token)
+  let t = split(token)
   if t.alg != "HS256" {
     throw Invalid(text: "jwt: expected an HS256 token, this one is ${t.alg}")
   }
@@ -57,7 +57,7 @@ pub fn verify<T>(token: String, secret: String) throws -> T {
   if not crypto.equal(expected, b: t.signature) {
     throw Invalid(text: "jwt: the signature doesn't match")
   }
-  return try claims<T>(t.payload)
+  return claims<T>(t.payload)
 }
 
 // RS256 (an RSA key) or ES256 (a P-256 key), by the key's type.
@@ -66,18 +66,18 @@ pub fn sign_with<T>(claims: T, key: crypto.PrivateKey, algorithm: String) throws
     throw Failure(message: "jwt: sign_with takes RS256 or ES256")
   }
   let unsigned = "${part("{\"alg\":\"${algorithm}\",\"typ\":\"JWT\"}".bytes())}.${part(json.encode(claims).bytes())}"
-  return "${unsigned}.${part(try crypto.sign(key, data: unsigned.bytes()))}"
+  return "${unsigned}.${part(crypto.sign(key, data: unsigned.bytes()))}"
 }
 
 pub fn verify_with<T>(token: String, key: crypto.PublicKey) throws -> T {
-  let t = try split(token)
+  let t = split(token)
   if t.alg != "RS256" and t.alg != "ES256" {
     throw Invalid(text: "jwt: expected an RS256 or ES256 token, this one is ${t.alg}")
   }
   if not crypto.verify(key, data: t.signed.bytes(), signature: t.signature) {
     throw Invalid(text: "jwt: the signature doesn't match")
   }
-  return try claims<T>(t.payload)
+  return claims<T>(t.payload)
 }
 
 // Public keys by id, from a JWKS document (an identity provider's
@@ -87,16 +87,16 @@ pub type KeySet {
 }
 
 pub fn key_set(jwks: String) throws -> KeySet {
-  let doc = try json.decode<Jwks>(jwks)
+  let doc = json.decode<Jwks>(jwks)
   var keys: Map<String, crypto.PublicKey> = {}
   for k in doc.keys {
     if k.kty == "RSA" {
       if k.n is some(n) {
-        keys[k.kid ?? ""] = try crypto.rsa_public_key(try unpart(n), e: try unpart(k.e ?? "AQAB"))
+        keys[k.kid ?? ""] = crypto.rsa_public_key(unpart(n), e: unpart(k.e ?? "AQAB"))
       }
     } else if k.kty == "EC" and (k.crv ?? "") == "P-256" {
       if k.x is some(x) {
-        keys[k.kid ?? ""] = try crypto.ec_public_key(try unpart(x), y: try unpart(k.y ?? ""))
+        keys[k.kid ?? ""] = crypto.ec_public_key(unpart(x), y: unpart(k.y ?? ""))
       }
     }
   }
@@ -105,15 +105,15 @@ pub fn key_set(jwks: String) throws -> KeySet {
 
 // Verifies with the key the token names (its `kid`).
 pub fn verify_with_keys<T>(token: String, keys: KeySet) throws -> T {
-  let t = try split(token)
+  let t = split(token)
   let key = keys.keys[t.kid] ?? throw Invalid(text: "jwt: no key with id \"${t.kid}\" in the key set")
-  return try verify_with<T>(token, key: key)
+  return verify_with<T>(token, key: key)
 }
 
 // The claims without checking anything: only for looking inside a token
 // you will verify anyway (for example, to pick a key).
 pub fn read_unverified<T>(token: String) throws -> T {
-  return try json.decode<T>(try (try split(token)).payload.text())
+  return json.decode<T>(split(token).payload.text())
 }
 
 // ---- the token's parts
@@ -156,15 +156,15 @@ fn split(token: String) throws -> Parts {
   if p.length != 3 {
     throw Invalid(text: "jwt: not a token (expected three parts separated by dots)")
   }
-  let header = try json.decode<Header>(try (try unpart(p[0])).text()) catch err {
+  let header = try json.decode<Header>(unpart(p[0]).text()) catch err {
     throw Invalid(text: "jwt: the header can't be read: ${err.message()}")
   }
-  return Parts(alg: header.alg, kid: header.kid ?? "", signed: "${p[0]}.${p[1]}", payload: try unpart(p[1]), signature: try unpart(p[2]))
+  return Parts(alg: header.alg, kid: header.kid ?? "", signed: "${p[0]}.${p[1]}", payload: unpart(p[1]), signature: unpart(p[2]))
 }
 
 fn claims<T>(payload: Bytes) throws -> T {
-  let text = try payload.text()
-  let times = try json.decode<TimeClaims>(text)
+  let text = payload.text()
+  let times = json.decode<TimeClaims>(text)
   let now = time.unix_now()
   if times.exp is some(exp) {
     if now > exp + 60 {
@@ -176,7 +176,7 @@ fn claims<T>(payload: Bytes) throws -> T {
       throw Invalid(text: "jwt: the token isn't valid yet")
     }
   }
-  return try json.decode<T>(text)
+  return json.decode<T>(text)
 }
 
 // base64url without padding, as JWT writes its parts
@@ -218,6 +218,6 @@ test "an expired token is Expired, a forged one Invalid" {
     }
   }
   expect forged.sub == "invalid"
-  let ok = try verify<TestClaims>(token, secret: "k")
+  let ok = verify<TestClaims>(token, secret: "k")
   expect ok.sub == "2"
 }

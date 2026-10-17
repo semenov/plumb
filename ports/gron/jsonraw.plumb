@@ -31,7 +31,7 @@ pub fn decode_first(data: Bytes) throws -> Value {
   if p.pos >= p.size {
     throw SyntaxError(text: "EOF")
   }
-  let v = try p.parse_value()
+  let v = p.parse_value()
   // A scalar at the top level needs a delimiter after it (Go looks at the
   // next byte to know that a number has ended).
   let scalar = match v {
@@ -146,11 +146,11 @@ type Parser {
           open.append(Open(is_object: false))
           continue
         } else {
-          open.append(Open(is_object: true, key: try self.object_key()))
+          open.append(Open(is_object: true, key: self.object_key()))
           continue
         }
       } else {
-        value = try self.parse_scalar(c)
+        value = self.parse_scalar(c)
       }
       // A value is complete: add it to the innermost open array or object,
       // and close the ones that end here.
@@ -181,7 +181,7 @@ type Parser {
           if next != 44 {
             throw self.invalid(next, context: "after object key:value pair")
           }
-          open[i].key = try self.object_key()
+          open[i].key = self.object_key()
         } else {
           if next == 93 {
             if open.pop() is some(done) {
@@ -202,21 +202,21 @@ type Parser {
   // A string, number, true, false or null, starting with `c`.
   mutating fn parse_scalar(c: Int) throws -> Value {
     if c == 34 {
-      return Value.String(value: try self.parse_string())
+      return Value.String(value: self.parse_string())
     }
     if c == 45 or is_digit(c) {
-      return Number(text: try self.parse_number())
+      return Number(text: self.parse_number())
     }
     if c == 116 {
-      try self.literal("true")
+      self.literal("true")
       return Value.Bool(value: true)
     }
     if c == 102 {
-      try self.literal("false")
+      self.literal("false")
       return Value.Bool(value: false)
     }
     if c == 110 {
-      try self.literal("null")
+      self.literal("null")
       return Null
     }
     throw self.invalid(c, context: "looking for beginning of value")
@@ -232,7 +232,7 @@ type Parser {
     if c != 34 {
       throw self.invalid(c, context: "looking for beginning of object key string")
     }
-    let key = try self.parse_string()
+    let key = self.parse_string()
     self.skip_space()
     if self.pos >= self.size {
       throw self.eof()
@@ -299,7 +299,7 @@ type Parser {
       }
       self.digits()
     }
-    return try self.data.slice(from: start, to: self.pos).text()
+    return self.data.slice(from: start, to: self.pos).text()
   }
 
   mutating fn digits() {
@@ -362,14 +362,14 @@ type Parser {
       } else if e == 116 {
         out.append(9)
       } else if e == 117 {
-        var r = try self.hex4()
+        var r = self.hex4()
         if r >= 0xD800 and r < 0xE000 {
           // A surrogate: a pair makes one character, anything else U+FFFD.
           var combined = 0xFFFD
           if r < 0xDC00 and self.pos + 1 < self.size and self.byte(self.pos) == 92 and self.byte(self.pos + 1) == 117 {
             let save = self.pos
             self.pos += 2
-            let low = try self.hex4()
+            let low = self.hex4()
             if low >= 0xDC00 and low < 0xE000 {
               combined = 0x10000 + (r - 0xD800) * 0x400 + (low - 0xDC00)
             } else {
@@ -704,16 +704,16 @@ pub fn encode_string(s: String) -> String {
 }
 
 test "numbers are kept as written" {
-  let v = try decode_all("[1.0, 1e5, -0, 12345678901234567890, 1.5E-10]".bytes())
+  let v = decode_all("[1.0, 1e5, -0, 12345678901234567890, 1.5E-10]".bytes())
   expect encode_pretty(v) == "[\n  1.0,\n  1e5,\n  -0,\n  12345678901234567890,\n  1.5E-10\n]"
 }
 
 test "strings: escapes, surrogates and bad UTF-8" {
-  expect (try decode_all("\"a\\n\\u00e9\\ud83d\\ude00\"".bytes())) == Value.String(value: "a\né😀")
+  expect (decode_all("\"a\\n\\u00e9\\ud83d\\ude00\"".bytes())) == Value.String(value: "a\né😀")
   // a lone surrogate becomes U+FFFD, as in Go
-  expect (try decode_all("\"\\ud800x\"".bytes())) == Value.String(value: "\u{fffd}x")
+  expect (decode_all("\"\\ud800x\"".bytes())) == Value.String(value: "\u{fffd}x")
   // so does a byte that isn't UTF-8
-  expect (try decode_all(Bytes([34, 97, 0xFF, 34]))) == Value.String(value: "a\u{fffd}")
+  expect (decode_all(Bytes([34, 97, 0xFF, 34]))) == Value.String(value: "a\u{fffd}")
   expect encode_string("q\"\\\u{1}\u{2028}é") == "\"q\\\"\\\\\\u0001\\u2028é\""
 }
 
@@ -737,7 +737,7 @@ test "syntax errors are worded as Go's" {
 }
 
 test "decode_first stops after the first value" {
-  expect (try decode_first("{\"a\":1} trailing".bytes())) == Value.Object(fields: {"a": Number(text: "1")})
+  expect (decode_first("{\"a\":1} trailing".bytes())) == Value.Object(fields: {"a": Number(text: "1")})
   let scalar = try decode_first("1x".bytes()) catch err { Value.String(value: err.message()) }
   expect scalar == Value.String(value: "invalid character 'x' after top-level value")
 }

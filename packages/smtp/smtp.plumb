@@ -1,7 +1,7 @@
 // smtp: sending email, written in the language itself.
 //
 //   let server = smtp.Server(host: "smtp.example.com", user: "shop@example.com", password: key)
-//   try smtp.send(smtp.Message(
+//   smtp.send(smtp.Message(
 //     from: "Shop <shop@example.com>",
 //     to: ["ada@example.com"],
 //     subject: "Your order",
@@ -55,13 +55,13 @@ pub type Message {
 
 // Sends the message to every recipient (to, cc and bcc).
 pub fn send(message: Message, server: Server) throws {
-  with conn = try open(server) {
-    try reply(conn, code: 220)
-    try hello(conn)
+  with conn = open(server) {
+    reply(conn, code: 220)
+    hello(conn)
     if server.security == "starttls" {
-      try command(conn, line: "STARTTLS", code: 220)
-      try net.start_tls(conn, host: server.host)
-      try hello(conn)
+      command(conn, line: "STARTTLS", code: 220)
+      net.start_tls(conn, host: server.host)
+      hello(conn)
     }
     if not server.user.is_empty() {
       var auth = Bytes()
@@ -69,45 +69,45 @@ pub fn send(message: Message, server: Server) throws {
       auth.append_text(server.user)
       auth.append(0)
       auth.append_text(server.password)
-      try command(conn, line: "AUTH PLAIN ${auth.base64()}", code: 235)
+      command(conn, line: "AUTH PLAIN ${auth.base64()}", code: 235)
     }
-    try command(conn, line: "MAIL FROM:<${address(message.from)}>", code: 250)
+    command(conn, line: "MAIL FROM:<${address(message.from)}>", code: 250)
     for r in message.to.concat(message.cc).concat(message.bcc) {
-      try command(conn, line: "RCPT TO:<${address(r)}>", code: 250)
+      command(conn, line: "RCPT TO:<${address(r)}>", code: 250)
     }
-    try command(conn, line: "DATA", code: 354)
+    command(conn, line: "DATA", code: 354)
     // a line starting with "." gets another one (dot-stuffing)
     var body: List<String> = []
     for line in render(message).split("\r\n") {
       body.append(if line.starts_with(".") { ".${line}" } else { line })
     }
-    try conn.write_text("${body.join("\r\n")}\r\n.\r\n")
-    try reply(conn, code: 250)
-    try conn.write_text("QUIT\r\n")
+    conn.write_text("${body.join("\r\n")}\r\n.\r\n")
+    reply(conn, code: 250)
+    conn.write_text("QUIT\r\n")
   }
 }
 
 fn open(server: Server) throws -> io.Stream {
   if server.security == "tls" {
-    return try net.connect_tls(server.host, port: server.port)
+    return net.connect_tls(server.host, port: server.port)
   }
-  return try net.connect(server.host, port: server.port)
+  return net.connect(server.host, port: server.port)
 }
 
 fn hello(conn: io.Stream) throws {
-  try command(conn, line: "EHLO localhost", code: 250)
+  command(conn, line: "EHLO localhost", code: 250)
 }
 
 fn command(conn: io.Stream, line: String, code: Int) throws {
-  try conn.write_text("${line}\r\n")
-  try reply(conn, code: code)
+  conn.write_text("${line}\r\n")
+  reply(conn, code: code)
 }
 
 // Reads a reply (its continuation lines too) and checks its code.
 fn reply(conn: io.Stream, code: Int) throws {
   var last = ""
   while true {
-    let line = try conn.read_line() ?? throw Failure(message: "smtp: the server closed the connection")
+    let line = conn.read_line() ?? throw Failure(message: "smtp: the server closed the connection")
     last = line
     // "250-..." continues, "250 ..." ends the reply
     if line.length < 4 or line.slice(from: 3, to: 4) != "-" {

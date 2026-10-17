@@ -53,17 +53,17 @@ pub type App {
 
 pub fn new_app(config: Config) throws -> App {
   var assets: Map<String, Bytes> = {}
-  for name in try files.list(config.static_dir) {
-    assets[name] = try files.read_bytes("${config.static_dir}/${name}")
+  for name in files.list(config.static_dir) {
+    assets[name] = files.read_bytes("${config.static_dir}/${name}")
   }
   let sample_sse = sse_event(999, ts: 1790667600000)
   let sample_jsonl = "${json.encode(sample_stream_response())}\n"
   return App(
     config: config,
     assets: assets,
-    index_html: try render(assets, name: "index.html.tmpl", prefix: config.prefix),
-    forms_post_html: try render(assets, name: "forms-post.html.tmpl", prefix: config.prefix),
-    exclude: try helpers.exclude_headers_regex(config.exclude_headers),
+    index_html: render(assets, name: "index.html.tmpl", prefix: config.prefix),
+    forms_post_html: render(assets, name: "forms-post.html.tmpl", prefix: config.prefix),
+    exclude: helpers.exclude_headers_regex(config.exclude_headers),
     max_sse_count: config.max_body_size.div(sample_sse.byte_length()),
     max_jsonl_count: config.max_body_size.div(sample_jsonl.byte_length()),
   )
@@ -71,7 +71,7 @@ pub fn new_app(config: Config) throws -> App {
 
 // The two templates only use {{.Prefix}}.
 fn render(assets: Map<String, Bytes>, name: String, prefix: String) throws -> Bytes {
-  return (try (assets[name] ?? Bytes()).text()).replace("{{.Prefix}}", new: prefix).bytes()
+  return ((assets[name] ?? Bytes()).text()).replace("{{.Prefix}}", new: prefix).bytes()
 }
 
 // ---- routing ----
@@ -215,7 +215,7 @@ pub fn dispatch(req: http.Request, app: App, table: List<Route>) throws -> http.
         routed.params = params
         routed.path = path
         let handler = r.handler
-        return try handler(routed, app)
+        return handler(routed, app)
       }
       allowed.append(r.method)
       if r.method == "GET" {
@@ -253,7 +253,7 @@ pub fn preflight(req: http.Request, next: fn(http.Request) throws -> http.Respon
     }
     return res
   }
-  var res = try next(req)
+  var res = next(req)
   res.headers["access-control-allow-origin"] = origin
   res.headers["access-control-allow-credentials"] = "true"
   return res
@@ -268,15 +268,15 @@ pub fn make_router(app: App) -> http.Router {
   if app.config.log_requests {
     router.use(http.log_requests())
   }
-  router.use((req, next) => try preflight(req, next: next))
+  router.use((req, next) => preflight(req, next: next))
   router.use((req, next) => {
     if req.path == "${app.config.prefix}/websocket/echo" and req.method == "GET" {
-      try websocket_check(req, app: app, next: next)
+      websocket_check(req, app: app, next: next)
     } else {
-      try dispatch(req, app: app, table: table)
+      dispatch(req, app: app, table: table)
     }
   })
-  router.websocket("${app.config.prefix}/websocket/echo", ws => try websocket_echo(ws))
+  router.websocket("${app.config.prefix}/websocket/echo", ws => websocket_echo(ws))
   return router
 }
 
@@ -459,9 +459,9 @@ fn get(req: http.Request, app: App) throws -> http.Response {
 
 fn anything(req: http.Request, app: App) throws -> http.Response {
   if req.method == "HEAD" {
-    return try get(req, app: app)
+    return get(req, app: app)
   }
-  return try request_with_body(req, app: app)
+  return request_with_body(req, app: app)
 }
 
 fn request_with_body(req: http.Request, app: App) throws -> http.Response {
@@ -514,7 +514,7 @@ fn parse_body(req: http.Request, resp: BodyResponse, max: Int) throws -> BodyRes
     "multipart/form-data" => {
       var form: Map<String, List<String>> = {}
       var uploads: Map<String, List<String>> = {}
-      for part in try req.parts() {
+      for part in req.parts() {
         if part.filename is some(f) {
           var vs = uploads[part.name] ?? []
           vs.append(part.text())
@@ -529,7 +529,7 @@ fn parse_body(req: http.Request, resp: BodyResponse, max: Int) throws -> BodyRes
       out.files = helpers.sorted_map(uploads)
     }
     "application/json" => {
-      out.json = sort_keys(try json.parse(out.data))
+      out.json = sort_keys(json.parse(out.data))
     }
     _ => {
       out.data = encode_data(req.body, content_type: content_type)
@@ -878,14 +878,14 @@ fn stream(req: http.Request, app: App) throws -> http.Response {
   n = max(1, b: min(100, b: n))
   let resp = stream_response(req, app: app)
   // Go sets no content type here and sniffs text/plain
-  return http.stream(200, content_type: helpers.text_content_type(), writer: out => try write_stream_lines(out, resp: resp, n: n))
+  return http.stream(200, content_type: helpers.text_content_type(), writer: out => write_stream_lines(out, resp: resp, n: n))
 }
 
 fn write_stream_lines(out: io.Stream, resp: StreamResponse, n: Int) throws {
   var line = resp
   for i in 0..<n {
     line.id = i
-    try out.write_text("${json.encode(line)}\n")
+    out.write_text("${json.encode(line)}\n")
   }
 }
 
@@ -898,15 +898,15 @@ fn trailers(req: http.Request, app: App) throws -> http.Response {
       return helpers.write_error(400, detail: "forbidden trailer: ${k}")
     }
   }
-  return try request_with_body(req, app: app)
+  return request_with_body(req, app: app)
 }
 
 fn delay(req: http.Request, app: App) throws -> http.Response {
   let d = try helpers.parse_bounded_duration(req.param("duration") ?? "", min: time.nanos(0), max: app.config.max_duration) catch err {
     return helpers.write_error(400, detail: "invalid duration: ${err.message()}")
   }
-  try time.sleep(d)
-  let res = try request_with_body(req, app: app)
+  time.sleep(d)
+  let res = request_with_body(req, app: app)
   return res.with_header("server-timing", helpers.encode_server_timings([helpers.ServerTiming(name: "initial_delay", dur: d, desc: "initial delay")]))
 }
 
@@ -945,7 +945,7 @@ fn drip(req: http.Request, app: App) throws -> http.Response {
   }
   let pause = helpers.compute_pause_per_write(duration, count: num_bytes)
   if initial_delay.nanos > 0 {
-    try time.sleep(initial_delay)
+    time.sleep(initial_delay)
   }
   let timing = helpers.encode_server_timings([
     helpers.ServerTiming(name: "total_duration", dur: total, desc: "total request duration"),
@@ -957,17 +957,17 @@ fn drip(req: http.Request, app: App) throws -> http.Response {
     return helpers.write_response(code, content_type: helpers.text_content_type(), body: "*".repeat(num_bytes).bytes()).with_header("server-timing", timing)
   }
   // plumb streams are always chunked; go-httpbin sends a Content-Length here
-  return http.stream(code, content_type: helpers.text_content_type(), writer: out => try drip_bytes(out, n: num_bytes, pause: pause)).with_header("server-timing", timing)
+  return http.stream(code, content_type: helpers.text_content_type(), writer: out => drip_bytes(out, n: num_bytes, pause: pause)).with_header("server-timing", timing)
 }
 
 fn drip_bytes(out: io.Stream, n: Int, pause: time.Duration) throws {
   let start = time.now()
   for i in 0..<n {
-    try out.write_text("*")
+    out.write_text("*")
     if i == n - 1 {
       return
     }
-    try time.sleep_until(start.plus(pause.times(i + 1)))
+    time.sleep_until(start.plus(pause.times(i + 1)))
   }
 }
 
@@ -1012,7 +1012,7 @@ fn parse_range(header: String, size: Int) throws -> List<ByteRange> {
       if end_text == "" or not end_text.is_digit() {
         throw BadRange(text: "invalid range")
       }
-      var n = try end_text.to_int()
+      var n = end_text.to_int()
       if n == 0 {
         no_overlap = true
         continue
@@ -1025,7 +1025,7 @@ fn parse_range(header: String, size: Int) throws -> List<ByteRange> {
       if not start_text.is_digit() {
         throw BadRange(text: "invalid range")
       }
-      let start = try start_text.to_int()
+      let start = start_text.to_int()
       if start >= size {
         no_overlap = true
         continue
@@ -1035,7 +1035,7 @@ fn parse_range(header: String, size: Int) throws -> List<ByteRange> {
         if not end_text.is_digit() {
           throw BadRange(text: "invalid range")
         }
-        end = try end_text.to_int()
+        end = end_text.to_int()
         if start > end {
           throw BadRange(text: "invalid range")
         }
@@ -1112,7 +1112,7 @@ fn serve_content(req: http.Request, res: http.Response, size: Int, content: fn(I
     r.body = body
   }
   if pause_per_byte.nanos > 0 {
-    try time.sleep(pause_per_byte.times(r.body.length))
+    time.sleep(pause_per_byte.times(r.body.length))
   }
   return r
 }
@@ -1135,7 +1135,7 @@ fn range(req: http.Request, app: App) throws -> http.Response {
   }
   let res = http.Response(status: 200, body: Bytes(), headers: {"etag": "range${num_bytes}", "accept-ranges": "bytes", "content-type": helpers.text_content_type()})
   let pause = time.nanos(duration.nanos.div(num_bytes))
-  return try serve_content(req, res: res, size: num_bytes, content: (start, length) => alphabet_bytes(start, length: length), pause_per_byte: pause)
+  return serve_content(req, res: res, size: num_bytes, content: (start, length) => alphabet_bytes(start, length: length), pause_per_byte: pause)
 }
 
 fn alphabet_bytes(start: Int, length: Int) -> Bytes {
@@ -1156,7 +1156,7 @@ fn cache(req: http.Request, app: App) throws -> http.Response {
   }
   // time.RFC1123, in UTC
   let last_modified = time.utc_now().format("%a, %d %b %Y %H:%M:%S UTC")
-  let res = try get(req, app: app)
+  let res = get(req, app: app)
   return res.with_header("last-modified", last_modified).with_header("etag", sha1hash(last_modified))
 }
 
@@ -1171,7 +1171,7 @@ fn cache_control(req: http.Request, app: App) throws -> http.Response {
   let seconds = try helpers.atoi(raw) catch err {
     return helpers.write_error(400, detail: "invalid seconds: ${err.message().replace("Atoi", new: "ParseInt")}")
   }
-  let res = try get(req, app: app)
+  let res = get(req, app: app)
   return res.with_header("cache-control", "public, max-age=${seconds}")
 }
 
@@ -1179,17 +1179,17 @@ fn etag(req: http.Request, app: App) throws -> http.Response {
   let tag = req.param("etag") ?? ""
   let body = "${json.encode_pretty(no_body_response(req, app: app))}\n".bytes()
   let res = http.Response(status: 200, body: Bytes(), headers: {"etag": "\"${tag}\"", "content-type": helpers.text_content_type(), "last-modified": http_date(time.utc_now())})
-  return try serve_content(req, res: res, size: body.length, content: (start, length) => body.slice(from: start, to: start + length), pause_per_byte: time.nanos(0))
+  return serve_content(req, res: res, size: body.length, content: (start, length) => body.slice(from: start, to: start + length), pause_per_byte: time.nanos(0))
 }
 
 // ---- bytes ----
 
 fn bytes(req: http.Request, app: App) throws -> http.Response {
-  return try handle_bytes(req, app: app, streaming: false)
+  return handle_bytes(req, app: app, streaming: false)
 }
 
 fn stream_bytes(req: http.Request, app: App) throws -> http.Response {
-  return try handle_bytes(req, app: app, streaming: true)
+  return handle_bytes(req, app: app, streaming: true)
 }
 
 fn handle_bytes(req: http.Request, app: App, streaming: Bool) throws -> http.Response {
@@ -1227,7 +1227,7 @@ fn handle_bytes(req: http.Request, app: App, streaming: Bool) throws -> http.Res
     chunk_size = 1
   }
   let seeded = rng
-  return http.stream(200, content_type: helpers.binary_content_type(), writer: out => try write_random_chunks(out, rng: seeded, n: num_bytes, chunk_size: chunk_size))
+  return http.stream(200, content_type: helpers.binary_content_type(), writer: out => write_random_chunks(out, rng: seeded, n: num_bytes, chunk_size: chunk_size))
 }
 
 fn write_random_chunks(out: io.Stream, rng: helpers.Rng, n: Int, chunk_size: Int) throws {
@@ -1236,12 +1236,12 @@ fn write_random_chunks(out: io.Stream, rng: helpers.Rng, n: Int, chunk_size: Int
   for i in 0..<n {
     chunk.append(r.below(256))
     if chunk.length == chunk_size {
-      try out.write(chunk)
+      out.write(chunk)
       chunk = Bytes()
     }
   }
   if chunk.length > 0 {
-    try out.write(chunk)
+    out.write(chunk)
   }
 }
 
@@ -1466,10 +1466,10 @@ fn sse(req: http.Request, app: App) throws -> http.Response {
   }
   let pause = helpers.compute_pause_per_write(p.duration, count: p.count)
   if p.delay.nanos > 0 {
-    try time.sleep(p.delay)
+    time.sleep(p.delay)
   }
   // no trailers: the Server-Timing trailer is not sent
-  return http.stream(200, content_type: helpers.sse_content_type(), writer: out => try write_events(out, p: p, pause: pause))
+  return http.stream(200, content_type: helpers.sse_content_type(), writer: out => write_events(out, p: p, pause: pause))
 }
 
 fn write_events(out: io.Stream, p: StreamParams, pause: time.Duration) throws {
@@ -1477,9 +1477,9 @@ fn write_events(out: io.Stream, p: StreamParams, pause: time.Duration) throws {
   let base = time.now()
   for i in 0..<p.count {
     if i > 0 and pause.nanos > 0 {
-      try time.sleep(apply_jitter(pause, jitter: p.jitter))
+      time.sleep(apply_jitter(pause, jitter: p.jitter))
     }
-    try out.write_text(sse_event(i, ts: unix_millis(base_seconds, base: base)))
+    out.write_text(sse_event(i, ts: unix_millis(base_seconds, base: base)))
   }
 }
 
@@ -1492,21 +1492,21 @@ fn jsonl(req: http.Request, app: App) throws -> http.Response {
     return http.Response(status: 400, body: "Too much time\n".bytes(), headers: {"content-type": helpers.text_content_type(), "x-content-type-options": "nosniff"})
   }
   if p.delay.nanos > 0 {
-    try time.sleep(p.delay)
+    time.sleep(p.delay)
   }
   let resp = stream_response(req, app: app)
   let pause = helpers.compute_pause_per_write(p.duration, count: p.count)
-  return http.stream(200, content_type: helpers.jsonl_content_type(), writer: out => try write_jsonl(out, resp: resp, p: p, pause: pause))
+  return http.stream(200, content_type: helpers.jsonl_content_type(), writer: out => write_jsonl(out, resp: resp, p: p, pause: pause))
 }
 
 fn write_jsonl(out: io.Stream, resp: StreamResponse, p: StreamParams, pause: time.Duration) throws {
   var line = resp
   for i in 0..<p.count {
     if i > 0 and pause.nanos > 0 {
-      try time.sleep(apply_jitter(pause, jitter: p.jitter))
+      time.sleep(apply_jitter(pause, jitter: p.jitter))
     }
     line.id = i
-    try out.write_text("${json.encode(line)}\n")
+    out.write_text("${json.encode(line)}\n")
   }
 }
 
@@ -1540,15 +1540,15 @@ fn websocket_check(req: http.Request, app: App, next: fn(http.Request) throws ->
   if (req.header("upgrade") ?? "").lower() != "websocket" {
     return helpers.write_error(400, detail: "missing required `Upgrade: websocket` header")
   }
-  return try next(req)
+  return next(req)
 }
 
 fn websocket_echo(ws: http.WebSocket) throws {
-  while try ws.receive() is some(msg) {
+  while ws.receive() is some(msg) {
     if msg.is_text {
-      try ws.send_text(msg.text())
+      ws.send_text(msg.text())
     } else {
-      try ws.send(msg.data)
+      ws.send(msg.data)
     }
   }
 }

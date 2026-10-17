@@ -15,32 +15,32 @@ type Input {
 }
 
 fn count(conn: db.Connection) throws -> Int {
-  let rows = try conn.query<Note>("select id, text from notes", [])
+  let rows = conn.query<Note>("select id, text from notes", [])
   return rows.length
 }
 
 fn add_two(req: http.Request, conn: db.Connection) throws -> http.Response {
-  let input = try json.decode<Input>(req.text())
-  let before = try count(conn)
+  let input = json.decode<Input>(req.text())
+  let before = count(conn)
   let _ = try conn.transaction(() => {
-    try conn.execute("insert into notes (text, at) values (?, 0)", [input.text])
-    try conn.execute("insert into notes (text, at) values (?, 0)", ["${input.text} (2)"])
+    conn.execute("insert into notes (text, at) values (?, 0)", [input.text])
+    conn.execute("insert into notes (text, at) values (?, 0)", ["${input.text} (2)"])
     if input.fail {
       throw Failure(message: "asked to fail")
     }
     0
   }) catch err {
-    return http.json(409, {"error": err.message(), "before": "${before}", "after": "${try count(conn)}"})
+    return http.json(409, {"error": err.message(), "before": "${before}", "after": "${count(conn)}"})
   }
-  return http.json(201, {"before": "${before}", "after": "${try count(conn)}"})
+  return http.json(201, {"before": "${before}", "after": "${count(conn)}"})
 }
 
 fn main() throws {
-  with conn = try db.open("notes") {
+  with conn = db.open("notes") {
     var router = http.Router()
-    router.post("/edge/two", req => try add_two(req, conn: conn))
+    router.post("/edge/two", req => add_two(req, conn: conn))
     router.get("/edge/bad-sql", req => {
-      let _ = try conn.query<Note>("select nope from nothing", [])
+      let _ = conn.query<Note>("select nope from nothing", [])
       http.text(200, "?")
     })
     router.get("/edge/panic", req => {
@@ -49,22 +49,22 @@ fn main() throws {
     })
     router.post("/edge/files/*key", req => {
       let key = req.param("key") ?? ""
-      try storage.put(key, data: req.body, content_type: req.header("content-type") ?? "")
-      let back = try storage.get(key) ?? "".bytes()
-      let listed = try storage.list("").length
-      http.json(201, {"url": try storage.url(key, expires: time.minutes(5)), "size": "${back.length}", "listed": "${listed}", "upload": try storage.upload_url(key, options: storage.Upload(max_bytes: 100)), "deleted": "${try storage.delete(key)}"})
+      storage.put(key, data: req.body, content_type: req.header("content-type") ?? "")
+      let back = storage.get(key) ?? "".bytes()
+      let listed = storage.list("").length
+      http.json(201, {"url": storage.url(key, expires: time.minutes(5)), "size": "${back.length}", "listed": "${listed}", "upload": storage.upload_url(key, options: storage.Upload(max_bytes: 100)), "deleted": "${storage.delete(key)}"})
     })
     router.get("/edge/echo", req => http.json(200, {"q": req.query("q") ?? "", "agent": req.header("user-agent") ?? "", "method": req.method, "path": req.path}))
     router.get("/edge/denied", req => {
-      with other = try db.open("secret") {
-        let _ = try other.query<Note>("select 1 as id, 'x' as text", [])
+      with other = db.open("secret") {
+        let _ = other.query<Note>("select 1 as id, 'x' as text", [])
       }
       http.text(200, "?")
     })
     router.get("/edge/fetch", req => {
-      let res = try http.get(req.query("url") ?? "https://example.com/")
+      let res = http.get(req.query("url") ?? "https://example.com/")
       http.text(res.status, res.text())
     })
-    try http.serve(router, port: 8080)
+    http.serve(router, port: 8080)
   }
 }

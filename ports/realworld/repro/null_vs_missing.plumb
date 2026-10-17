@@ -19,8 +19,8 @@ type Update {
 }
 
 fn main() throws {
-  let left_out = try json.decode<Update>("{}")
-  let cleared = try json.decode<Update>("{\"bio\": null, \"email\": null}")
+  let left_out = json.decode<Update>("{}")
+  let cleared = json.decode<Update>("{\"bio\": null, \"email\": null}")
   print("${left_out}")
   print("${cleared}")
   print("same: ${left_out == cleared}")

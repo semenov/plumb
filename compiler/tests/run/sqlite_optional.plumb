@@ -9,12 +9,12 @@ type Row {
 }
 
 fn main() throws {
-  with conn = try db.open(":memory:") {
-    try conn.execute("create table users (name text, bio text, age integer)", [])
+  with conn = db.open(":memory:") {
+    conn.execute("create table users (name text, bio text, age integer)", [])
     let bio: String? = none
     let age: Int? = 36
-    try conn.execute("insert into users (name, bio, age) values (?, ?, ?)", ["ada", bio, age])
-    try conn.execute("insert into users (name, bio, age) values (?, ?, ?)", ["bob", "hi", none])
-    print("${try conn.query<Row>("select * from users", [])}")
+    conn.execute("insert into users (name, bio, age) values (?, ?, ?)", ["ada", bio, age])
+    conn.execute("insert into users (name, bio, age) values (?, ?, ?)", ["bob", "hi", none])
+    print("${conn.query<Row>("select * from users", [])}")
   }
 }

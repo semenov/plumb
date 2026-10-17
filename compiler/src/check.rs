@@ -34,6 +34,7 @@ struct FnCtx {
     ret: Ty,
     throws_ok: bool,
     uses_throw: bool,
+    throw_reported: bool,
     in_test: bool,
     lambdas: Vec<LambdaCtx>,
     loops: Vec<usize>, // lambda level of each enclosing loop
@@ -43,7 +44,7 @@ struct FnCtx {
     in_try: bool,
     // the expression is a statement: `if`/`match` produce no value
     stmt_pos: bool,
-    // inside the expression after `try`: whether a call in it can fail
+    // inside `try ... catch`: whether a call in it can fail
     try_hits: Vec<bool>,
     // set by `spawn` for the call right below it
     in_spawn: bool,
@@ -814,7 +815,7 @@ impl Checker {
             let f = &self.prog.fns[i];
             if !f.is_prelude && self.contains_task(&f.ret) {
                 let sp = f.span;
-                self.err_help(sp, "a task can't be returned", "a task belongs to the function that started it: `try task.wait()` there and return the result");
+                self.err_help(sp, "a task can't be returned", "a task belongs to the function that started it: `task.wait()` there and return the result");
             }
         }
         for d in 0..self.prog.defs.len() {
@@ -920,6 +921,7 @@ impl Checker {
             ret,
             throws_ok,
             uses_throw: false,
+            throw_reported: false,
             in_test: false,
             lambdas: vec![],
             loops: vec![],
@@ -1469,7 +1471,7 @@ impl Checker {
             (Ty::Float, Ty::Int) => Some("convert explicitly: `x.to_float()`".into()),
             (Ty::Int, Ty::Float) => Some("convert explicitly: `x.round()`, `x.floor()` or `x.ceil()`".into()),
             (Ty::Text, Ty::Int) | (Ty::Text, Ty::Float) | (Ty::Text, Ty::Bool) => Some("put it into text: `\"${x}\"`".into()),
-            (Ty::Int, Ty::Text) => Some("parse it: `try text.to_int()`".into()),
+            (Ty::Int, Ty::Text) => Some("parse it: `text.to_int()`".into()),
             (t, Ty::Opt(inner)) if **inner == *t => Some("the value may be missing: use `x ?? fallback`, or `if x is some(v) { ... }`".into()),
             (Ty::Adt(d, _), _) if matches!(self.prog.defs[*d].kind, TypeKind::Newtype(_)) => {
                 Some(format!("wrap it: `{}(x)`", self.prog.defs[*d].name))
@@ -1479,7 +1481,7 @@ impl Checker {
                 let iname = self.prog.defs[ids[0]].name.clone();
                 Some(format!("declare it: `type {} implements {} {{ ... }}`", self.prog.defs[*d].name, iname))
             }
-            (Ty::Func(g), Ty::Func(f)) if f.throws && !g.throws => Some("this function uses `try`, but a function that can't fail is expected here".into()),
+            (Ty::Func(g), Ty::Func(f)) if f.throws && !g.throws => Some("this function can fail, but a function that can't fail is expected here".into()),
             _ => None,
         };
         match help {
@@ -1614,7 +1616,7 @@ impl Checker {
                     return;
                 }
             }
-            self.err_help(e.span, "the task's result is never waited for", "keep the task and `try task.wait()` for its result");
+            self.err_help(e.span, "the task's result is never waited for", "keep the task and `task.wait()` for its result");
             return;
         }
         let mut help = "use the result, or write `let _ = ...` if you really don't need it".to_string();
@@ -1960,8 +1962,10 @@ impl Checker {
             return;
         }
         fc.uses_throw = true;
-        if !fc.throws_ok {
-            self.err_help(span, "this function can't fail: it isn't declared `throws`", "add `throws` before `->`: `fn f() throws -> T`, or handle the error with `catch`");
+        // one error per function: the fix is the same for every call
+        if !fc.throws_ok && !fc.throw_reported {
+            fc.throw_reported = true;
+            self.err_help(span, "this can fail, and the function isn't declared `throws`", "add `throws` before `->`: `fn f() throws -> T`, or handle the error here: `try f(x) catch err { ... }`");
         }
     }
 
@@ -2437,12 +2441,14 @@ impl Checker {
                 mk(TK::Is(Box::new(te), p), Ty::Bool)
             }
             ExprKind::Try { expr, catch } => {
-                // `try` covers every call in the expression after it
+                // `try ... catch` covers every call in the expression between them
                 self.fcx().try_hits.push(false);
                 let call = self.expr(expr, expected);
                 let hit = self.fcx().try_hits.pop().unwrap_or(false);
-                if !hit && call.ty != Ty::Err {
-                    self.err_help(span, "nothing here can fail", "remove `try`");
+                if catch.is_none() {
+                    self.err_help(span, "`try` goes with `catch`: an error here goes up by itself", "remove `try`, or handle the error: `try f(x) catch err { ... }`");
+                } else if !hit && call.ty != Ty::Err {
+                    self.err_help(span, "nothing here can fail", "remove `try` and `catch`");
                 }
                 // `let x: Int? = try t.to_int() catch err { none }`: the value
                 // becomes optional, so the catch block can give `none`
@@ -2484,7 +2490,7 @@ impl Checker {
                 }
                 if !self.fc().lambdas.is_empty() {
                     // a task belongs to a function; a lambda would carry it away
-                    self.err_help(span, "`spawn` can't be used inside a lambda", "for a list, use `try xs.parallel_map(limit: 8, transform: x => try f(x))`; or a loop: `for x in xs { tasks.append(spawn f(x)) }`");
+                    self.err_help(span, "`spawn` can't be used inside a lambda", "for a list, use `xs.parallel_map(limit: 8, transform: x => f(x))`; or a loop: `for x in xs { tasks.append(spawn f(x)) }`");
                     return self.expr(x, None);
                 }
                 self.fcx().in_spawn = true;
@@ -2893,8 +2899,8 @@ impl Checker {
                             let hint = match name.as_str() {
                                 "len" => Some("use `xs.length`"),
                                 "str" | "String" => Some("use interpolation: `\"${x}\"`"),
-                                "int" | "parseInt" | "Int" => Some("use `try text.to_int()`"),
-                                "float" | "Float" => Some("use `try text.to_float()` or `n.to_float()`"),
+                                "int" | "parseInt" | "Int" => Some("use `text.to_int()`"),
+                                "float" | "Float" => Some("use `text.to_float()` or `n.to_float()`"),
                                 "println" | "console" | "puts" | "printf" => Some("use `print(text)`"),
                                 "range" => Some("use `for i in 0..<n`"),
                                 "sorted" => Some("use `xs.sorted()`"),
@@ -2936,12 +2942,10 @@ impl Checker {
             let rt = self.resolve(&result.ty);
             if self.resource_close(&rt).is_some() {
                 let s = self.show(&rt);
-                let throws = matches!(result.kind, TK::Call { throws: true, .. });
-                let how = if throws { "write `with f = try ... { ... }`" } else { "write `with f = ... { ... }`" };
-                self.err_help(span, format!("a `{}` must be closed: get it with `with`", s), format!("{}: it's closed at the end of the block, even on an error", how));
+                self.err_help(span, format!("a `{}` must be closed: get it with `with`", s), "write `with f = ... { ... }`: it's closed at the end of the block, even on an error");
             }
         }
-        // `try` rules (a spawned call's errors arrive at `wait`)
+        // where the error goes (a spawned call's errors arrive at `wait`)
         if spawned_here {
             return result;
         }
@@ -2951,9 +2955,11 @@ impl Checker {
         };
         let _ = in_try;
         if throws {
+            // inside `try ... catch` the error is handled there; elsewhere it
+            // goes up to the caller
             match self.fcx().try_hits.last_mut() {
                 Some(hit) => *hit = true,
-                None => self.err_help(span, "this call can fail", "write `try` before it: `try f(x)`, or handle it: `try f(x) catch err { ... }`"),
+                None => self.note_throw(span),
             }
         }
         result
@@ -3707,7 +3713,7 @@ impl Checker {
         let _ = rty;
         let b = self.coerce(b, &ret);
         if lc.throws && !throws_allowed {
-            self.err_help(span, "this lambda uses `try`, but a function that can't fail is expected here", "handle the error inside: `try f(x) catch err { fallback }`");
+            self.err_help(span, "this lambda can fail, but a function that can't fail is expected here", "handle the error inside: `try f(x) catch err { fallback }`");
         }
         // captures that belong to this lambda (declared outside of it)
         let captures: Vec<LocalId> = lc.captures.iter().copied().filter(|c| self.fc().level[*c] < level).collect();

@@ -1,10 +1,10 @@
 // semver: semantic versions (https://semver.org) and version ranges, as
 // npm and Cargo write them.
 //
-//   let v = try semver.parse("1.4.2-beta.1")
-//   semver.compare(v, try semver.parse("1.4.2")) < 0          // true: a pre-release is lower
-//   try semver.matches("1.4.2", range: "^1.2")                  // true
-//   try semver.max_matching(["1.0.0", "1.5.3", "2.0.0"], range: "~1.5")  // "1.5.3"
+//   let v = semver.parse("1.4.2-beta.1")
+//   semver.compare(v, semver.parse("1.4.2")) < 0              // true: a pre-release is lower
+//   semver.matches("1.4.2", range: "^1.2")                      // true
+//   semver.max_matching(["1.0.0", "1.5.3", "2.0.0"], range: "~1.5")      // "1.5.3"
 //
 // Ranges: exact "1.2.3", comparisons ">=1.2 <2", caret "^1.2.3" (same
 // major; for 0.x the same minor), tilde "~1.2.3" (same minor), wildcards
@@ -73,7 +73,7 @@ pub fn parse(text: String) throws -> Version {
     if not n.is_digit() {
       throw bad
     }
-    parts.append(try n.to_int())
+    parts.append(n.to_int())
   }
   return Version(major: parts[0], minor: parts[1], patch: parts[2], pre: pre, build: build)
 }
@@ -135,9 +135,9 @@ pub fn sort(versions: List<Version>) -> List<Version> {
 
 // Whether a version is in a range.
 pub fn matches(version: String, range: String) throws -> Bool {
-  let v = try parse(version)
+  let v = parse(version)
   for alternative in range.split("||") {
-    if try all_hold(v, conditions: try conditions(alternative.trim())) {
+    if all_hold(v, conditions: conditions(alternative.trim())) {
       return true
     }
   }
@@ -148,10 +148,10 @@ pub fn matches(version: String, range: String) throws -> Bool {
 pub fn max_matching(versions: List<String>, range: String) throws -> String? {
   var best: Version? = none
   for text in versions {
-    if not (try matches(text, range: range)) {
+    if not (matches(text, range: range)) {
       continue
     }
-    let v = try parse(text)
+    let v = parse(text)
     if best is some(b) {
       if compare(v, b: b) > 0 {
         best = v
@@ -223,7 +223,7 @@ fn partial(text: String) throws -> Partial {
     if not p.is_digit() {
       throw Failure(message: "semver: \"${text}\" is not a version in a range")
     }
-    nums.append(try p.to_int())
+    nums.append(p.to_int())
     given += 1
   }
   while nums.length < 3 {
@@ -243,8 +243,8 @@ fn conditions(range: String) throws -> List<Condition> {
   // "1.2 - 1.4"
   let hyphen = range.split(" - ")
   if hyphen.length == 2 {
-    let low = try partial(hyphen[0])
-    let high = try partial(hyphen[1])
+    let low = partial(hyphen[0])
+    let high = partial(hyphen[1])
     var out = [Condition(op: ">=", version: at(low))]
     if high.given == 3 {
       out.append(Condition(op: "<=", version: at(high)))
@@ -255,7 +255,7 @@ fn conditions(range: String) throws -> List<Condition> {
   }
   var out: List<Condition> = []
   for word in range.split(" ").filter(w => not w.is_empty()) {
-    out.append_all(try one(word))
+    out.append_all(one(word))
   }
   return out
 }
@@ -271,7 +271,7 @@ fn bump(p: Partial) -> Version {
 fn one(word: String) throws -> List<Condition> {
   for op in [">=", "<=", ">", "<", "="] {
     if word.starts_with(op) {
-      let p = try partial(word.slice(from: op.length, to: word.length))
+      let p = partial(word.slice(from: op.length, to: word.length))
       if op == "<=" and p.given < 3 {
         return [Condition(op: "<", version: bump(p))]
       }
@@ -282,7 +282,7 @@ fn one(word: String) throws -> List<Condition> {
     }
   }
   if word.starts_with("^") {
-    let p = try partial(word.slice(from: 1, to: word.length))
+    let p = partial(word.slice(from: 1, to: word.length))
     let low = at(p)
     let high = if p.nums[0] > 0 or p.given <= 1 {
       Version(major: p.nums[0] + 1, minor: 0, patch: 0)
@@ -294,11 +294,11 @@ fn one(word: String) throws -> List<Condition> {
     return [Condition(op: ">=", version: low), Condition(op: "<", version: high)]
   }
   if word.starts_with("~") {
-    let p = try partial(word.slice(from: 1, to: word.length))
+    let p = partial(word.slice(from: 1, to: word.length))
     let high = if p.given <= 1 { Version(major: p.nums[0] + 1, minor: 0, patch: 0) } else { Version(major: p.nums[0], minor: p.nums[1] + 1, patch: 0) }
     return [Condition(op: ">=", version: at(p)), Condition(op: "<", version: high)]
   }
-  let p = try partial(word)
+  let p = partial(word)
   if p.given == 3 {
     return [Condition(op: "=", version: at(p))]
   }

@@ -23,7 +23,7 @@ type Notes {
 }
 
 fn list(conn: db.Connection) throws -> http.Response {
-  let notes = try conn.query<Note>("SELECT id, text, at FROM notes ORDER BY id DESC LIMIT 20", [])
+  let notes = conn.query<Note>("SELECT id, text, at FROM notes ORDER BY id DESC LIMIT 20", [])
   return http.json(200, Notes(notes: notes))
 }
 
@@ -32,15 +32,15 @@ fn add(req: http.Request, conn: db.Connection) throws -> http.Response {
   if text.is_empty() {
     return http.json(422, {"error": "empty note"})
   }
-  let ids = try conn.query<Id>("INSERT INTO notes (text, at) VALUES (?, ?) RETURNING id", [text, time.utc_now().to_unix()])
+  let ids = conn.query<Id>("INSERT INTO notes (text, at) VALUES (?, ?) RETURNING id", [text, time.utc_now().to_unix()])
   return http.json(201, ids[0])
 }
 
 fn main() throws {
-  with conn = try db.open("notes") {
+  with conn = db.open("notes") {
     var router = http.Router()
-    router.get("/pnotes", req => try list(conn))
-    router.post("/pnotes", req => try add(req, conn: conn))
-    try http.serve(router, port: 8080)
+    router.get("/pnotes", req => list(conn))
+    router.post("/pnotes", req => add(req, conn: conn))
+    http.serve(router, port: 8080)
   }
 }

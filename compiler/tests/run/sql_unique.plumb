@@ -4,9 +4,9 @@ import db
 import sql
 
 fn main() throws {
-  with conn = try db.open(":memory:") {
-    try conn.execute("create table users (id integer primary key, email text unique)", [])
-    let _ = try conn.insert("insert into users (email) values (?)", ["a@b.c"])
+  with conn = db.open(":memory:") {
+    conn.execute("create table users (id integer primary key, email text unique)", [])
+    let _ = conn.insert("insert into users (email) values (?)", ["a@b.c"])
     let _ = try conn.insert("insert into users (email) values (?)", ["a@b.c"]) catch err {
       if err is sql.UniqueViolation {
         print("taken: ${err.column} (${err.message()})")

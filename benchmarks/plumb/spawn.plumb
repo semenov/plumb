@@ -14,7 +14,7 @@ fn main() throws {
       tasks.append(spawn work(i + round))
     }
     for t in tasks {
-      total += try t.wait()
+      total += t.wait()
     }
   }
   print("${total}")

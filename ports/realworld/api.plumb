@@ -22,7 +22,7 @@ pub type App {
   pub fn write<R>(self, work: fn() throws -> R) throws -> R {
     with count = self.writes.lock() {
       count += 1
-      return try work()
+      return work()
     }
   }
 }

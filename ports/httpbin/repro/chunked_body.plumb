@@ -7,5 +7,5 @@ fn main() throws {
   var router = http.Router()
   router.post("/", req => http.text(200, "body: ${req.body.length} bytes\n"))
   router.put("/", req => http.text(200, "body: ${req.body.length} bytes\n"))
-  try http.serve(router, port: 18101)
+  http.serve(router, port: 18101)
 }

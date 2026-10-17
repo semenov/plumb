@@ -79,18 +79,18 @@ pub type Number {
   }
 
   pub fn to_float(self) throws -> Float {
-    return try self.text.to_float()
+    return self.text.to_float()
   }
 
   // An error unless it's a whole number that fits an Int ("1.5", "1e3" and
   // 20-digit numbers fail).
   pub fn to_int(self) throws -> Int {
-    return try self.text.to_int()
+    return self.text.to_int()
   }
 
   // Exactly: "0.10" is 0.10.
   pub fn to_decimal(self) throws -> Decimal {
-    return try self.text.to_decimal()
+    return self.text.to_decimal()
   }
 }
 
@@ -111,5 +111,5 @@ pub fn integer(value: Int) -> Value {
 // Reads any JSON into a `Value`. A key written twice in an object is an
 // error (`json: duplicate key "name" at line 1, column 15`).
 pub fn parse(text: String) throws -> Value {
-  return try decode<Value>(text)
+  return decode<Value>(text)
 }

@@ -1,7 +1,7 @@
 // yaml: YAML configuration files, written in the language itself.
 //
 //   type Config { name: String, port: Int = 8080, admins: List<String> = [] }
-//   let config = try yaml.decode<Config>(try files.read("config.yaml"))
+//   let config = yaml.decode<Config>(files.read("config.yaml"))
 //
 // YAML becomes JSON, which fills the record as json.decode does (field
 // names match ignoring case and _ / -). Supported: block mappings and
@@ -16,7 +16,7 @@
 import json
 
 pub fn decode<T>(text: String) throws -> T {
-  return try json.decode<T>(try to_json(text))
+  return json.decode<T>(to_json(text))
 }
 
 // YAML as JSON text.
@@ -42,7 +42,7 @@ pub fn to_json(text: String) throws -> String {
   if p.at >= p.lines.length {
     return "null"
   }
-  let out = try p.node(p.lines[p.at].indent)
+  let out = p.node(p.lines[p.at].indent)
   p.skip_blank()
   if p.at < p.lines.length {
     throw Failure(message: "yaml: line ${p.lines[p.at].number}: unexpected indentation")
@@ -52,7 +52,7 @@ pub fn to_json(text: String) throws -> String {
 
 // A value as YAML text (from its JSON form).
 pub fn encode<T>(value: T) throws -> String {
-  let v = try json.parse(json.encode(value))
+  let v = json.parse(json.encode(value))
   let text = emit(v, indent: 0)
   return "${if text.starts_with("\n") { text.slice(from: 1, to: text.length) } else { text }}\n"
 }
@@ -82,10 +82,10 @@ type Parser {
     self.skip_blank()
     let line = self.lines[self.at]
     if line.text == "-" or line.text.starts_with("- ") {
-      return try self.sequence(line.indent)
+      return self.sequence(line.indent)
     }
     if key_split(line.text) is some(_) {
-      return try self.mapping(line.indent)
+      return self.mapping(line.indent)
     }
     // a scalar, possibly continued on more lines
     var parts = [line.text]
@@ -94,7 +94,7 @@ type Parser {
       parts.append(self.lines[self.at].text)
       self.at += 1
     }
-    return try scalar(parts.join(" "), line: line.number)
+    return scalar(parts.join(" "), line: line.number)
   }
 
   mutating fn sequence(indent: Int) throws -> String {
@@ -113,7 +113,7 @@ type Parser {
         self.at += 1
         self.skip_blank()
         if self.at < self.lines.length and self.lines[self.at].indent > indent {
-          items.append(try self.node(self.lines[self.at].indent))
+          items.append(self.node(self.lines[self.at].indent))
         } else {
           items.append("null")
         }
@@ -123,11 +123,11 @@ type Parser {
       let inner = indent + line.text.length - line.text.slice(from: 1, to: line.text.length).trim_start().length
       if key_split(rest) is some(_) or rest.starts_with("- ") {
         self.lines[self.at] = Line(indent: inner, text: rest, raw: line.raw, number: line.number)
-        items.append(try self.node(inner))
+        items.append(self.node(inner))
         continue
       }
       self.at += 1
-      items.append(try self.value(rest, parent: indent, line: line.number))
+      items.append(self.value(rest, parent: indent, line: line.number))
     }
     return "[${items.join(",")}]"
   }
@@ -154,13 +154,13 @@ type Parser {
       if rest.is_empty() {
         self.skip_blank()
         if self.at < self.lines.length and self.lines[self.at].indent > indent {
-          value = try self.node(self.lines[self.at].indent)
+          value = self.node(self.lines[self.at].indent)
         } else if self.at < self.lines.length and self.lines[self.at].indent == indent and self.lines[self.at].text.starts_with("- ") {
           // a list at the key's own indentation
-          value = try self.sequence(indent)
+          value = self.sequence(indent)
         }
       } else {
-        value = try self.value(rest, parent: indent, line: line.number)
+        value = self.value(rest, parent: indent, line: line.number)
       }
       fields.append("${json.encode(key)}:${value}")
     }
@@ -180,7 +180,7 @@ type Parser {
         self.at += 1
       }
       var f = Flow(chars: flow.chars(), line: line)
-      let out = try f.value()
+      let out = f.value()
       return out
     }
     // a plain scalar continued on more-indented lines
@@ -189,7 +189,7 @@ type Parser {
       parts.append(self.lines[self.at].text)
       self.at += 1
     }
-    return try scalar(parts.join(" "), line: line)
+    return scalar(parts.join(" "), line: line)
   }
 
   // | keeps line breaks, > folds them into spaces; - drops the final
@@ -273,7 +273,7 @@ type Flow {
           self.at += 1
           break
         }
-        items.append(try self.value())
+        items.append(self.value())
         self.space()
         if self.at < self.chars.length and self.chars[self.at] == "," {
           self.at += 1
@@ -293,12 +293,12 @@ type Flow {
           self.at += 1
           break
         }
-        let key = try self.token(true)
+        let key = self.token(true)
         self.space()
         if self.at < self.chars.length and self.chars[self.at] == ":" {
           self.at += 1
         }
-        fields.append("${json.encode(unquote_key(key))}:${try self.value()}")
+        fields.append("${json.encode(unquote_key(key))}:${self.value()}")
         self.space()
         if self.at < self.chars.length and self.chars[self.at] == "," {
           self.at += 1
@@ -309,7 +309,7 @@ type Flow {
       }
       return "{${fields.join(",")}}"
     }
-    return try scalar(try self.token(false), line: self.line)
+    return scalar(self.token(false), line: self.line)
   }
 
   // a scalar inside a flow collection, up to , ] } (and : for keys)

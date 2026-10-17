@@ -8,5 +8,5 @@ import http
 fn main() throws {
   var router = http.Router()
   router.get("/", req => http.text(200, "ok").with_cookie(http.Cookie(name: "a", value: "x; Domain=evil.example")))
-  try http.serve(router, port: 18106)
+  http.serve(router, port: 18106)
 }

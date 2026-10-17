@@ -48,7 +48,7 @@ fn main() throws {
       v = "${v}${i % 10}"
     }
   }
-  let big = try t.wait()
+  let big = t.wait()
   print("${big.length} ${big.slice(from: 599990, to: 600000)}")
   with v = shared.lock() {
     print("${v.length} ${v.slice(from: 990, to: 1000)}")

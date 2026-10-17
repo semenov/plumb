@@ -1,4 +1,4 @@
-// FIXED (the catch message everywhere). Was: Inside a lambda, `h(try g(x)) catch err { ... }` gives "expected `)` to
+// FIXED (the catch message everywhere). Was: Inside a lambda, `h(g(x)) catch err { ... }` gives "expected `)` to
 // close the call, found `catch`", which doesn't say what is wrong. Outside a
 // lambda the same mistake gets the good message "`catch` needs `try`
 // before the call it handles". (Fix: a helper function, or bind first.)
@@ -11,6 +11,6 @@ fn h(x: Int) -> String {
 }
 
 fn main() {
-  let texts = [1, 2].map(x => h(try g(x)) catch err { err.message() })
+  let texts = [1, 2].map(x => h(g(x)) catch err { err.message() })
   print(texts.join(", "))
 }

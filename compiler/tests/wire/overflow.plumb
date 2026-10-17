@@ -9,5 +9,5 @@ fn depth(n: Int) -> Int {
 }
 
 fn main() throws {
-  print("${depth(try process.args()[0].to_int())}")
+  print("${depth(process.args()[0].to_int())}")
 }

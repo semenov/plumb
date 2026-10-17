@@ -1,9 +1,9 @@
 // db: SQLite databases (a file, or ":memory:").
 //
-//   with conn = try db.open("app.db") {
-//     try conn.execute("create table if not exists users (id integer primary key, name text, age integer)", [])
-//     try conn.execute("insert into users (name, age) values (?, ?)", ["Ada", 36])
-//     let adults = try conn.query<User>("select id, name, age from users where age >= ?", [18])
+//   with conn = db.open("app.db") {
+//     conn.execute("create table if not exists users (id integer primary key, name text, age integer)", [])
+//     conn.execute("insert into users (name, age) values (?, ?)", ["Ada", 36])
+//     let adults = conn.query<User>("select id, name, age from users where age >= ?", [18])
 //   }
 //
 // SQL is always a literal with `?` for values: building SQL from pieces of
@@ -25,7 +25,7 @@ pub builtin type Connection {
   fn execute_counting(self, query: sql.Query, params: List<sql.Value>) throws -> Int
   // The rows as records, columns matched to fields by name.
   fn query<T>(self, query: sql.Query, params: List<sql.Value>) throws -> List<T>
-  // An insert, returning the new row's id: `let id = try conn.insert(...)`.
+  // An insert, returning the new row's id: `let id = conn.insert(...)`.
   fn insert(self, query: sql.Query, params: List<sql.Value>) throws -> Int
   // The id of the row inserted last on this connection (by any task: when
   // tasks share the connection, use `insert`).
@@ -38,12 +38,12 @@ pub builtin type Connection {
   // Inside another transaction it is a savepoint: an error rolls back only
   // its own changes.
   fn transaction<R>(self, work: fn() throws -> R) throws -> R {
-    try self.__begin()
+    self.__begin()
     let result = try work() catch err {
-      try self.__end(commit: false)
+      self.__end(commit: false)
       throw err
     }
-    try self.__end(commit: true)
+    self.__end(commit: true)
     return result
   }
   fn __begin(self) throws

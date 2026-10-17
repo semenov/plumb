@@ -4,15 +4,15 @@
 // program's standard input and output are all a `Stream`:
 //
 //   // a filter: `cat app.log | errors`
-//   while try io.read_line() is some(line) {
+//   while io.read_line() is some(line) {
 //     if line.contains("ERROR") {
 //       print(line)
 //     }
 //   }
 //
-//   with from = try files.open("big.iso") {
-//     with to = try files.create("copy.iso") {
-//       let _ = try io.copy(from, to)
+//   with from = files.open("big.iso") {
+//     with to = files.create("copy.iso") {
+//       let _ = io.copy(from, to)
 //     }
 //   }
 

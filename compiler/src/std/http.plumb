@@ -1,13 +1,13 @@
 // http: a server and a client.
 //
 //   fn get_note(req: http.Request) throws -> http.Response {
-//     let id = try (req.param("id") ?? "").to_int()
+//     let id = (req.param("id") ?? "").to_int()
 //     return http.json(200, note)
 //   }
 //
 //   var router = http.Router()
 //   router.get("/notes/:id", get_note)
-//   try http.serve(router, port: 8080)
+//   http.serve(router, port: 8080)
 //
 // Every request runs in its own task. An error thrown by a handler becomes a
 // 500 response (and a log line); a bug in a handler also ends only that
@@ -99,14 +99,14 @@ pub type Request {
         continue
       }
       let kv = pair.split("=")
-      out[try __url_decode(kv[0].replace("+", " "))] = try __url_decode(kv.drop(1).join("=").replace("+", " "))
+      out[__url_decode(kv[0].replace("+", " "))] = __url_decode(kv.drop(1).join("=").replace("+", " "))
     }
     return out
   }
 
   // The form's fields as a record, as `json.decode` does with JSON:
   //   type SignUp { email: String  age: Int  agree: Bool  tags: List<String> = [] }
-  //   let input = try req.decode_form<SignUp>()
+  //   let input = req.decode_form<SignUp>()
   // Names match fields as in JSON (case, _ and - ignored); other names are
   // ignored. Text becomes numbers and true/false ("on" from a checkbox). A
   // missing Bool is false even with a default, since an unchecked box isn't
@@ -118,7 +118,7 @@ pub type Request {
     var keys: List<String> = []
     var values: List<String> = []
     if (self.header("content-type") ?? "").starts_with("multipart/") {
-      for part in try self.parts() {
+      for part in self.parts() {
         if part.filename is none {
           keys.append(part.name)
           values.append(part.text())
@@ -128,29 +128,29 @@ pub type Request {
       for pair in self.text().split("&") {
         if not pair.is_empty() {
           let kv = pair.split("=")
-          keys.append(try __url_decode(kv[0].replace("+", " ")))
-          values.append(try __url_decode(kv.drop(1).join("=").replace("+", " ")))
+          keys.append(__url_decode(kv[0].replace("+", " ")))
+          values.append(__url_decode(kv.drop(1).join("=").replace("+", " ")))
         }
       }
     }
-    return try __decode_fields<T>(keys, values: values, source: "form")
+    return __decode_fields<T>(keys, values: values, source: "form")
   }
 
   // The query parameters as a record, by the rules of `decode_form`, except
   // that a missing Bool takes its default (false without one):
   //   type Search { q: String  page: Int = 1 }
-  //   let search = try req.decode_query<Search>()
+  //   let search = req.decode_query<Search>()
   pub fn decode_query<T>(self) throws -> T {
     var keys: List<String> = []
     var values: List<String> = []
     for pair in self.raw_query.split("&") {
       if not pair.is_empty() {
         let kv = pair.split("=")
-        keys.append(try __url_decode(kv[0].replace("+", " ")))
-        values.append(try __url_decode(kv.drop(1).join("=").replace("+", " ")))
+        keys.append(__url_decode(kv[0].replace("+", " ")))
+        values.append(__url_decode(kv.drop(1).join("=").replace("+", " ")))
       }
     }
-    return try __decode_fields<T>(keys, values: values, source: "query")
+    return __decode_fields<T>(keys, values: values, source: "query")
   }
 
   // The parts of a multipart/form-data body: form fields and uploaded
@@ -172,7 +172,7 @@ pub type Request {
         break
       }
       let head_end = rest.index_of("\r\n\r\n".bytes()) ?? throw Failure(message: "http: a multipart part has no end of headers")
-      let head = try rest.slice(from: 2, to: head_end).text()
+      let head = rest.slice(from: 2, to: head_end).text()
       let body_start = head_end + 4
       let next = rest.slice(from: body_start, to: rest.length).index_of(boundary) ?? throw Failure(message: "http: a multipart part has no end")
       // the data ends before "\r\n" + boundary
@@ -361,8 +361,8 @@ pub fn bytes(status: Int, data: Bytes, content_type: String) -> Response {
 //
 //   fn send_ticks(out: io.Stream) throws {
 //     for i in 0..<10 {
-//       try out.write_text("data: tick ${i}\n\n")
-//       try time.sleep(time.seconds(1))
+//       out.write_text("data: tick ${i}\n\n")
+//       time.sleep(time.seconds(1))
 //     }
 //   }
 //
@@ -395,7 +395,7 @@ type Route {
 // Runs around every request: gets the request and `next` (the rest of the
 // chain: other middleware, then the route) and returns a response.
 //   router.use((req, next) => {
-//     if req.header("authorization") is none { http.text(401, "log in") } else { try next(req) }
+//     if req.header("authorization") is none { http.text(401, "log in") } else { next(req) }
 //   })
 pub type Middleware = fn(Request, fn(Request) throws -> Response) throws -> Response
 
@@ -444,9 +444,9 @@ pub type Router {
 
   // A WebSocket endpoint: the connection is upgraded and `handler` talks
   // over it until it returns (the connection then closes).
-  //   router.websocket("/chat", ws => try chat(ws))
+  //   router.websocket("/chat", ws => chat(ws))
   pub mutating fn websocket(pattern: String, handler: fn(WebSocket) throws) {
-    self.get(pattern, req => try upgrade(req, handler: handler))
+    self.get(pattern, req => upgrade(req, handler: handler))
   }
 
   // Serves the files in `dir` under `prefix`: files("/static", dir: "public")
@@ -463,15 +463,15 @@ pub type Router {
   // "/articles/feed" before "/articles/:slug" before "/articles/*rest".
   pub fn handle(self, request: Request) throws -> Response {
     if self.middleware.is_empty() {
-      return try self.route(request)
+      return self.route(request)
     }
     let router = self
-    var next: fn(Request) throws -> Response = r => try router.route(r)
+    var next: fn(Request) throws -> Response = r => router.route(r)
     for m in self.middleware.reversed() {
       let inner = next
-      next = r => try m(r, inner)
+      next = r => m(r, inner)
     }
-    return try next(request)
+    return next(request)
   }
 
   // kept most specific first, so the first route that matches is the one
@@ -531,7 +531,7 @@ pub type Router {
       var req = request
       req.params = params
       let handler = route.handler
-      return try handler(req)
+      return handler(req)
     }
     if allowed.is_empty() {
       return text(404, "not found")
@@ -587,7 +587,7 @@ fn file_in(dir: String, name: String) -> Response {
 
 // Middleware that logs each request: "GET /notes/7 200 1.2ms".
 pub fn log_requests() -> Middleware {
-  return Middleware((req, next) => try logged(req, next: next))
+  return Middleware((req, next) => logged(req, next: next))
 }
 
 fn logged(req: Request, next: fn(Request) throws -> Response) throws -> Response {
@@ -604,7 +604,7 @@ fn logged(req: Request, next: fn(Request) throws -> Response) throws -> Response
 // browser's OPTIONS question and marks responses as allowed for `origins`
 // (["*"] for any site).
 pub fn cors(origins: List<String>) -> Middleware {
-  return Middleware((req, next) => try with_cors(req, next: next, origins: origins))
+  return Middleware((req, next) => with_cors(req, next: next, origins: origins))
 }
 
 fn with_cors(req: Request, next: fn(Request) throws -> Response, origins: List<String>) throws -> Response {
@@ -620,7 +620,7 @@ fn with_cors(req: Request, next: fn(Request) throws -> Response, origins: List<S
     }
     return res
   }
-  let res = try next(req)
+  let res = next(req)
   if allowed.is_empty() {
     return res
   }
@@ -667,7 +667,7 @@ pub fn status_text(status: Int) -> String
 // Serves the router until the program is stopped (Ctrl-C), then returns.
 // It logs "listening on http://localhost:<port>" when ready, and "stopped".
 pub fn serve(router: Router, port: Int) throws {
-  try __serve(port, req => try router.handle(req))
+  __serve(port, req => router.handle(req))
 }
 
 fn __serve(port: Int, handler: fn(Request) throws -> Response) throws
@@ -692,7 +692,7 @@ pub type ServerOptions {
 }
 
 pub fn serve_with(router: Router, options: ServerOptions) throws {
-  try __serve_on(options.host, port: options.port, max_body: options.max_body, idle_ns: options.idle_timeout.nanos, read_ns: options.read_timeout.nanos, write_ns: options.write_timeout.nanos, handler: req => try router.handle(req))
+  __serve_on(options.host, port: options.port, max_body: options.max_body, idle_ns: options.idle_timeout.nanos, read_ns: options.read_timeout.nanos, write_ns: options.write_timeout.nanos, handler: req => router.handle(req))
 }
 
 fn __serve_on(host: String, port: Int, max_body: Int, idle_ns: Int, read_ns: Int, write_ns: Int, handler: fn(Request) throws -> Response) throws
@@ -731,11 +731,11 @@ pub fn send(request: ClientRequest) throws -> Response {
   if not request.url.contains("://") {
     throw Failure(message: "http: \"${request.url}\" is not a URL: it needs a scheme like https://")
   }
-  return try __send(request.method, url: request.url, headers: request.headers, body: request.body, timeout_ms: request.timeout.millis(), follow: request.follow_redirects, proxy: request.proxy, no_proxy: request.no_proxy, insecure: request.insecure)
+  return __send(request.method, url: request.url, headers: request.headers, body: request.body, timeout_ms: request.timeout.millis(), follow: request.follow_redirects, proxy: request.proxy, no_proxy: request.no_proxy, insecure: request.insecure)
 }
 
 pub fn get(url: String) throws -> Response {
-  return try send(ClientRequest(url: url))
+  return send(ClientRequest(url: url))
 }
 
 // Starts a request and returns at once; `wait()` gives its answer. Requests
@@ -744,8 +744,8 @@ pub fn get(url: String) throws -> Response {
 //
 //   let weather = http.start(http.ClientRequest(url: weather_url))
 //   let news = http.start(http.ClientRequest(url: news_url))
-//   let w = try weather.wait()
-//   let n = try news.wait()
+//   let w = weather.wait()
+//   let n = news.wait()
 //
 // A request that is never waited for is stopped when nothing holds it.
 pub fn start(request: ClientRequest) -> Pending {
@@ -762,40 +762,40 @@ pub builtin type Pending {
 // Several requests at once: their answers in the same order, after the
 // slowest. The first failure (in that order) throws, and the requests
 // still on their way are stopped.
-//   let answers = try http.send_all(urls.map(u => http.ClientRequest(url: u)))
+//   let answers = http.send_all(urls.map(u => http.ClientRequest(url: u)))
 pub fn send_all(requests: List<ClientRequest>) throws -> List<Response> {
   let pending = requests.map(r => start(r))
   var out: List<Response> = []
   for p in pending {
-    out.append(try p.wait())
+    out.append(p.wait())
   }
   return out
 }
 
 pub fn post(url: String, body: String) throws -> Response {
-  return try send(ClientRequest(url: url, method: "POST", body: body.bytes()))
+  return send(ClientRequest(url: url, method: "POST", body: body.bytes()))
 }
 
 pub fn put(url: String, body: String) throws -> Response {
-  return try send(ClientRequest(url: url, method: "PUT", body: body.bytes()))
+  return send(ClientRequest(url: url, method: "PUT", body: body.bytes()))
 }
 
 pub fn delete(url: String) throws -> Response {
-  return try send(ClientRequest(url: url, method: "DELETE"))
+  return send(ClientRequest(url: url, method: "DELETE"))
 }
 
 // Sends a request and returns as soon as the status and headers arrive; the
 // body is then read piece by piece: event streams, streamed answers of AI
 // APIs, large responses.
 //
-//   with res = try http.open(http.ClientRequest(url: u)) {
-//     while try res.read_line() is some(line) { ... }
+//   with res = http.open(http.ClientRequest(url: u)) {
+//     while res.read_line() is some(line) { ... }
 //   }
 pub fn open(request: ClientRequest) throws -> ResponseStream {
   if not request.url.contains("://") {
     throw Failure(message: "http: \"${request.url}\" is not a URL: it needs a scheme like https://")
   }
-  return try __open(request.method, url: request.url, headers: request.headers, body: request.body, timeout_ms: request.timeout.millis(), follow: request.follow_redirects, proxy: request.proxy, no_proxy: request.no_proxy, insecure: request.insecure)
+  return __open(request.method, url: request.url, headers: request.headers, body: request.body, timeout_ms: request.timeout.millis(), follow: request.follow_redirects, proxy: request.proxy, no_proxy: request.no_proxy, insecure: request.insecure)
 }
 
 pub builtin type ResponseStream {
@@ -854,15 +854,15 @@ pub type WebSocket {
       let op = b0.bit_and(15)
       var length = b1.bit_and(127)
       if length == 126 {
-        length = (try self.conn.read_exact(2)).int_at(0, size: 2)
+        length = self.conn.read_exact(2).int_at(0, size: 2)
       } else if length == 127 {
-        length = (try self.conn.read_exact(8)).int_at(0, size: 8)
+        length = self.conn.read_exact(8).int_at(0, size: 8)
       }
       if length > 67108864 {
         throw Failure(message: "websocket: a message over 64 MB")
       }
-      let key = if b1.bit_and(128) != 0 { try self.conn.read_exact(4) } else { Bytes() }
-      var payload = if length > 0 { try self.conn.read_exact(length) } else { Bytes() }
+      let key = if b1.bit_and(128) != 0 { self.conn.read_exact(4) } else { Bytes() }
+      var payload = if length > 0 { self.conn.read_exact(length) } else { Bytes() }
       if key.length == 4 {
         payload = __ws_mask(payload, key: key)
       }
@@ -873,7 +873,7 @@ pub type WebSocket {
         return none
       }
       if op == 9 {
-        try self.frame(10, data: payload)
+        self.frame(10, data: payload)
         continue
       }
       if op == 10 {
@@ -896,18 +896,18 @@ pub type WebSocket {
   }
 
   pub fn send_text(self, text: String) throws {
-    try self.frame(1, data: text.bytes())
+    self.frame(1, data: text.bytes())
   }
 
   pub fn send(self, data: Bytes) throws {
-    try self.frame(2, data: data)
+    self.frame(2, data: data)
   }
 
   // Says goodbye and closes the connection.
   pub fn close(self) throws {
     try self.frame(8, data: Bytes([3, 232])) catch err {
     }
-    try self.conn.close()
+    self.conn.close()
   }
 
   fn frame(self, op: Int, data: Bytes) throws {
@@ -930,7 +930,7 @@ pub type WebSocket {
     } else {
       f.append_all(data)
     }
-    try self.conn.write(f)
+    self.conn.write(f)
   }
 }
 
@@ -951,19 +951,19 @@ fn upgrade(req: Request, handler: fn(WebSocket) throws) throws -> Response {
     return text(400, "this address takes WebSocket connections")
   }
   let accept = __sha1("${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11".bytes()).base64()
-  return Response(status: 101, body: Bytes(), headers: {"upgrade": "websocket", "sec-websocket-accept": accept}, writer: stream => try run_websocket(stream, handler: handler))
+  return Response(status: 101, body: Bytes(), headers: {"upgrade": "websocket", "sec-websocket-accept": accept}, writer: stream => run_websocket(stream, handler: handler))
 }
 
 fn run_websocket(stream: io.Stream, handler: fn(WebSocket) throws) throws {
   with ws = WebSocket(conn: stream) {
-    try handler(ws)
+    handler(ws)
   }
 }
 
 // Connects to a WebSocket server: "ws://host:port/path" or "wss://..." (TLS).
-//   with ws = try http.websocket("wss://echo.example/socket") {
-//     try ws.send_text("hi")
-//     if try ws.receive() is some(m) {
+//   with ws = http.websocket("wss://echo.example/socket") {
+//     ws.send_text("hi")
+//     if ws.receive() is some(m) {
 //       print(m.text())
 //     }
 //   }
@@ -979,16 +979,16 @@ pub fn websocket(address: String) throws -> WebSocket {
   let path = if slash < rest.length { rest.slice(from: slash, to: rest.length) } else { "/" }
   let hp = authority.split(":")
   let host = hp[0]
-  let port = if hp.length > 1 { try hp[1].to_int() } else if secure { 443 } else { 80 }
-  with ws = WebSocket(conn: try connect_to(host, port: port, secure: secure), client: true) {
+  let port = if hp.length > 1 { hp[1].to_int() } else if secure { 443 } else { 80 }
+  with ws = WebSocket(conn: connect_to(host, port: port, secure: secure), client: true) {
     let key = crypto.random_bytes(16).base64()
-    try ws.conn.write_text("GET ${path} HTTP/1.1\r\nHost: ${authority}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n")
-    let status = try ws.conn.read_line() ?? ""
+    ws.conn.write_text("GET ${path} HTTP/1.1\r\nHost: ${authority}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n")
+    let status = ws.conn.read_line() ?? ""
     if not status.contains(" 101") {
       throw Failure(message: "websocket: ${address} answered \"${status}\" instead of switching protocols")
     }
     var accepted = ""
-    while try ws.conn.read_line() is some(line) {
+    while ws.conn.read_line() is some(line) {
       if line.is_empty() {
         break
       }
@@ -1005,9 +1005,9 @@ pub fn websocket(address: String) throws -> WebSocket {
 
 fn connect_to(host: String, port: Int, secure: Bool) throws -> io.Stream {
   if secure {
-    return try net.connect_tls(host, port: port)
+    return net.connect_tls(host, port: port)
   }
-  return try net.connect(host, port: port)
+  return net.connect(host, port: port)
 }
 
 fn __sha1(data: Bytes) -> Bytes

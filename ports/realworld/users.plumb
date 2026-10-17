@@ -73,17 +73,17 @@ fn check_password(password: String) throws {
 }
 
 fn load(app: api.App, id: Int) throws -> Account {
-  let found = try app.conn.query<Account>("select * from users where id = ?", [id])
+  let found = app.conn.query<Account>("select * from users where id = ?", [id])
   return found.first() ?? throw api.unauthorized("is invalid")
 }
 
 // A username or email another user already has: a 409.
 fn check_free(app: api.App, username: String, email: String, id: Int) throws {
-  let same_name = try app.conn.query<Id>("select id from users where username = ? and id != ?", [username, id])
+  let same_name = app.conn.query<Id>("select id from users where username = ? and id != ?", [username, id])
   if not same_name.is_empty() {
     throw api.taken("username")
   }
-  let same_email = try app.conn.query<Id>("select id from users where email = ? and id != ?", [email, id])
+  let same_email = app.conn.query<Id>("select id from users where email = ? and id != ?", [email, id])
   if not same_email.is_empty() {
     throw api.taken("email")
   }
@@ -91,7 +91,7 @@ fn check_free(app: api.App, username: String, email: String, id: Int) throws {
 
 // POST /api/users
 pub fn register(req: http.Request, app: api.App) throws -> http.Response {
-  let input = (try api.decode<RegistrationBody>(req)).user
+  let input = api.decode<RegistrationBody>(req).user
   let username = input.username.trim()
   let email = input.email.trim()
   if username.is_empty() {
@@ -100,25 +100,25 @@ pub fn register(req: http.Request, app: api.App) throws -> http.Response {
   if email.is_empty() {
     throw api.blank("email")
   }
-  try check_password(input.password)
+  check_password(input.password)
   let hash = crypto.hash_password(input.password)
-  let id = try app.write(() => {
-    try check_free(app, username: username, email: email, id: 0)
-    try app.conn.insert("insert into users (username, email, password_hash) values (?, ?, ?)", [username, email, hash])
+  let id = app.write(() => {
+    check_free(app, username: username, email: email, id: 0)
+    app.conn.insert("insert into users (username, email, password_hash) values (?, ?, ?)", [username, email, hash])
   })
-  return answer(201, account: try load(app, id: id), app: app)
+  return answer(201, account: load(app, id: id), app: app)
 }
 
 // POST /api/users/login
 pub fn login(req: http.Request, app: api.App) throws -> http.Response {
-  let input = (try api.decode<LoginBody>(req)).user
+  let input = api.decode<LoginBody>(req).user
   if input.email.trim().is_empty() {
     throw api.blank("email")
   }
   if input.password.is_empty() {
     throw api.blank("password")
   }
-  let found = try app.conn.query<Account>("select * from users where email = ?", [input.email.trim()])
+  let found = app.conn.query<Account>("select * from users where email = ?", [input.email.trim()])
   if found.first() is some(account) and crypto.verify_password(input.password, stored: account.password_hash) {
     return answer(200, account: account, app: app)
   }
@@ -127,36 +127,36 @@ pub fn login(req: http.Request, app: api.App) throws -> http.Response {
 
 // GET /api/user
 pub fn current(req: http.Request, app: api.App) throws -> http.Response {
-  let id = try auth.require(req, app)
-  return answer(200, account: try load(app, id: id), app: app)
+  let id = auth.require(req, app)
+  return answer(200, account: load(app, id: id), app: app)
 }
 
 // PUT /api/user: only the fields given change; bio and image can be
 // cleared with null or "".
 pub fn update(req: http.Request, app: api.App) throws -> http.Response {
-  let id = try auth.require(req, app)
-  var account = try load(app, id: id)
-  let fields = try api.fields(req, wrapper: "user")
+  let id = auth.require(req, app)
+  var account = load(app, id: id)
+  let fields = api.fields(req, wrapper: "user")
   if fields["username"] is some(v) {
-    account.username = (try api.required_text(v, field: "username")).trim()
+    account.username = api.required_text(v, field: "username").trim()
   }
   if fields["email"] is some(v) {
-    account.email = (try api.required_text(v, field: "email")).trim()
+    account.email = api.required_text(v, field: "email").trim()
   }
   if fields["bio"] is some(v) {
-    account.bio = try api.optional_text(v, field: "bio")
+    account.bio = api.optional_text(v, field: "bio")
   }
   if fields["image"] is some(v) {
-    account.image = try api.optional_text(v, field: "image")
+    account.image = api.optional_text(v, field: "image")
   }
   if fields["password"] is some(v) {
-    let password = try api.optional_text(v, field: "password") ?? ""
-    try check_password(password)
+    let password = api.optional_text(v, field: "password") ?? ""
+    check_password(password)
     account.password_hash = crypto.hash_password(password)
   }
-  try app.write(() => {
-    try check_free(app, username: account.username, email: account.email, id: id)
-    try app.conn.execute(
+  app.write(() => {
+    check_free(app, username: account.username, email: account.email, id: id)
+    app.conn.execute(
       "update users set username = ?, email = ?, password_hash = ?, bio = ?, image = ? where id = ?",
       [account.username, account.email, account.password_hash, api.nullable(account.bio), api.nullable(account.image), id],
     )

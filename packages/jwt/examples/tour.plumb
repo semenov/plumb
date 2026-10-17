@@ -13,7 +13,7 @@ fn main() throws {
   let secret = "my secret"
   let token = jwt.sign(Claims(sub: "42", exp: time.unix_now() + 3600, admin: true), secret: secret)
   print("parts: ${token.split(".").length}")
-  let c = try jwt.verify<Claims>(token, secret: secret)
+  let c = jwt.verify<Claims>(token, secret: secret)
   print("hs256: ${c.sub} ${c.admin}")
   let _ = try jwt.verify<Claims>(token, secret: "other") catch err {
     print(err.message())
@@ -24,16 +24,16 @@ fn main() throws {
     print(err.message())
     c
   }
-  let rsa_token = try jwt.sign_with(Claims(sub: "7", exp: time.unix_now() + 60), key: try crypto.private_key(try files.read("rsa.pem")), algorithm: "RS256")
-  print("rs256: ${(try jwt.verify_with<Claims>(rsa_token, key: try crypto.public_key(try files.read("rsa_pub.pem")))).sub}")
-  let ec_token = try jwt.sign_with(Claims(sub: "8", exp: time.unix_now() + 60), key: try crypto.private_key(try files.read("ec.pem")), algorithm: "ES256")
-  print("es256: ${(try jwt.verify_with<Claims>(ec_token, key: try crypto.public_key(try files.read("ec_pub.pem")))).sub}")
+  let rsa_token = jwt.sign_with(Claims(sub: "7", exp: time.unix_now() + 60), key: crypto.private_key(files.read("rsa.pem")), algorithm: "RS256")
+  print("rs256: ${jwt.verify_with<Claims>(rsa_token, key: crypto.public_key(files.read("rsa_pub.pem"))).sub}")
+  let ec_token = jwt.sign_with(Claims(sub: "8", exp: time.unix_now() + 60), key: crypto.private_key(files.read("ec.pem")), algorithm: "ES256")
+  print("es256: ${jwt.verify_with<Claims>(ec_token, key: crypto.public_key(files.read("ec_pub.pem"))).sub}")
   // HS256 token presented to a key-based check: refused
-  let _ = try jwt.verify_with<Claims>(token, key: try crypto.public_key(try files.read("rsa_pub.pem"))) catch err {
+  let _ = try jwt.verify_with<Claims>(token, key: crypto.public_key(files.read("rsa_pub.pem"))) catch err {
     print(err.message())
     c
   }
-  let keys = try jwt.key_set(try files.read("jwks.json"))
+  let keys = jwt.key_set(files.read("jwks.json"))
   print("jwks: ${keys.keys.length} key(s)")
   print("${rsa_token.slice(from: 0, to: 20)}")
 }

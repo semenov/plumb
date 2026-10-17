@@ -15,7 +15,7 @@ fn kind(err: Error) -> String {
 }
 
 fn main() throws {
-  with dir = try files.temp_dir() {
+  with dir = files.temp_dir() {
     let missing = "${dir.path}/missing.txt"
     for p in [missing, dir.path] {
       let text = try files.read(p) catch err {

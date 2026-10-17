@@ -14,15 +14,15 @@ pub type Output {
 // exits with a non-zero status is not an error: check `output.status`.
 pub fn run(program: String, args: List<String>) throws -> Output
 
-// A running program; get one with `with p = try process.start(...)`.
+// A running program; get one with `with p = process.start(...)`.
 // Reading reads its output (stdout); writing writes to its input (stdin).
 // Its error output goes to this program's error output. Leaving `with`
 // stops it if it is still running.
 //
-//   with p = try process.start("sort", []) {
-//     try p.write_text("b\na\n")
-//     try p.close_input()
-//     while try p.read_line() is some(line) { print(line) }
+//   with p = process.start("sort", []) {
+//     p.write_text("b\na\n")
+//     p.close_input()
+//     while p.read_line() is some(line) { print(line) }
 //   }
 pub builtin type Process {
   fn read(self, max: Int) throws -> Bytes
@@ -54,14 +54,14 @@ pub type Command {
 }
 
 // Runs a `Command` to the end, like `run`:
-//   let out = try process.run_command(process.Command(program: "git", args: ["status"], dir: repo))
+//   let out = process.run_command(process.Command(program: "git", args: ["status"], dir: repo))
 pub fn run_command(command: Command) throws -> Output {
   var pairs: List<String> = []
   for entry in command.env {
     pairs.append(entry.key)
     pairs.append(entry.value)
   }
-  return try __run(command.program, args: command.args, dir: command.dir, env: pairs, input: command.input)
+  return __run(command.program, args: command.args, dir: command.dir, env: pairs, input: command.input)
 }
 
 fn __run(program: String, args: List<String>, dir: String, env: List<String>, input: String) throws -> Output

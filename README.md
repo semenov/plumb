@@ -23,26 +23,26 @@ type NewNote {
 }
 
 fn list_notes(conn: db.Connection) throws -> http.Response {
-  let notes = try conn.query<Note>("select id, title, done from notes order by id", [])
+  let notes = conn.query<Note>("select id, title, done from notes order by id", [])
   return http.json(200, notes)
 }
 
 fn add_note(conn: db.Connection, req: http.Request) throws -> http.Response {
-  let input = try json.decode<NewNote>(req.text())
+  let input = json.decode<NewNote>(req.text())
   if input.title.trim().is_empty() {
     return http.text(400, "the title is empty")
   }
-  try conn.execute("insert into notes (title) values (?)", [input.title])
+  conn.execute("insert into notes (title) values (?)", [input.title])
   return http.json(201, Note(id: conn.last_id(), title: input.title))
 }
 
 fn main() throws {
-  with conn = try db.open("notes.db") {
-    try conn.execute("create table if not exists notes (id integer primary key, title text, done bool default false)", [])
+  with conn = db.open("notes.db") {
+    conn.execute("create table if not exists notes (id integer primary key, title text, done bool default false)", [])
     var router = http.Router()
-    router.get("/notes", req => try list_notes(conn))
-    router.post("/notes", req => try add_note(conn, req: req))
-    try http.serve(router, port: 8080)
+    router.get("/notes", req => list_notes(conn))
+    router.post("/notes", req => add_note(conn, req: req))
+    http.serve(router, port: 8080)
   }
 }
 ```
@@ -61,8 +61,9 @@ here:
 - **The compiler is the reviewer.** Every error names the fix. Ignoring a
   result, building SQL from strings, forgetting to close a file, leaking a
   task: all are compile errors.
-- **What matters is visible.** A function that can fail says `throws`, and
-  every call to it starts with `try`. A function never changes its
+- **What matters is visible.** A function that can fail says `throws`; an
+  error goes up by itself, and `try ... catch` handles it where it's
+  written (`try` never stands alone). A function never changes its
   arguments: `products = restock(products, name: "Widget", amount: 3)`.
 - **Values, not references.** Records, enums and lists are values with
   copy-on-write. There is no `null`, no inheritance and no shared mutable
@@ -93,24 +94,24 @@ fn area(s: Shape) -> Float {
   }
 }
 
-// Errors: `throws`, `try`, `catch`
+// Errors: `throws` passes them up, `try ... catch` handles them
 fn load(path: String) throws -> Config {
   let text = try files.read(path) catch err {
     log.warn("no config, using defaults: ${err.message()}")
     return Config()
   }
-  return try json.decode<Config>(text)
+  return json.decode<Config>(text)
 }
 
 // Resources are closed by `with`, even on an error
-with f = try files.create("out.txt") {
-  try f.write_text("hello\n")
+with f = files.create("out.txt") {
+  f.write_text("hello\n")
 }
 
 // Parallel work
 let user = spawn load_user(id)
 let orders = spawn load_orders(id)
-let page = Dashboard(user: try user.wait(), orders: try orders.wait())
+let page = Dashboard(user: user.wait(), orders: orders.wait())
 
 // Lists
 let adults = users.filter(u => u.age >= 18).map(u => u.name)
@@ -359,8 +360,8 @@ in a language meant to be simple and fast:
   `Decimal`) have operators; time types have `<` but not `+`.
 - **Names follow what things are.** `xs.length` is the number of items;
   `xs.count(x => x > 0)` counts the ones that pass a test. `task.wait()`
-  needs `try` even for a task that can't fail, because waiting can be
-  cancelled (Ctrl-C); `channel.receive()` for the same reason, and it gives
+  can fail even for a task that can't, because waiting can be
+  cancelled (Ctrl-C), so it needs a `throws` function or a `catch`; `channel.receive()` for the same reason, and it gives
   `none` once the channel is closed and empty.
 - **`Int` and `Float` don't mix.** `total.to_float() / count.to_float()`
   reads noisier than `total / count`, but no value changes type silently,

@@ -15,11 +15,11 @@ fn main() throws {
   let args = process.args()
   match args.first() ?? "" {
     "add" => {
-      let o = try cli.decode_from<AddOptions>(args.drop(1))
+      let o = cli.decode_from<AddOptions>(args.drop(1))
       print("add ${o.name} force=${o.force}")
     }
     "list" => {
-      let o = try cli.decode_from<ListOptions>(args.drop(1))
+      let o = cli.decode_from<ListOptions>(args.drop(1))
       print("list all=${o.all} limit=${o.limit}")
     }
     _ => {

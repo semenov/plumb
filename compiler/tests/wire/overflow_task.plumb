@@ -9,6 +9,6 @@ fn depth(n: Int) -> Int {
 }
 
 fn main() throws {
-  let t = spawn depth(try process.args()[0].to_int())
-  print("${try t.wait()}")
+  let t = spawn depth(process.args()[0].to_int())
+  print("${t.wait()}")
 }

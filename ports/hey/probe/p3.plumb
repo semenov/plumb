@@ -2,15 +2,15 @@ import http
 import time
 
 fn main() throws {
-  let _ = try http.get("http://127.0.0.1:8099/conns")
+  let _ = http.get("http://127.0.0.1:8099/conns")
   for i in 0..<10 {
     let t0 = time.now()
-    with res = try http.open(http.ClientRequest(url: "http://127.0.0.1:8099/")) {
+    with res = http.open(http.ClientRequest(url: "http://127.0.0.1:8099/")) {
       let t1 = t0.elapsed()
-      let body = try res.read_all()
+      let body = res.read_all()
       print("status ${res.status()} len ${res.header("content-length") ?? "?"} headers-at ${t1.nanos} body-at ${t0.elapsed().nanos} ${body.length}")
     }
   }
-  let c = try http.get("http://127.0.0.1:8099/conns")
+  let c = http.get("http://127.0.0.1:8099/conns")
   print("conns: ${c.text()}")
 }

@@ -3,9 +3,9 @@
 import db
 
 pub fn create(conn: db.Connection) throws {
-  try conn.execute("pragma foreign_keys = on", [])
-  try conn.execute("pragma journal_mode = wal", [])
-  try conn.execute("""
+  conn.execute("pragma foreign_keys = on", [])
+  conn.execute("pragma journal_mode = wal", [])
+  conn.execute("""
     create table if not exists users (
       id integer primary key,
       username text not null unique,
@@ -15,14 +15,14 @@ pub fn create(conn: db.Connection) throws {
       image text
     )
     """, [])
-  try conn.execute("""
+  conn.execute("""
     create table if not exists follows (
       follower_id integer not null references users(id) on delete cascade,
       followed_id integer not null references users(id) on delete cascade,
       primary key (follower_id, followed_id)
     )
     """, [])
-  try conn.execute("""
+  conn.execute("""
     create table if not exists articles (
       id integer primary key,
       slug text not null unique,
@@ -34,23 +34,23 @@ pub fn create(conn: db.Connection) throws {
       updated_at text not null
     )
     """, [])
-  try conn.execute("""
+  conn.execute("""
     create table if not exists article_tags (
       article_id integer not null references articles(id) on delete cascade,
       tag text not null,
       primary key (article_id, tag)
     )
     """, [])
-  try conn.execute("create index if not exists article_tags_tag on article_tags (tag)", [])
-  try conn.execute("""
+  conn.execute("create index if not exists article_tags_tag on article_tags (tag)", [])
+  conn.execute("""
     create table if not exists favorites (
       user_id integer not null references users(id) on delete cascade,
       article_id integer not null references articles(id) on delete cascade,
       primary key (user_id, article_id)
     )
     """, [])
-  try conn.execute("create index if not exists favorites_article on favorites (article_id)", [])
-  try conn.execute("""
+  conn.execute("create index if not exists favorites_article on favorites (article_id)", [])
+  conn.execute("""
     create table if not exists comments (
       id integer primary key,
       body text not null,
@@ -60,10 +60,10 @@ pub fn create(conn: db.Connection) throws {
       updated_at text not null
     )
     """, [])
-  try conn.execute("create index if not exists comments_article on comments (article_id)", [])
+  conn.execute("create index if not exists comments_article on comments (article_id)", [])
   // An article with what every answer shows about it. Who is asking
   // (favorited, following) is added by the queries.
-  try conn.execute("""
+  conn.execute("""
     create view if not exists article_view as
     select
       a.id, a.slug, a.title, a.description, a.body, a.created_at, a.updated_at,

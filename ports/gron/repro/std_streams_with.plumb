@@ -9,7 +9,7 @@ import io
 
 fn say(text: String) {
   with e = io.stderr() {
-    try e.write_text(text)
+    e.write_text(text)
   }
 }
 

@@ -1,6 +1,6 @@
 // regex: patterns for finding and replacing text.
 //
-//   let date = try regex.compile("(\\d{4})-(\\d{2})-(\\d{2})")
+//   let date = regex.compile("(\\d{4})-(\\d{2})-(\\d{2})")
 //   if date.find(line) is some(m) {
 //     print("year ${m.groups[1] ?? "?"}")
 //   }

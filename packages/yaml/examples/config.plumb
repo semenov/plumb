@@ -20,12 +20,12 @@ type Config {
 }
 
 fn main() throws {
-  let text = try files.read("config.yaml")
-  print(try yaml.to_json(text))
-  let c = try yaml.decode<Config>(text)
+  let text = files.read("config.yaml")
+  print(yaml.to_json(text))
+  let c = yaml.decode<Config>(text)
   print("${c.name} ${c.port} ${c.debug} ${c.ratio} ${c.tags} ${c.admins} ${c.servers.map(s => s.name)} ${c.version}")
-  let written = try yaml.encode(c)
+  let written = yaml.encode(c)
   print(written)
-  let again = try yaml.decode<Config>(written)
+  let again = yaml.decode<Config>(written)
   print("round trip: ${json.encode(again) == json.encode(c)}")
 }

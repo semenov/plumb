@@ -8,5 +8,5 @@ fn hello(req: http.Request) throws -> http.Response {
 fn main() throws {
   var router = http.Router()
   router.get("/", hello)
-  try http.serve(router, port: 8098)
+  http.serve(router, port: 8098)
 }

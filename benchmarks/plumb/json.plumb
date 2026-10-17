@@ -33,7 +33,7 @@ fn main() throws {
   for r in 0..<10 {
     let data = json.encode(users)
     length = data.byte_length()
-    let back = try json.decode<List<User>>(data)
+    let back = json.decode<List<User>>(data)
     for u in back {
       if u.active {
         total += u.score

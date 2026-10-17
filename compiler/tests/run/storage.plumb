@@ -2,25 +2,25 @@ import storage
 import time
 
 test "files go in, come out and go away" {
-  expect (try storage.list("")).length == 0
-  try storage.put_public("avatars/1.png", data: "png".bytes(), content_type: "image/png")
-  try storage.put("docs/a.txt", data: "secret".bytes(), content_type: "")
-  let a = try storage.info("avatars/1.png") ?? throw Failure(message: "missing")
+  expect storage.list("").length == 0
+  storage.put_public("avatars/1.png", data: "png".bytes(), content_type: "image/png")
+  storage.put("docs/a.txt", data: "secret".bytes(), content_type: "")
+  let a = storage.info("avatars/1.png") ?? throw Failure(message: "missing")
   expect a.size == 3 and a.public and a.content_type == "image/png"
-  expect (try storage.info("docs/a.txt"))?.content_type == "application/octet-stream"
-  expect ((try storage.get("docs/a.txt")) ?? "".bytes()).text_lossy() == "secret"
-  expect (try storage.list("")).map(o => o.key) == ["avatars/1.png", "docs/a.txt"]
-  expect (try storage.list("docs/")).length == 1
-  expect try storage.delete("docs/a.txt")
-  expect not try storage.delete("docs/a.txt")
-  expect try storage.get("docs/a.txt") is none
+  expect (storage.info("docs/a.txt"))?.content_type == "application/octet-stream"
+  expect ((storage.get("docs/a.txt")) ?? "".bytes()).text_lossy() == "secret"
+  expect storage.list("").map(o => o.key) == ["avatars/1.png", "docs/a.txt"]
+  expect storage.list("docs/").length == 1
+  expect storage.delete("docs/a.txt")
+  expect not storage.delete("docs/a.txt")
+  expect storage.get("docs/a.txt") is none
 }
 
 test "keys are paths of plain parts" {
   for key in ["", "/a", "a/", "a//b", "../a", "a b", "a?b"] {
     expect refuses(key)
   }
-  expect (try storage.url("a/b.png", expires: time.hours(1))).starts_with("/_files/")
+  expect storage.url("a/b.png", expires: time.hours(1)).starts_with("/_files/")
 }
 
 fn refuses(key: String) -> Bool {

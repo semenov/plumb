@@ -4,9 +4,9 @@
 import url
 
 pub fn host(u: String) throws -> String {
-  return (try url.parse(u)).host
+  return url.parse(u).host
 }
 
 test "host" {
-  expect (try host("https://example.com/x")) == "example.com"
+  expect (host("https://example.com/x")) == "example.com"
 }

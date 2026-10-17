@@ -8,14 +8,14 @@ type Count {
 }
 
 fn count(conn: db.Connection, who: String) throws -> Int {
-  let rows = try conn.query<Count>("select count(*) as n from t where who = ?", [who])
+  let rows = conn.query<Count>("select count(*) as n from t where who = ?", [who])
   return rows[0].n
 }
 
 fn slow_transaction(conn: db.Connection, who: String, fail: Bool) throws {
-  try conn.transaction(() => {
-    try conn.execute("insert into t (who) values (?)", [who])
-    try time.sleep(time.millis(30))
+  conn.transaction(() => {
+    conn.execute("insert into t (who) values (?)", [who])
+    time.sleep(time.millis(30))
     if fail {
       throw Failure(message: "rolled back on purpose")
     }
@@ -23,37 +23,37 @@ fn slow_transaction(conn: db.Connection, who: String, fail: Bool) throws {
 }
 
 fn check(path: String) throws {
-  with conn = try db.open(path) {
-    try conn.execute("create table if not exists t (who text)", [])
-    try conn.execute("delete from t", [])
+  with conn = db.open(path) {
+    conn.execute("create table if not exists t (who text)", [])
+    conn.execute("delete from t", [])
 
     // two transactions at once: the second waits for the first
     let a = spawn slow_transaction(conn, who: "a", fail: false)
     let b = spawn slow_transaction(conn, who: "b", fail: false)
-    try a.wait()
-    try b.wait()
-    print("both committed: ${try count(conn, "a") + try count(conn, "b")}")
+    a.wait()
+    b.wait()
+    print("both committed: ${count(conn, "a") + count(conn, "b")}")
 
     // another task's insert doesn't join a transaction that rolls back
     let c = spawn slow_transaction(conn, who: "c", fail: true)
-    try time.sleep(time.millis(10))
-    try conn.execute("insert into t (who) values ('outside')", [])
+    time.sleep(time.millis(10))
+    conn.execute("insert into t (who) values ('outside')", [])
     try c.wait() catch err {
       print("transaction: ${err}")
     }
-    print("outside kept: ${try count(conn, "outside")}, rolled back: ${try count(conn, "c")}")
+    print("outside kept: ${count(conn, "outside")}, rolled back: ${count(conn, "c")}")
 
     // a transaction inside a transaction is a savepoint
-    try conn.transaction(() => {
-      try conn.execute("insert into t (who) values ('outer')", [])
+    conn.transaction(() => {
+      conn.execute("insert into t (who) values ('outer')", [])
       try conn.transaction(() => {
-        try conn.execute("insert into t (who) values ('inner')", [])
+        conn.execute("insert into t (who) values ('inner')", [])
         throw Failure(message: "inner only")
       }) catch err {
         print("inner: ${err}")
       }
     })
-    print("outer: ${try count(conn, "outer")}, inner: ${try count(conn, "inner")}")
+    print("outer: ${count(conn, "outer")}, inner: ${count(conn, "inner")}")
 
     // many tasks, more than there are handles
     var tasks: List<Task<Int>> = []
@@ -61,13 +61,13 @@ fn check(path: String) throws {
       tasks.append(spawn conn.insert("insert into t (who) values ('many')", []))
     }
     for t in tasks {
-      let _ = try t.wait()
+      let _ = t.wait()
     }
-    print("many: ${try count(conn, "many")}")
+    print("many: ${count(conn, "many")}")
   }
 }
 
 fn main() throws {
-  try check(":memory:")
-  try check("/tmp/plumb-sqlite-tasks.db")
+  check(":memory:")
+  check("/tmp/plumb-sqlite-tasks.db")
 }

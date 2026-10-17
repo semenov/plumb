@@ -2,7 +2,7 @@ import http
 import time
 
 fn slow(i: Int) throws -> Int {
-  let r = try http.get("http://127.0.0.1:8099/slow=1")
+  let r = http.get("http://127.0.0.1:8099/slow=1")
   return r.status
 }
 
@@ -13,7 +13,7 @@ fn main() throws {
     tasks.append(spawn slow(i))
   }
   for tk in tasks {
-    let _ = try tk.wait()
+    let _ = tk.wait()
   }
   print("10 parallel slow: ${t.elapsed().seconds()}")
   let t2 = time.now()

@@ -10,5 +10,5 @@ fn main() throws {
   router.get("/204", req => http.text(204, "should be empty"))
   router.get("/418", req => http.text(418, "I'm a teapot!"))
   router.get("/304", req => http.Response(status: 304, body: Bytes()))
-  try http.serve(router, port: 18103)
+  http.serve(router, port: 18103)
 }

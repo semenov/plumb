@@ -8,5 +8,5 @@ fn main() throws {
   router.get("/c+d", req => http.text(200, "plus route"))
   router.get("/echo/:p", req => http.text(200, "param=[${req.param("p") ?? ""}]\n"))
   // curl -s localhost:18100/echo/a+b   -> "param=[a b]" (expected "a+b")
-  try http.serve(router, port: 18100)
+  http.serve(router, port: 18100)
 }
