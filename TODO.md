@@ -12,6 +12,11 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
       `experiments/`, which keep what the agents wrote then)
   - [ ] the editor marks the calls that can fail (an LSP inlay hint or
         semantic token), since the line no longer says it
+- [ ] **Interfaces: keep or remove?** (Vlad, 2026-10-18: keep for now.)
+      0 declared in 441 agent-written files; only `Error` is used; a record
+      of functions (`type Mailer { send: fn(...) }`) covers fakes in tests,
+      as in Gleam. Decide by the next real backend with tests written
+      without hints: if no one reaches for `interface`, remove it
 - [x] **No `let _ =`: a result may be left unused** (Vlad, 2026-10-18).
       Still errors: dropping a new version of the receiver (`xs.sorted()`,
       `name.trim()`), a value computed and never used, a task nobody
