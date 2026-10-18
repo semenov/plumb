@@ -1,0 +1,248 @@
+// Bookmarks: a small JSON API. Sign up with an email to get a key, then
+// save links with it. A link saved without a title gets the page's own
+// title, fetched in the background.
+
+import crypto
+import db
+import http
+import json
+import log
+import queue
+import regex
+import time
+
+type Account {
+  id: Int
+  email: String
+}
+
+type Bookmark {
+  id: Int
+  url: String
+  title: String
+  created_at: String
+}
+
+type SignUp {
+  email: String
+}
+
+type NewBookmark {
+  url: String
+  title: String? = none
+}
+
+type Key {
+  key: String
+}
+
+type Count {
+  n: Int
+}
+
+// An answer other than 2xx: handlers throw it, `errors()` turns it into
+// {"error": "..."} with its status.
+type ApiError implements Error {
+  status: Int
+  problem: String
+
+  fn message(self) -> String {
+    return "${self.status}: ${self.problem}"
+  }
+}
+
+type ErrorBody {
+  error: String
+}
+
+fn errors() -> http.Middleware {
+  return (req, next) => {
+    try next(req) catch err {
+      if err is ApiError {
+        http.json(err.status, ErrorBody(error: err.problem))
+      } else {
+        throw err
+      }
+    }
+  }
+}
+
+// The request's body as a T; anything unreadable is a 422.
+fn body<T>(req: http.Request) -> T {
+  return try json.decode<T>(req.text()) catch err {
+    throw ApiError(status: 422, problem: err.message())
+  }
+}
+
+// Who is asking: the account whose key is in `x-api-key`.
+fn account(req: http.Request, conn: db.Connection) -> Account {
+  let key = req.header("x-api-key") ?? throw ApiError(status: 401, problem: "send your key in x-api-key")
+  let found = conn.query<Account>("select id, email from accounts where key = ?", [key])
+  return found.first() ?? throw ApiError(status: 401, problem: "unknown key")
+}
+
+fn sign_up(req: http.Request, conn: db.Connection) -> http.Response {
+  let input = body<SignUp>(req)
+  let email = input.email.trim().lower()
+  if not email.contains("@") {
+    throw ApiError(status: 422, problem: "email: not an email address")
+  }
+  let taken = conn.query<Account>("select id, email from accounts where email = ?", [email])
+  if not taken.is_empty() {
+    throw ApiError(status: 409, problem: "email: already signed up")
+  }
+  let key = crypto.random_bytes(16).hex()
+  conn.execute("insert into accounts (email, key) values (?, ?)", [email, key])
+  queue.send("welcome", email)
+  return http.json(201, Key(key: key))
+}
+
+fn add_bookmark(req: http.Request, conn: db.Connection) -> http.Response {
+  let me = account(req, conn)
+  let input = body<NewBookmark>(req)
+  if not (input.url.starts_with("https://") or input.url.starts_with("http://")) {
+    throw ApiError(status: 422, problem: "url: must start with http:// or https://")
+  }
+  let title = input.title ?? input.url
+  let now = time.utc_now().iso()
+  let id = conn.insert("insert into bookmarks (account_id, url, title, created_at) values (?, ?, ?, ?)", [me.id, input.url, title, now])
+  if input.title is none {
+    queue.send("titles", "${id}")
+  }
+  return http.json(201, Bookmark(id: id, url: input.url, title: title, created_at: now))
+}
+
+// GET /bookmarks?q=rust: the newest first, optionally only those whose
+// title or URL has `q` in it.
+fn list_bookmarks(req: http.Request, conn: db.Connection) -> http.Response {
+  let me = account(req, conn)
+  let q = "%${req.query("q") ?? ""}%"
+  let found = conn.query<Bookmark>("""
+    select id, url, title, created_at from bookmarks
+    where account_id = ? and (title like ? or url like ?)
+    order by id desc
+    """, [me.id, q, q])
+  return http.json(200, found)
+}
+
+fn delete_bookmark(req: http.Request, conn: db.Connection) -> http.Response {
+  let me = account(req, conn)
+  let id = try (req.param("id") ?? "").to_int() catch err {
+    throw ApiError(status: 404, problem: "no such bookmark")
+  }
+  let deleted = conn.execute_counting("delete from bookmarks where id = ? and account_id = ?", [id, me.id])
+  if deleted == 0 {
+    throw ApiError(status: 404, problem: "no such bookmark")
+  }
+  return http.text(204, "")
+}
+
+// The queue "titles": a bookmark's id. Its page's <title> replaces the URL
+// that stands in for it. A failure (the site is down) is retried.
+fn fetch_title(id: Int, conn: db.Connection) {
+  let found = conn.query<Bookmark>("select id, url, title, created_at from bookmarks where id = ?", [id])
+  let bookmark = found.first() ?? return       // deleted meanwhile
+  let page = http.get(bookmark.url).text()
+  if regex.compile("(?i)<title[^>]*>([^<]*)</title>").find(page) is some(m) {
+    let title = (m.groups[1] ?? "").trim()
+    if not title.is_empty() {
+      conn.execute("update bookmarks set title = ? where id = ?", [title, id])
+    }
+  }
+}
+
+fn make_router(conn: db.Connection) -> http.Router {
+  var router = http.Router()
+  router.use(http.log_requests())
+  router.use(errors())
+
+  router.post("/signup", req => sign_up(req, conn))
+  router.post("/bookmarks", req => add_bookmark(req, conn))
+  router.get("/bookmarks", req => list_bookmarks(req, conn))
+  router.delete("/bookmarks/:id", req => delete_bookmark(req, conn))
+
+  router.queue("welcome", job => log.info("welcome email to ${job.payload}"))
+  router.queue("titles", job => fetch_title(job.payload.to_int(), conn))
+  router.cron("daily-count", schedule: "0 6 * * *", handler: job => {
+    let rows = conn.query<Count>("select count(*) as n from bookmarks", [])
+    log.info("${rows[0].n} bookmarks")
+  })
+  return router
+}
+
+// `plumb dev` runs it on a local wasm-server, which creates the tables
+// from schema.sql (as `plumb deploy` does on the real one).
+fn main() {
+  with conn = db.open("main") {
+    http.serve(make_router(conn), port: 8080)
+  }
+}
+
+// ---- tests: the router, without a network
+
+fn test_db(conn: db.Connection) {
+  conn.execute("create table if not exists accounts (id integer primary key, email text unique, key text unique)", [])
+  conn.execute("create table if not exists bookmarks (id integer primary key, account_id integer, url text, title text, created_at text)", [])
+}
+
+// Requests to the router as one client, with its key ("" for none).
+type Client {
+  router: http.Router
+  key: String = ""
+
+  fn send(self, req: http.Request) -> http.Response {
+    var r = req
+    if not self.key.is_empty() {
+      r.headers["x-api-key"] = self.key
+    }
+    return self.router.handle(r)
+  }
+
+  fn get(self, path: String) -> http.Response {
+    return self.send(http.request("GET", path))
+  }
+
+  fn post(self, path: String, body: String) -> http.Response {
+    var req = http.request("POST", path)
+    req.body = body.bytes()
+    return self.send(req)
+  }
+
+  fn delete(self, path: String) -> http.Response {
+    return self.send(http.request("DELETE", path))
+  }
+}
+
+test "sign up, save, find and delete a bookmark" {
+  with conn = db.open(":memory:") {
+    test_db(conn)
+    let router = make_router(conn)
+
+    let signed = Client(router: router).post("/signup", body: """{"email": "Ada@example.com"}""")
+    expect signed.status == 201
+    let ada = Client(router: router, key: json.decode<Key>(signed.text()).key)
+
+    expect ada.post("/bookmarks", body: """{"url": "https://plumb.dev", "title": "Plumb"}""").status == 201
+    let found = json.decode<List<Bookmark>>(ada.get("/bookmarks?q=plu").text())
+    expect found.map(b => b.title) == ["Plumb"]
+
+    expect ada.delete("/bookmarks/${found[0].id}").status == 204
+    expect ada.delete("/bookmarks/${found[0].id}").status == 404
+    expect router.run_jobs() == 1           // the welcome email
+  }
+}
+
+test "the errors a client sees" {
+  with conn = db.open(":memory:") {
+    test_db(conn)
+    let anyone = Client(router: make_router(conn))
+    expect anyone.get("/bookmarks").status == 401
+    expect Client(router: anyone.router, key: "wrong").get("/bookmarks").status == 401
+    expect anyone.post("/signup", body: "{}").status == 422
+    expect anyone.post("/signup", body: """{"email": "nope"}""").status == 422
+    anyone.post("/signup", body: """{"email": "a@b.c"}""")
+    let again = anyone.post("/signup", body: """{"email": "a@b.c"}""")
+    expect again.status == 409
+    expect again.text() == """{"error":"email: already signed up"}"""
+  }
+}

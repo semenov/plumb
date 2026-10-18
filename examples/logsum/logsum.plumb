@@ -1,0 +1,170 @@
+// logsum: what a web server's access log says, in a few lines.
+//
+//   plumb run logsum.plumb access.log            the summary
+//   plumb run logsum.plumb --top 3 --min-status 400 a.log b.log
+//   cat access.log | plumb run logsum.plumb --json
+//
+// It reads nginx's and Apache's usual ("combined") format:
+//   1.2.3.4 - - [18/Oct/2026:13:55:36 +0000] "GET /a HTTP/1.1" 200 2326 "-" "curl/8.0"
+
+import cli
+import files
+import io
+import json
+import process
+import regex
+import term
+
+type Options {
+  // how many of the busiest paths to show
+  top: Int = 10
+  // count only requests with this status or above (400: the errors)
+  min_status: Int = 0
+  // print the summary as JSON
+  json: Bool = false
+  // the log files; none: standard input
+  args: List<String> = []
+}
+
+type Request {
+  method: String
+  path: String
+  status: Int
+  bytes: Int
+}
+
+type PathCount {
+  path: String
+  requests: Int
+}
+
+type Summary {
+  requests: Int = 0
+  bytes: Int = 0
+  // "2xx", "4xx", ...
+  statuses: Map<String, Int> = {}
+  paths: Map<String, Int> = {}
+  // lines that aren't in the log's format
+  skipped: Int = 0
+}
+
+type Report {
+  requests: Int
+  bytes: Int
+  statuses: Map<String, Int>
+  top_paths: List<PathCount>
+  skipped: Int
+}
+
+let line_format = "^\\S+ \\S+ \\S+ \\[[^\\]]+\\] \"(\\S+) (\\S+)[^\"]*\" (\\d{3}) (\\d+|-)"
+
+// One line of the log; none if it isn't a request line.
+fn parse(line: String, format: regex.Regex) -> Request? {
+  let m = format.find(line) ?? return none
+  let size = m.groups[4] ?? "-"
+  return Request(
+    method: m.groups[1] ?? "",
+    path: (m.groups[2] ?? "").split("?")[0],
+    status: (m.groups[3] ?? "").to_int(),
+    bytes: if size == "-" { 0 } else { size.to_int() },
+  )
+}
+
+fn add(summary: Summary, line: String, format: regex.Regex, min_status: Int) -> Summary {
+  var s = summary
+  let req = parse(line, format)
+  if req is none {
+    s.skipped += 1
+    return s
+  }
+  if req.status < min_status {
+    return s
+  }
+  s.requests += 1
+  s.bytes += req.bytes
+  let class = "${req.status.div(100)}xx"
+  s.statuses[class] = (s.statuses[class] ?? 0) + 1
+  s.paths[req.path] = (s.paths[req.path] ?? 0) + 1
+  return s
+}
+
+fn report(s: Summary, top: Int) -> Report {
+  let busiest = s.paths.entries().sorted_by(e => -e.value).take(top)
+  return Report(
+    requests: s.requests,
+    bytes: s.bytes,
+    statuses: s.statuses,
+    top_paths: busiest.map(e => PathCount(path: e.key, requests: e.value)),
+    skipped: s.skipped,
+  )
+}
+
+fn show(r: Report) {
+  print("${term.bold("${r.requests}")} requests, ${term.size(r.bytes)} sent")
+  var statuses = [["status", "requests"]]
+  for class in r.statuses.keys().sorted() {
+    let n = "${r.statuses[class] ?? 0}"
+    statuses.append([if class.starts_with("5") { term.red(class) } else { class }, n])
+  }
+  print("")
+  print(term.table(statuses))
+  var paths = [["path", "requests"]]
+  for p in r.top_paths {
+    paths.append([p.path, "${p.requests}"])
+  }
+  print("")
+  print(term.table(paths))
+  if r.skipped > 0 {
+    let lines = if r.skipped == 1 { "1 line wasn't a request" } else { "${r.skipped} lines weren't requests" }
+    eprint(term.yellow("${lines}: skipped"))
+  }
+}
+
+fn main() {
+  let opts = cli.decode<Options>()
+  let format = regex.compile(line_format)
+  var summary = Summary()
+  if opts.args.is_empty() {
+    while io.read_line() is some(line) {
+      summary = add(summary, line: line, format: format, min_status: opts.min_status)
+    }
+  }
+  for path in opts.args {
+    with f = try files.open(path) catch err {
+      eprint("logsum: ${err}")
+      process.exit(1)
+    } {
+      while f.read_line() is some(line) {
+        summary = add(summary, line: line, format: format, min_status: opts.min_status)
+      }
+    }
+  }
+  let r = report(summary, top: opts.top)
+  if opts.json {
+    print(json.encode(r))
+  } else {
+    show(r)
+  }
+}
+
+test "a line in the combined format" {
+  let line = "1.2.3.4 - - [18/Oct/2026:13:55:36 +0000] \"GET /a?x=1 HTTP/1.1\" 404 12 \"-\" \"curl/8.0\""
+  let req = parse(line, format: regex.compile(line_format)) ?? panic("not parsed")
+  expect req.path == "/a"
+  expect req.status == 404
+  expect req.bytes == 12
+  expect parse("hello", format: regex.compile(line_format)) == none
+}
+
+test "the busiest paths come first" {
+  let format = regex.compile(line_format)
+  var s = Summary()
+  for path in ["/a", "/b", "/b", "/c", "/b", "/c"] {
+    s = add(s, line: "h - - [d] \"GET ${path} HTTP/1.1\" 200 - \"-\" \"-\"", format: format, min_status: 0)
+  }
+  s = add(s, line: "garbage", format: format, min_status: 0)
+  let r = report(s, top: 2)
+  expect r.top_paths.map(p => p.path) == ["/b", "/c"]
+  expect r.statuses == {"2xx": 6}
+  expect r.skipped == 1
+}

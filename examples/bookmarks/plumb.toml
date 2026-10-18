@@ -1,0 +1,5 @@
+[app]
+name = "bookmarks"
+main = "main.plumb"
+databases = ["main"]
+schema = "schema.sql"

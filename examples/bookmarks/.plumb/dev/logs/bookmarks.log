@@ -1,0 +1,9 @@
+2026-10-18T13:04:59Z INFO GET /bookmarks 401 63.6µs
+2026-10-18T13:04:59Z INFO POST /signup 201 5.3ms
+2026-10-18T13:04:59Z INFO welcome email to p@x.y
+2026-10-18T13:04:59Z INFO POST /signup 201 1.9ms
+2026-10-18T13:04:59Z INFO welcome email to q@x.y
+2026-10-18T13:05:00Z INFO POST /signup 201 642.1µs
+2026-10-18T13:05:00Z INFO welcome email to r@x.y
+2026-10-18T13:05:00Z INFO POST /signup 201 6.5ms
+2026-10-18T13:05:00Z INFO welcome email to s@x.y
