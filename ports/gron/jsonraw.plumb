@@ -25,7 +25,7 @@ pub type SyntaxError implements Error {
 
 // Reads the first JSON value of `data`, like Go's `json.Decoder.Decode`:
 // whatever follows a complete object or array is not looked at.
-pub fn decode_first(data: Bytes) throws -> Value {
+pub fn decode_first(data: Bytes) -> Value {
   var p = Parser(data: data, size: data.length)
   p.skip_space()
   if p.pos >= p.size {
@@ -50,7 +50,7 @@ pub fn decode_first(data: Bytes) throws -> Value {
 
 // Reads a whole text that must be exactly one JSON value, like Go's
 // `json.Unmarshal`.
-pub fn decode_all(data: Bytes) throws -> Value {
+pub fn decode_all(data: Bytes) -> Value {
   var p = Parser(data: data, size: data.length)
   p.skip_space()
   if p.pos >= p.size {
@@ -116,7 +116,7 @@ type Parser {
   // ones rather than by recursion: Go allows 10000 levels, and recursing
   // that deep overflows the stack, which is small in a program that uses
   // http (see repro/stack_overflow_silent).
-  mutating fn parse_value() throws -> Value {
+  mutating fn parse_value() -> Value {
     var open: List<Open> = []
     while true {
       // At the start of a value
@@ -200,7 +200,7 @@ type Parser {
   }
 
   // A string, number, true, false or null, starting with `c`.
-  mutating fn parse_scalar(c: Int) throws -> Value {
+  mutating fn parse_scalar(c: Int) -> Value {
     if c == 34 {
       return Value.String(value: self.parse_string())
     }
@@ -223,7 +223,7 @@ type Parser {
   }
 
   // An object's key and the colon after it.
-  mutating fn object_key() throws -> String {
+  mutating fn object_key() -> String {
     self.skip_space()
     if self.pos >= self.size {
       throw self.eof()
@@ -245,7 +245,7 @@ type Parser {
     return key
   }
 
-  mutating fn literal(word: String) throws {
+  mutating fn literal(word: String) {
     let expected = word.bytes()
     for i in 0..<expected.length {
       if self.pos >= self.size {
@@ -260,7 +260,7 @@ type Parser {
     }
   }
 
-  mutating fn parse_number() throws -> String {
+  mutating fn parse_number() -> String {
     let start = self.pos
     if self.byte(self.pos) == 45 {
       self.pos += 1
@@ -309,7 +309,7 @@ type Parser {
   }
 
   // At the opening quote; returns the unescaped text.
-  mutating fn parse_string() throws -> String {
+  mutating fn parse_string() -> String {
     self.pos += 1
     let start = self.pos
     // The common case: no escapes and nothing to replace.
@@ -386,7 +386,7 @@ type Parser {
     panic("unreachable")
   }
 
-  mutating fn hex4() throws -> Int {
+  mutating fn hex4() -> Int {
     var r = 0
     for _ in 0..<4 {
       if self.pos >= self.size {

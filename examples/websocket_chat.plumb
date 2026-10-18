@@ -1,6 +1,6 @@
 import http
 
-fn chat(ws: http.WebSocket) throws {
+fn chat(ws: http.WebSocket) {
   ws.send_text("welcome")
   while ws.receive() is some(msg) {
     if msg.is_text {
@@ -11,7 +11,7 @@ fn chat(ws: http.WebSocket) throws {
   }
 }
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.websocket("/chat", ws => chat(ws))
   router.get("/", req => http.text(200, "hi"))

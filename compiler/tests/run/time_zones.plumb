@@ -1,6 +1,6 @@
 import time
 
-fn main() throws {
+fn main() {
   let moment = time.parse_iso("2026-09-29T14:05:09Z")
   let berlin = moment.in_zone("Europe/Berlin")
   print("${berlin.iso()} ${berlin.abbreviation} ${berlin.format("%H:%M %Z (%z)")}")

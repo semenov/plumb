@@ -7,12 +7,12 @@ type Count {
   n: Int
 }
 
-fn count(conn: db.Connection, who: String) throws -> Int {
+fn count(conn: db.Connection, who: String) -> Int {
   let rows = conn.query<Count>("select count(*) as n from t where who = ?", [who])
   return rows[0].n
 }
 
-fn slow_transaction(conn: db.Connection, who: String, fail: Bool) throws {
+fn slow_transaction(conn: db.Connection, who: String, fail: Bool) {
   conn.transaction(() => {
     conn.execute("insert into t (who) values (?)", [who])
     time.sleep(time.millis(30))
@@ -22,7 +22,7 @@ fn slow_transaction(conn: db.Connection, who: String, fail: Bool) throws {
   })
 }
 
-fn check(path: String) throws {
+fn check(path: String) {
   with conn = db.open(path) {
     conn.execute("create table if not exists t (who text)", [])
     conn.execute("delete from t", [])
@@ -67,7 +67,7 @@ fn check(path: String) throws {
   }
 }
 
-fn main() throws {
+fn main() {
   check(":memory:")
   check("/tmp/plumb-sqlite-tasks.db")
 }

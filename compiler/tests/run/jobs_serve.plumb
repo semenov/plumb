@@ -5,7 +5,7 @@ import http
 import process
 import queue
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.cron("every_second", schedule: "* * * * * *", handler: job => {
     queue.send("work", "tick ${job.attempt}")

@@ -10,7 +10,7 @@ fn show(req: http.ClientRequest) {
   print("== ${req.method} -> ${r.status} in ${t.elapsed().seconds()}\n${r.text()}")
 }
 
-fn main() throws {
+fn main() {
   show(http.ClientRequest(url: "http://127.0.0.1:8099/echo"))
   show(http.ClientRequest(url: "http://127.0.0.1:8099/echo", method: "POST", headers: {"Content-Type": "text/html", "User-Agent": "hey/0.0.1", "Host": "example.com"}, body: "abc".bytes()))
   show(http.ClientRequest(url: "http://127.0.0.1:8099/echo", method: "HEAD", timeout: 3))

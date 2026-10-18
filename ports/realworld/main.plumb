@@ -22,7 +22,7 @@ type Options {
   db: String = "conduit.db"
 }
 
-fn main() throws {
+fn main() {
   let opts = cli.decode<Options>()
   var secret = env.get("CONDUIT_SECRET") ?? ""
   if secret.is_empty() {

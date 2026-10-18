@@ -1,11 +1,11 @@
 // interfaces are the language's own (`Error`); behavior is swapped with a
 // record of functions
 interface Mailer {
-  fn send(self, to: String) throws
+  fn send(self, to: String)
 }
 
 type Mail {
-  send: fn(String) throws
+  send: fn(String)
 }
 
 type Missing implements Error {
@@ -14,11 +14,11 @@ type Missing implements Error {
   }
 }
 
-fn welcome(mail: Mail, to: String) throws {
+fn welcome(mail: Mail, to: String) {
   mail.send(to)
 }
 
-fn main() throws {
+fn main() {
   let fake = Mail(send: to => print("to ${to}"))
   welcome(fake, to: "ada@example.com")
   throw Missing()

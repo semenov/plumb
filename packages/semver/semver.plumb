@@ -46,7 +46,7 @@ pub type Version {
 }
 
 // "1.2.3", "v1.2.3", "1.2.3-rc.1+build.7"
-pub fn parse(text: String) throws -> Version {
+pub fn parse(text: String) -> Version {
   let bad = Failure(message: "semver: \"${text}\" is not a version like 1.2.3")
   var s = text.trim()
   if s.starts_with("v") or s.starts_with("=") {
@@ -134,7 +134,7 @@ pub fn sort(versions: List<Version>) -> List<Version> {
 }
 
 // Whether a version is in a range.
-pub fn matches(version: String, range: String) throws -> Bool {
+pub fn matches(version: String, range: String) -> Bool {
   let v = parse(version)
   for alternative in range.split("||") {
     if all_hold(v, conditions: conditions(alternative.trim())) {
@@ -145,7 +145,7 @@ pub fn matches(version: String, range: String) throws -> Bool {
 }
 
 // The highest version in the range; none if no version matches.
-pub fn max_matching(versions: List<String>, range: String) throws -> String? {
+pub fn max_matching(versions: List<String>, range: String) -> String? {
   var best: Version? = none
   for text in versions {
     if not (matches(text, range: range)) {
@@ -174,7 +174,7 @@ type Condition {
   version: Version
 }
 
-fn all_hold(v: Version, conditions: List<Condition>) throws -> Bool {
+fn all_hold(v: Version, conditions: List<Condition>) -> Bool {
   // a pre-release matches only ranges that mention a pre-release of the
   // same major.minor.patch (npm's rule)
   if not v.pre.is_empty() and not conditions.any(c => not c.version.pre.is_empty() and c.version.major == v.major and c.version.minor == v.minor and c.version.patch == v.patch) {
@@ -203,7 +203,7 @@ type Partial {
   pre: String
 }
 
-fn partial(text: String) throws -> Partial {
+fn partial(text: String) -> Partial {
   var s = text.trim()
   if s.starts_with("v") {
     s = s.slice(from: 1, to: s.length)
@@ -236,7 +236,7 @@ fn at(p: Partial) -> Version {
   return Version(major: p.nums[0], minor: p.nums[1], patch: p.nums[2], pre: p.pre)
 }
 
-fn conditions(range: String) throws -> List<Condition> {
+fn conditions(range: String) -> List<Condition> {
   if range.is_empty() or range == "*" or range == "x" {
     return []
   }
@@ -268,7 +268,7 @@ fn bump(p: Partial) -> Version {
   return Version(major: p.nums[0], minor: p.nums[1] + 1, patch: 0)
 }
 
-fn one(word: String) throws -> List<Condition> {
+fn one(word: String) -> List<Condition> {
   for op in [">=", "<=", ">", "<", "="] {
     if word.starts_with(op) {
       let p = partial(word.slice(from: op.length, to: word.length))

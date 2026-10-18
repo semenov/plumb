@@ -1,12 +1,12 @@
 import http
 
-fn chat(ws: http.WebSocket) throws {
+fn chat(ws: http.WebSocket) {
   while ws.receive() is some(msg) {
     ws.send_text("echo: ${msg.text()}")
   }
 }
 
-fn server() throws {
+fn server() {
   var router = http.Router()
   router.websocket("/chat", ws => chat(ws))
   http.serve(router, port: 8117)

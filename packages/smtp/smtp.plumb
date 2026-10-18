@@ -54,7 +54,7 @@ pub type Message {
 }
 
 // Sends the message to every recipient (to, cc and bcc).
-pub fn send(message: Message, server: Server) throws {
+pub fn send(message: Message, server: Server) {
   with conn = open(server) {
     reply(conn, code: 220)
     hello(conn)
@@ -87,24 +87,24 @@ pub fn send(message: Message, server: Server) throws {
   }
 }
 
-fn open(server: Server) throws -> io.Stream {
+fn open(server: Server) -> io.Stream {
   if server.security == "tls" {
     return net.connect_tls(server.host, port: server.port)
   }
   return net.connect(server.host, port: server.port)
 }
 
-fn hello(conn: io.Stream) throws {
+fn hello(conn: io.Stream) {
   command(conn, line: "EHLO localhost", code: 250)
 }
 
-fn command(conn: io.Stream, line: String, code: Int) throws {
+fn command(conn: io.Stream, line: String, code: Int) {
   conn.write_text("${line}\r\n")
   reply(conn, code: code)
 }
 
 // Reads a reply (its continuation lines too) and checks its code.
-fn reply(conn: io.Stream, code: Int) throws {
+fn reply(conn: io.Stream, code: Int) {
   var last = ""
   while true {
     let line = conn.read_line() ?? throw Failure(message: "smtp: the server closed the connection")

@@ -16,7 +16,7 @@ type TokenBody {
   user: Token
 }
 
-fn send(app: api.App, method: String, path: String, body: String, token: String) throws -> http.Response {
+fn send(app: api.App, method: String, path: String, body: String, token: String) -> http.Response {
   var req = http.request(method, path)
   req.body = body.bytes()
   if not token.is_empty() {
@@ -25,7 +25,7 @@ fn send(app: api.App, method: String, path: String, body: String, token: String)
   return server.router(app).handle(req)
 }
 
-fn register(app: api.App, name: String) throws -> String {
+fn register(app: api.App, name: String) -> String {
   let body = "{\"user\": {\"username\": \"${name}\", \"email\": \"${name}@example.com\", \"password\": \"password123\"}}"
   let res = send(app, method: "POST", path: "/api/users", body: body, token: "")
   if res.status != 201 {

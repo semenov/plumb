@@ -1,7 +1,7 @@
 import env
 import files
 
-fn main() throws {
+fn main() {
   let path = "${env.get("TMPDIR") ?? "/tmp"}/bench-lines.txt"
   var total = 0
   for round in 0..<3 {

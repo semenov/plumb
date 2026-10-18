@@ -20,7 +20,7 @@ pub fn token(user_id: Int, username: String, secret: String) -> String {
 
 // The signed-in user's id; none when the request has no token. A token that
 // doesn't check out is a 401.
-pub fn viewer(req: http.Request, app: api.App) throws -> Int? {
+pub fn viewer(req: http.Request, app: api.App) -> Int? {
   let header = req.header("authorization") ?? ""
   if header.is_empty() {
     return none
@@ -37,6 +37,6 @@ pub fn viewer(req: http.Request, app: api.App) throws -> Int? {
 }
 
 // The signed-in user's id; a 401 without a valid token.
-pub fn require(req: http.Request, app: api.App) throws -> Int {
+pub fn require(req: http.Request, app: api.App) -> Int {
   return viewer(req, app) ?? throw api.unauthorized("is missing")
 }

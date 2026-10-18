@@ -1,6 +1,6 @@
 import time
 
-fn main() throws {
+fn main() {
   for t in ["1h30m", "90s", "1.5s", "250ms", "10us", "12ns", "2d", "-5m", "1h0m5s"] {
     print("${t} -> ${time.parse_duration(t).text()}")
   }

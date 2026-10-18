@@ -6,7 +6,7 @@ import log
 import random
 import time
 
-fn main() throws {
+fn main() {
   with dir = files.temp_dir() {
     let file = path.join(dir.path, "notes.txt")
     files.write(file, "first\nsecond\n")

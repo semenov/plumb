@@ -3,7 +3,7 @@
 //                                   Content-Type: text/html
 import http
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/", req => http.text(200, "<b>hi</b>").with_header("Content-Type", "text/html"))
   http.serve(router, port: 18102)

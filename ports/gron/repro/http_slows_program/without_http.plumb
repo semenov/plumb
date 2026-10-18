@@ -9,7 +9,7 @@ import io
 import process
 import time
 
-fn main() throws {
+fn main() {
   let t0 = time.now()
   var n = 0
   while io.read_line() is some(line) {

@@ -3,7 +3,7 @@
 //   printf abc | curl -s -T - localhost:18101/                          -> "body: 0 bytes"
 import http
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.post("/", req => http.text(200, "body: ${req.body.length} bytes\n"))
   router.put("/", req => http.text(200, "body: ${req.body.length} bytes\n"))

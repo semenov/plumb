@@ -1,6 +1,6 @@
 import zlib
 
-fn main() throws {
+fn main() {
   let data = "hello hello hello hello hello hello".bytes()
   let g = zlib.gzip(data)
   let d = zlib.deflate(data)

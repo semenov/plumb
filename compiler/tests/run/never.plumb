@@ -6,7 +6,7 @@ fn usage(msg: String) -> Never {
   process.exit(2)
 }
 
-fn reject(msg: String) throws -> Never {
+fn reject(msg: String) -> Never {
   throw Failure(message: "rejected: ${msg}")
 }
 
@@ -20,7 +20,7 @@ fn sign(x: Int) -> String {
   usage("zero has no sign")
 }
 
-fn checked(x: Int) throws -> Int {
+fn checked(x: Int) -> Int {
   let v = if x >= 0 { x } else { reject("${x}") }
   return v * 2
 }

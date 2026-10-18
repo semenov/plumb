@@ -11,13 +11,13 @@ type AppError implements Error {
   }
 }
 
-fn load(p: String) throws -> String {
+fn load(p: String) -> String {
   return try files.read(p) catch err {
     throw Failure(message: "loading config", cause: err)
   }
 }
 
-fn outer() throws -> String {
+fn outer() -> String {
   return try load("/nope") catch err {
     throw AppError(code: 7, cause: err)
   }

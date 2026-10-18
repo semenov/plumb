@@ -51,7 +51,7 @@ pub type App {
   max_jsonl_count: Int
 }
 
-pub fn new_app(config: Config) throws -> App {
+pub fn new_app(config: Config) -> App {
   var assets: Map<String, Bytes> = {}
   for name in files.list(config.static_dir) {
     assets[name] = files.read_bytes("${config.static_dir}/${name}")
@@ -70,7 +70,7 @@ pub fn new_app(config: Config) throws -> App {
 }
 
 // The two templates only use {{.Prefix}}.
-fn render(assets: Map<String, Bytes>, name: String, prefix: String) throws -> Bytes {
+fn render(assets: Map<String, Bytes>, name: String, prefix: String) -> Bytes {
   return ((assets[name] ?? Bytes()).text()).replace("{{.Prefix}}", new: prefix).bytes()
 }
 
@@ -82,11 +82,11 @@ type Route {
   segments: List<String>
   // a pattern ending in "/" matches everything below it
   subtree: Bool
-  handler: fn(http.Request, App) throws -> http.Response
+  handler: fn(http.Request, App) -> http.Response
 }
 
 // "GET /get" or "/anything" (any method), as Go 1.22 patterns.
-fn route(spec: String, handler: fn(http.Request, App) throws -> http.Response) -> Route {
+fn route(spec: String, handler: fn(http.Request, App) -> http.Response) -> Route {
   let space = spec.index_of(" ") ?? -1
   let method = if space < 0 { "" } else { spec.slice(from: 0, to: space) }
   let pattern = spec.slice(from: space + 1, to: spec.length)
@@ -194,7 +194,7 @@ fn method_matches(route_method: String, method: String) -> Bool {
 
 // Finds the route and runs it, as Go's ServeMux does: 404 when no pattern
 // has the path, 405 (with Allow) when one has it for other methods.
-pub fn dispatch(req: http.Request, app: App, table: List<Route>) throws -> http.Response {
+pub fn dispatch(req: http.Request, app: App, table: List<Route>) -> http.Response {
   var path = req.path
   let prefix = app.config.prefix
   if prefix != "" {
@@ -235,7 +235,7 @@ fn not_found_text() -> http.Response {
 
 // CORS for every response, and the answer to OPTIONS (go-httpbin's
 // `preflight` middleware).
-pub fn preflight(req: http.Request, next: fn(http.Request) throws -> http.Response) throws -> http.Response {
+pub fn preflight(req: http.Request, next: fn(http.Request) -> http.Response) -> http.Response {
   var origin = req.header("origin") ?? ""
   if origin == "" {
     origin = "*"
@@ -433,45 +433,45 @@ fn asset(app: App, name: String) -> Bytes {
 
 // ---- handlers ----
 
-fn not_implemented(req: http.Request, app: App) throws -> http.Response {
+fn not_implemented(req: http.Request, app: App) -> http.Response {
   return helpers.write_error(501, detail: "")
 }
 
-fn index(req: http.Request, app: App) throws -> http.Response {
+fn index(req: http.Request, app: App) -> http.Response {
   return helpers.write_html(200, body: app.index_html).with_header("content-security-policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' camo.githubusercontent.com")
 }
 
-fn env_vars(req: http.Request, app: App) throws -> http.Response {
+fn env_vars(req: http.Request, app: App) -> http.Response {
   return helpers.write_json(200, EnvResponse(env: app.config.env))
 }
 
-fn forms_post(req: http.Request, app: App) throws -> http.Response {
+fn forms_post(req: http.Request, app: App) -> http.Response {
   return helpers.write_html(200, body: app.forms_post_html)
 }
 
-fn utf8(req: http.Request, app: App) throws -> http.Response {
+fn utf8(req: http.Request, app: App) -> http.Response {
   return helpers.write_html(200, body: asset(app, name: "utf8.html"))
 }
 
-fn get(req: http.Request, app: App) throws -> http.Response {
+fn get(req: http.Request, app: App) -> http.Response {
   return helpers.write_json(200, no_body_response(req, app: app))
 }
 
-fn anything(req: http.Request, app: App) throws -> http.Response {
+fn anything(req: http.Request, app: App) -> http.Response {
   if req.method == "HEAD" {
     return get(req, app: app)
   }
   return request_with_body(req, app: app)
 }
 
-fn request_with_body(req: http.Request, app: App) throws -> http.Response {
+fn request_with_body(req: http.Request, app: App) -> http.Response {
   let resp = try parse_body(req, resp: body_response(req, app: app), max: app.config.max_body_size) catch err {
     return helpers.write_error(400, detail: "error parsing request body: ${err.message()}")
   }
   return helpers.write_json(200, resp)
 }
 
-fn request_with_body_discard(req: http.Request, app: App) throws -> http.Response {
+fn request_with_body_discard(req: http.Request, app: App) -> http.Response {
   let base = no_body_response(req, app: app)
   return helpers.write_json(200, DiscardedBodyResponse(
     args: base.args,
@@ -490,7 +490,7 @@ type RequestTooLarge implements Error {
 }
 
 // Fills data, form, files and json from the body, by its content type.
-fn parse_body(req: http.Request, resp: BodyResponse, max: Int) throws -> BodyResponse {
+fn parse_body(req: http.Request, resp: BodyResponse, max: Int) -> BodyResponse {
   if req.body.length > max {
     throw RequestTooLarge()
   }
@@ -558,21 +558,21 @@ fn encode_data(body: Bytes, content_type: String) -> String {
   return "data:${ct};base64,${helpers.base64_url_padded(body)}"
 }
 
-fn gzip(req: http.Request, app: App) throws -> http.Response {
+fn gzip(req: http.Request, app: App) -> http.Response {
   let base = no_body_response(req, app: app)
   let body = GzipResponse(args: base.args, headers: base.headers, method: base.method, origin: base.origin, url: "", gzipped: true)
   let data = zlib.gzip("${json.encode_pretty(body)}\n".bytes())
   return http.Response(status: 200, body: data, headers: {"content-encoding": "gzip", "content-type": helpers.json_content_type()})
 }
 
-fn deflate(req: http.Request, app: App) throws -> http.Response {
+fn deflate(req: http.Request, app: App) -> http.Response {
   let base = no_body_response(req, app: app)
   let body = DeflateResponse(args: base.args, headers: base.headers, method: base.method, origin: base.origin, url: "", deflated: true)
   let data = zlib.deflate("${json.encode_pretty(body)}\n".bytes())
   return http.Response(status: 200, body: data, headers: {"content-encoding": "deflate", "content-type": helpers.json_content_type()})
 }
 
-fn ip(req: http.Request, app: App) throws -> http.Response {
+fn ip(req: http.Request, app: App) -> http.Response {
   let addr = helpers.client_ip(req)
   if req.query("format") == "text" {
     return helpers.write_response(200, content_type: helpers.text_content_type(), body: "${addr}\n".bytes())
@@ -580,13 +580,13 @@ fn ip(req: http.Request, app: App) throws -> http.Response {
   return helpers.write_json(200, IpResponse(origin: addr))
 }
 
-fn user_agent(req: http.Request, app: App) throws -> http.Response {
+fn user_agent(req: http.Request, app: App) -> http.Response {
   // the key has a dash, which no record field can have
   let body = json.Value.Object(fields: {"user-agent": json.Value.String(value: req.header("user-agent") ?? "")})
   return helpers.write_json(200, body)
 }
 
-fn headers(req: http.Request, app: App) throws -> http.Response {
+fn headers(req: http.Request, app: App) -> http.Response {
   return helpers.write_json(200, HeadersResponse(headers: helpers.request_headers(req, exclude: app.exclude)))
 }
 
@@ -646,7 +646,7 @@ fn status_special_case(prefix: String, code: Int) -> StatusCase? {
   }
 }
 
-fn status(req: http.Request, app: App) throws -> http.Response {
+fn status(req: http.Request, app: App) -> http.Response {
   let raw = req.param("code") ?? ""
   if not raw.contains(",") {
     let code = try helpers.parse_status_code(raw) catch err {
@@ -671,7 +671,7 @@ fn do_status(app: App, code: Int) -> http.Response {
   return res
 }
 
-fn unstable(req: http.Request, app: App) throws -> http.Response {
+fn unstable(req: http.Request, app: App) -> http.Response {
   var rng = try helpers.parse_seed(req.query("seed") ?? "") catch err {
     return helpers.write_error(400, detail: "invalid seed: ${err.message()}")
   }
@@ -691,7 +691,7 @@ fn unstable(req: http.Request, app: App) throws -> http.Response {
   return helpers.write_response(code, content_type: helpers.text_content_type(), body: Bytes())
 }
 
-fn response_headers(req: http.Request, app: App) throws -> http.Response {
+fn response_headers(req: http.Request, app: App) -> http.Response {
   var args = helpers.request_args(req)
   var content_type = helpers.first_arg(args, name: "Content-Type")
   if content_type == "" {
@@ -736,16 +736,16 @@ fn handle_redirect(req: http.Request, app: App, relative: Bool) -> http.Response
   return do_redirect(app, path: redirect_location(req, relative: relative, n: n - 1), code: 302)
 }
 
-fn redirect(req: http.Request, app: App) throws -> http.Response {
+fn redirect(req: http.Request, app: App) -> http.Response {
   let relative = (req.query("absolute") ?? "").lower() != "true"
   return handle_redirect(req, app: app, relative: relative)
 }
 
-fn relative_redirect(req: http.Request, app: App) throws -> http.Response {
+fn relative_redirect(req: http.Request, app: App) -> http.Response {
   return handle_redirect(req, app: app, relative: true)
 }
 
-fn absolute_redirect(req: http.Request, app: App) throws -> http.Response {
+fn absolute_redirect(req: http.Request, app: App) -> http.Response {
   return handle_redirect(req, app: app, relative: false)
 }
 
@@ -774,7 +774,7 @@ fn forbidden_redirect_error(domains: List<String>) -> String {
   return "Forbidden redirect URL. Please be careful with this link.\n\nAllowed redirect destinations:\n${lines}"
 }
 
-fn redirect_to(req: http.Request, app: App) throws -> http.Response {
+fn redirect_to(req: http.Request, app: App) -> http.Response {
   let target = req.query("url") ?? ""
   if target == "" {
     return helpers.write_error(400, detail: "missing required query parameter: url")
@@ -800,11 +800,11 @@ fn redirect_to(req: http.Request, app: App) throws -> http.Response {
   return do_redirect(app, path: target, code: code)
 }
 
-fn cookies(req: http.Request, app: App) throws -> http.Response {
+fn cookies(req: http.Request, app: App) -> http.Response {
   return helpers.write_json(200, CookiesResponse(cookies: helpers.request_cookies(req)))
 }
 
-fn set_cookies(req: http.Request, app: App) throws -> http.Response {
+fn set_cookies(req: http.Request, app: App) -> http.Response {
   var res = do_redirect(app, path: "/cookies", code: 302)
   for c in helpers.parse_cookies(req) {
     res = res.with_cookie(c)
@@ -812,7 +812,7 @@ fn set_cookies(req: http.Request, app: App) throws -> http.Response {
   return res
 }
 
-fn delete_cookies(req: http.Request, app: App) throws -> http.Response {
+fn delete_cookies(req: http.Request, app: App) -> http.Response {
   var res = do_redirect(app, path: "/cookies", code: 302)
   for c in helpers.parse_cookies(req) {
     var gone = c
@@ -822,7 +822,7 @@ fn delete_cookies(req: http.Request, app: App) throws -> http.Response {
   return res
 }
 
-fn basic_auth(req: http.Request, app: App) throws -> http.Response {
+fn basic_auth(req: http.Request, app: App) -> http.Response {
   let given = helpers.basic_auth(req)
   let ok = given.user == (req.param("user") ?? "") and given.password == (req.param("password") ?? "")
   let body = AuthResponse(authenticated: ok, user: given.user, authorized: ok)
@@ -832,7 +832,7 @@ fn basic_auth(req: http.Request, app: App) throws -> http.Response {
   return helpers.write_json(200, body)
 }
 
-fn hidden_basic_auth(req: http.Request, app: App) throws -> http.Response {
+fn hidden_basic_auth(req: http.Request, app: App) -> http.Response {
   let given = helpers.basic_auth(req)
   let ok = given.user == (req.param("user") ?? "") and given.password == (req.param("password") ?? "")
   if not ok {
@@ -841,7 +841,7 @@ fn hidden_basic_auth(req: http.Request, app: App) throws -> http.Response {
   return helpers.write_json(200, AuthResponse(authenticated: true, user: given.user, authorized: true))
 }
 
-fn digest_auth(req: http.Request, app: App) throws -> http.Response {
+fn digest_auth(req: http.Request, app: App) -> http.Response {
   let qop = (req.param("qop") ?? "").lower()
   let user = req.param("user") ?? ""
   let password = req.param("password") ?? ""
@@ -863,7 +863,7 @@ fn digest_auth(req: http.Request, app: App) throws -> http.Response {
   return helpers.write_json(200, AuthResponse(authenticated: true, user: user, authorized: true))
 }
 
-fn bearer(req: http.Request, app: App) throws -> http.Response {
+fn bearer(req: http.Request, app: App) -> http.Response {
   let fields = (req.header("authorization") ?? "").words()
   if fields.length != 2 or fields[0] != "Bearer" {
     return helpers.write_error(401, detail: "").with_header("www-authenticate", "Bearer")
@@ -871,7 +871,7 @@ fn bearer(req: http.Request, app: App) throws -> http.Response {
   return helpers.write_json(200, BearerResponse(authenticated: true, token: fields[1]))
 }
 
-fn stream(req: http.Request, app: App) throws -> http.Response {
+fn stream(req: http.Request, app: App) -> http.Response {
   var n = try helpers.atoi(req.param("numLines") ?? "") catch err {
     return helpers.write_error(400, detail: "invalid count: ${err.message()}")
   }
@@ -881,7 +881,7 @@ fn stream(req: http.Request, app: App) throws -> http.Response {
   return http.stream(200, content_type: helpers.text_content_type(), writer: out => write_stream_lines(out, resp: resp, n: n))
 }
 
-fn write_stream_lines(out: io.Stream, resp: StreamResponse, n: Int) throws {
+fn write_stream_lines(out: io.Stream, resp: StreamResponse, n: Int) {
   var line = resp
   for i in 0..<n {
     line.id = i
@@ -891,7 +891,7 @@ fn write_stream_lines(out: io.Stream, resp: StreamResponse, n: Int) throws {
 
 // Trailers can't be sent: this answers like /anything, after checking the
 // names as go-httpbin does.
-fn trailers(req: http.Request, app: App) throws -> http.Response {
+fn trailers(req: http.Request, app: App) -> http.Response {
   let forbidden = ["Authorization", "Cache-Control", "Content-Encoding", "Content-Length", "Content-Range", "Content-Type", "Host", "Max-Forwards", "Set-Cookie", "Te", "Trailer", "Transfer-Encoding"]
   for k in req.query_params.keys() {
     if forbidden.contains(helpers.canonical_header_key(k)) {
@@ -901,7 +901,7 @@ fn trailers(req: http.Request, app: App) throws -> http.Response {
   return request_with_body(req, app: app)
 }
 
-fn delay(req: http.Request, app: App) throws -> http.Response {
+fn delay(req: http.Request, app: App) -> http.Response {
   let d = try helpers.parse_bounded_duration(req.param("duration") ?? "", min: time.nanos(0), max: app.config.max_duration) catch err {
     return helpers.write_error(400, detail: "invalid duration: ${err.message()}")
   }
@@ -910,7 +910,7 @@ fn delay(req: http.Request, app: App) throws -> http.Response {
   return res.with_header("server-timing", helpers.encode_server_timings([helpers.ServerTiming(name: "initial_delay", dur: d, desc: "initial delay")]))
 }
 
-fn drip(req: http.Request, app: App) throws -> http.Response {
+fn drip(req: http.Request, app: App) -> http.Response {
   let cfg = app.config
   var duration = cfg.drip_duration
   var initial_delay = cfg.drip_delay
@@ -960,7 +960,7 @@ fn drip(req: http.Request, app: App) throws -> http.Response {
   return http.stream(code, content_type: helpers.text_content_type(), writer: out => drip_bytes(out, n: num_bytes, pause: pause)).with_header("server-timing", timing)
 }
 
-fn drip_bytes(out: io.Stream, n: Int, pause: time.Duration) throws {
+fn drip_bytes(out: io.Stream, n: Int, pause: time.Duration) {
   let start = time.now()
   for i in 0..<n {
     out.write_text("*")
@@ -987,7 +987,7 @@ type BadRange implements Error {
 
 // Parses a Range header ("bytes=0-9,20-") for content of `size` bytes, as
 // Go's http.ServeContent does.
-fn parse_range(header: String, size: Int) throws -> List<ByteRange> {
+fn parse_range(header: String, size: Int) -> List<ByteRange> {
   var ranges: List<ByteRange> = []
   if header == "" {
     return ranges
@@ -1064,7 +1064,7 @@ fn etag_matches(list: String, etag: String) -> Bool {
 
 // Go's http.ServeContent for generated content: preconditions (If-Match,
 // If-None-Match), and ranges (206, multipart/byteranges, 416).
-fn serve_content(req: http.Request, res: http.Response, size: Int, content: fn(Int, Int) -> Bytes, pause_per_byte: time.Duration) throws -> http.Response {
+fn serve_content(req: http.Request, res: http.Response, size: Int, content: fn(Int, Int) -> Bytes, pause_per_byte: time.Duration) -> http.Response {
   let etag = res.headers["etag"] ?? ""
   if req.header("if-match") is some(im) {
     if etag == "" or not etag_matches(im, etag: etag) {
@@ -1117,7 +1117,7 @@ fn serve_content(req: http.Request, res: http.Response, size: Int, content: fn(I
   return r
 }
 
-fn range(req: http.Request, app: App) throws -> http.Response {
+fn range(req: http.Request, app: App) -> http.Response {
   let raw = req.param("numBytes") ?? ""
   let num_bytes = try helpers.atoi(raw) catch err {
     return helpers.write_error(400, detail: "invalid count: ${err.message().replace("Atoi", new: "ParseInt")}")
@@ -1150,7 +1150,7 @@ fn http_date(t: time.DateTime) -> String {
   return t.format("%a, %d %b %Y %H:%M:%S GMT")
 }
 
-fn cache(req: http.Request, app: App) throws -> http.Response {
+fn cache(req: http.Request, app: App) -> http.Response {
   if not (req.header("if-modified-since") is none) or not (req.header("if-none-match") is none) {
     return helpers.empty(304)
   }
@@ -1166,7 +1166,7 @@ fn sha1hash(input: String) -> String {
   return "${input.bytes().hex()}da39a3ee5e6b4b0d3255bfef95601890afd80709"
 }
 
-fn cache_control(req: http.Request, app: App) throws -> http.Response {
+fn cache_control(req: http.Request, app: App) -> http.Response {
   let raw = req.param("numSeconds") ?? ""
   let seconds = try helpers.atoi(raw) catch err {
     return helpers.write_error(400, detail: "invalid seconds: ${err.message().replace("Atoi", new: "ParseInt")}")
@@ -1175,7 +1175,7 @@ fn cache_control(req: http.Request, app: App) throws -> http.Response {
   return res.with_header("cache-control", "public, max-age=${seconds}")
 }
 
-fn etag(req: http.Request, app: App) throws -> http.Response {
+fn etag(req: http.Request, app: App) -> http.Response {
   let tag = req.param("etag") ?? ""
   let body = "${json.encode_pretty(no_body_response(req, app: app))}\n".bytes()
   let res = http.Response(status: 200, body: Bytes(), headers: {"etag": "\"${tag}\"", "content-type": helpers.text_content_type(), "last-modified": http_date(time.utc_now())})
@@ -1184,15 +1184,15 @@ fn etag(req: http.Request, app: App) throws -> http.Response {
 
 // ---- bytes ----
 
-fn bytes(req: http.Request, app: App) throws -> http.Response {
+fn bytes(req: http.Request, app: App) -> http.Response {
   return handle_bytes(req, app: app, streaming: false)
 }
 
-fn stream_bytes(req: http.Request, app: App) throws -> http.Response {
+fn stream_bytes(req: http.Request, app: App) -> http.Response {
   return handle_bytes(req, app: app, streaming: true)
 }
 
-fn handle_bytes(req: http.Request, app: App, streaming: Bool) throws -> http.Response {
+fn handle_bytes(req: http.Request, app: App, streaming: Bool) -> http.Response {
   let num_bytes = try helpers.atoi(req.param("numBytes") ?? "") catch err {
     return helpers.write_error(400, detail: "invalid byte count: ${err.message()}")
   }
@@ -1230,7 +1230,7 @@ fn handle_bytes(req: http.Request, app: App, streaming: Bool) throws -> http.Res
   return http.stream(200, content_type: helpers.binary_content_type(), writer: out => write_random_chunks(out, rng: seeded, n: num_bytes, chunk_size: chunk_size))
 }
 
-fn write_random_chunks(out: io.Stream, rng: helpers.Rng, n: Int, chunk_size: Int) throws {
+fn write_random_chunks(out: io.Stream, rng: helpers.Rng, n: Int, chunk_size: Int) {
   var r = rng
   var chunk = Bytes()
   for i in 0..<n {
@@ -1247,7 +1247,7 @@ fn write_random_chunks(out: io.Stream, rng: helpers.Rng, n: Int, chunk_size: Int
 
 // ---- pages ----
 
-fn links(req: http.Request, app: App) throws -> http.Response {
+fn links(req: http.Request, app: App) -> http.Response {
   let n = try helpers.atoi(req.param("numLinks") ?? "") catch err {
     return helpers.write_error(400, detail: "invalid link count: ${err.message()}")
   }
@@ -1274,7 +1274,7 @@ fn links(req: http.Request, app: App) throws -> http.Response {
   return do_redirect(app, path: "${helpers.escape_path(req.path)}/0${query}", code: 302)
 }
 
-fn image_accept(req: http.Request, app: App) throws -> http.Response {
+fn image_accept(req: http.Request, app: App) -> http.Response {
   let accept = req.header("accept") ?? ""
   if accept == "" or accept.contains("image/*") or accept.contains("image/png") {
     return do_image(app, kind: "png")
@@ -1294,7 +1294,7 @@ fn image_accept(req: http.Request, app: App) throws -> http.Response {
   return helpers.write_error(415, detail: "")
 }
 
-fn image(req: http.Request, app: App) throws -> http.Response {
+fn image(req: http.Request, app: App) -> http.Response {
   return do_image(app, kind: req.param("kind") ?? "")
 }
 
@@ -1306,39 +1306,39 @@ fn do_image(app: App, kind: String) -> http.Response {
   return helpers.write_error(404, detail: "")
 }
 
-fn html_page(req: http.Request, app: App) throws -> http.Response {
+fn html_page(req: http.Request, app: App) -> http.Response {
   return helpers.write_html(200, body: asset(app, name: "moby.html"))
 }
 
-fn robots(req: http.Request, app: App) throws -> http.Response {
+fn robots(req: http.Request, app: App) -> http.Response {
   return helpers.write_response(200, content_type: helpers.text_content_type(), body: "User-agent: *\nDisallow: /deny\n".bytes())
 }
 
-fn deny(req: http.Request, app: App) throws -> http.Response {
+fn deny(req: http.Request, app: App) -> http.Response {
   return helpers.write_response(200, content_type: helpers.text_content_type(), body: "YOU SHOULDN'T BE HERE".bytes())
 }
 
-fn xml(req: http.Request, app: App) throws -> http.Response {
+fn xml(req: http.Request, app: App) -> http.Response {
   return helpers.write_response(200, content_type: "application/xml", body: asset(app, name: "sample.xml"))
 }
 
-fn json_sample(req: http.Request, app: App) throws -> http.Response {
+fn json_sample(req: http.Request, app: App) -> http.Response {
   return helpers.write_response(200, content_type: helpers.json_content_type(), body: asset(app, name: "sample.json"))
 }
 
-fn uuid(req: http.Request, app: App) throws -> http.Response {
+fn uuid(req: http.Request, app: App) -> http.Response {
   return helpers.write_json(200, UuidResponse(uuid: random.uuid()))
 }
 
-fn hostname(req: http.Request, app: App) throws -> http.Response {
+fn hostname(req: http.Request, app: App) -> http.Response {
   return helpers.write_json(200, HostnameResponse(hostname: app.config.hostname))
 }
 
-fn version(req: http.Request, app: App) throws -> http.Response {
+fn version(req: http.Request, app: App) -> http.Response {
   return helpers.write_json(200, VersionResponse(service: "go-httpbin"))
 }
 
-fn base64(req: http.Request, app: App) throws -> http.Response {
+fn base64(req: http.Request, app: App) -> http.Response {
   let operation = req.param("operation") ?? "decode"
   // the server decodes "+" in the path as a space; base64 has no spaces
   let data = (req.param("data") ?? "").replace(" ", new: "+")
@@ -1372,7 +1372,7 @@ fn base64(req: http.Request, app: App) throws -> http.Response {
 }
 
 // The request in HTTP/1.1 wire form (an approximation, like Go's).
-fn dump_request(req: http.Request, app: App) throws -> http.Response {
+fn dump_request(req: http.Request, app: App) -> http.Response {
   var lines: List<String> = ["${req.method} ${helpers.request_uri(req)} HTTP/1.1", "Host: ${helpers.request_host(req)}"]
   let hs = helpers.request_headers(req, exclude: none)
   for entry in hs {
@@ -1414,7 +1414,7 @@ type ParamError implements Error {
   }
 }
 
-fn stream_params(req: http.Request, app: App, count: Int, duration: time.Duration, initial_delay: time.Duration, max_count: Int, clamp: Bool) throws -> StreamParams {
+fn stream_params(req: http.Request, app: App, count: Int, duration: time.Duration, initial_delay: time.Duration, max_count: Int, clamp: Bool) -> StreamParams {
   var p = StreamParams(count: count, duration: duration, delay: initial_delay, jitter: 0.0)
   if req.query("count") is some(raw) {
     p.count = try helpers.atoi(raw) catch err {
@@ -1456,7 +1456,7 @@ fn apply_jitter(d: time.Duration, jitter: Float) -> time.Duration {
   return time.nanos(max(0, b: j))
 }
 
-fn sse(req: http.Request, app: App) throws -> http.Response {
+fn sse(req: http.Request, app: App) -> http.Response {
   let cfg = app.config
   let p = try stream_params(req, app: app, count: cfg.sse_count, duration: cfg.sse_duration, initial_delay: cfg.sse_delay, max_count: app.max_sse_count, clamp: false) catch err {
     return helpers.write_error(400, detail: err.message())
@@ -1472,7 +1472,7 @@ fn sse(req: http.Request, app: App) throws -> http.Response {
   return http.stream(200, content_type: helpers.sse_content_type(), writer: out => write_events(out, p: p, pause: pause))
 }
 
-fn write_events(out: io.Stream, p: StreamParams, pause: time.Duration) throws {
+fn write_events(out: io.Stream, p: StreamParams, pause: time.Duration) {
   let base_seconds = time.unix_now()
   let base = time.now()
   for i in 0..<p.count {
@@ -1483,7 +1483,7 @@ fn write_events(out: io.Stream, p: StreamParams, pause: time.Duration) throws {
   }
 }
 
-fn jsonl(req: http.Request, app: App) throws -> http.Response {
+fn jsonl(req: http.Request, app: App) -> http.Response {
   let cfg = app.config
   let p = try stream_params(req, app: app, count: cfg.jsonl_count, duration: cfg.jsonl_duration, initial_delay: cfg.jsonl_delay, max_count: app.max_jsonl_count, clamp: true) catch err {
     return helpers.write_error(400, detail: err.message())
@@ -1499,7 +1499,7 @@ fn jsonl(req: http.Request, app: App) throws -> http.Response {
   return http.stream(200, content_type: helpers.jsonl_content_type(), writer: out => write_jsonl(out, resp: resp, p: p, pause: pause))
 }
 
-fn write_jsonl(out: io.Stream, resp: StreamResponse, p: StreamParams, pause: time.Duration) throws {
+fn write_jsonl(out: io.Stream, resp: StreamResponse, p: StreamParams, pause: time.Duration) {
   var line = resp
   for i in 0..<p.count {
     if i > 0 and pause.nanos > 0 {
@@ -1514,7 +1514,7 @@ fn write_jsonl(out: io.Stream, resp: StreamResponse, p: StreamParams, pause: tim
 
 // Checks the size limits as go-httpbin does before the upgrade. plumb's
 // WebSocket has no size limits to set, so they are only validated.
-fn websocket_check(req: http.Request, app: App, next: fn(http.Request) throws -> http.Response) throws -> http.Response {
+fn websocket_check(req: http.Request, app: App, next: fn(http.Request) -> http.Response) -> http.Response {
   let limit = app.config.max_body_size
   var max_fragment = limit.div(2)
   var max_message = limit
@@ -1543,7 +1543,7 @@ fn websocket_check(req: http.Request, app: App, next: fn(http.Request) throws ->
   return next(req)
 }
 
-fn websocket_echo(ws: http.WebSocket) throws {
+fn websocket_echo(ws: http.WebSocket) {
   while ws.receive() is some(msg) {
     if msg.is_text {
       ws.send_text(msg.text())

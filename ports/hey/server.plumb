@@ -1,11 +1,11 @@
 // A small target for load tests: GET / answers 64 bytes.
 import http
 
-fn hello(req: http.Request) throws -> http.Response {
+fn hello(req: http.Request) -> http.Response {
   return http.text(200, "hello world, this is a 64-byte response body for load testing!!\n")
 }
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/", hello)
   http.serve(router, port: 8098)

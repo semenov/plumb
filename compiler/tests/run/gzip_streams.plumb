@@ -2,7 +2,7 @@ import files
 import process
 import zlib
 
-fn main() throws {
+fn main() {
   with out = zlib.create_gzip("/tmp/plumb-gz-test-log.gz") {
     for i in 0..<200000 {
       out.write_text("line ${i} some repeated log text\n")

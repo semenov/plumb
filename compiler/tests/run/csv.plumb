@@ -11,7 +11,7 @@ type BadHeader implements Error {
   }
 }
 
-fn parse_people(text: String) throws -> List<Person> {
+fn parse_people(text: String) -> List<Person> {
   let lines = text.lines()
   let header = lines.first() ?? throw Failure(message: "the CSV is missing its header line")
   if header != "name,age" {
@@ -45,7 +45,7 @@ test "a wrong header is an error" {
   }
 }
 
-fn main() throws {
+fn main() {
   let people = parse_people("name,age\nAda,36\nAlan,41\nGrace,x")
   for person in people {
     print("${person.name} is ${person.age}")

@@ -4,7 +4,7 @@ type Check = fn(Int) -> Bool
 
 type Rule {
   name: String
-  test: fn(Int) throws -> Bool
+  test: fn(Int) -> Bool
   quick: Check
 }
 
@@ -12,7 +12,7 @@ fn is_small(x: Int) -> Bool {
   return x < 10
 }
 
-fn main() throws {
+fn main() {
   print("${0xFF} ${0b1010} ${0o755} ${0xFFFF_FFFF_FFFF_FFFF} ${0x7fff_ffff_ffff_ffff}")
   print("\u{48}\u{e9}llo \u{1F600} tab:\u{9}.")
   let rules = [Rule(name: "positive", test: x => x > 0, quick: is_small)]

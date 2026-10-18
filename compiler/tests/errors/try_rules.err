@@ -1,31 +1,25 @@
-error: this can fail, and the function isn't declared `throws`
-  --> try_rules.plumb:11:10
+error: `throws` isn't needed: any function can fail, and its errors go up by themselves
+  --> try_rules.plumb:10:4
    |
-11 |   return load("a") + load("b")
-   |          ^^^^^^^^^
-   = help: add `throws` before `->`: `fn f() throws -> T`, or handle the error here: `try f(x) catch err { ... }`
+10 | fn total() throws -> Int {
+   |    ^^^^^
+   = help: remove `throws`; handle an error where it matters with `try f(x) catch err { ... }`
+error: this can fail, and an error's `message` or a value's `to_string` can't (the language calls them itself)
+  --> try_rules.plumb:19:15
+   |
+19 |     return "${load("x")}"
+   |               ^^^^^^^^^
+   = help: handle the error here: `try f(x) catch err { ... }`
 error: `try` goes with `catch`: an error here goes up by itself
-  --> try_rules.plumb:16:11
+  --> try_rules.plumb:25:11
    |
-16 |   let a = try load("x")
+25 |   let a = try load("x")
    |           ^^^^^^^^^^^^^
    = help: remove `try`, or handle the error: `try f(x) catch err { ... }`
 error: nothing here can fail
-  --> try_rules.plumb:18:11
+  --> try_rules.plumb:27:11
    |
-18 |   let b = try (a + 1) catch err { 0 }
+27 |   let b = try (a + 1) catch err { 0 }
    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: remove `try` and `catch`
-error: this lambda can fail, but a function that can't fail is expected here
-  --> try_rules.plumb:20:17
-   |
-20 |   let c = twice(n => n + load("y"))
-   |                 ^^^^^^^^^^^^^^^^^^
-   = help: handle the error inside: `try f(x) catch err { fallback }`
-error: expected `fn(Int) -> Int`, found `fn(Int) throws -> Int`
-  --> try_rules.plumb:20:17
-   |
-20 |   let c = twice(n => n + load("y"))
-   |                 ^^^^^^^^^^^^^^^^^^
-   = help: this function can fail, but a function that can't fail is expected here
-5 error(s)
+4 error(s)

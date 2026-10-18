@@ -4,7 +4,7 @@ import log
 import process
 import random
 
-fn main() throws {
+fn main() {
   files.write("/tmp/plumb-env-test", "# comment\nexport A=1\nB=\"two\\nlines\"\nC=plain # note\nPATH=nope\n")
   env.load("/tmp/plumb-env-test")
   env.load("missing.env")

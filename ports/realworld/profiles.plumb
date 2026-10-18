@@ -24,7 +24,7 @@ type Found {
   following: Bool
 }
 
-fn find(app: api.App, username: String, viewer: Int) throws -> Found {
+fn find(app: api.App, username: String, viewer: Int) -> Found {
   let found = app.conn.query<Found>(
     """
     select u.id, u.username, u.bio, u.image,
@@ -42,13 +42,13 @@ fn answer(user: Found) -> http.Response {
 }
 
 // GET /api/profiles/:username
-pub fn get(req: http.Request, app: api.App) throws -> http.Response {
+pub fn get(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.viewer(req, app) ?? 0
   return answer(find(app, username: req.param("username") ?? "", viewer: viewer))
 }
 
 // POST /api/profiles/:username/follow
-pub fn follow(req: http.Request, app: api.App) throws -> http.Response {
+pub fn follow(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   var user = find(app, username: req.param("username") ?? "", viewer: viewer)
   if user.id == viewer {
@@ -61,7 +61,7 @@ pub fn follow(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // DELETE /api/profiles/:username/follow
-pub fn unfollow(req: http.Request, app: api.App) throws -> http.Response {
+pub fn unfollow(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   var user = find(app, username: req.param("username") ?? "", viewer: viewer)
   let followed = user.id

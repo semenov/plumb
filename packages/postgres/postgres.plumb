@@ -27,7 +27,7 @@ import url
 pub type Connection {
   conn: io.Stream
 
-  pub fn close(self) throws {
+  pub fn close(self) {
     // tell the server we're leaving; it's fine if it's already gone
     try self.conn.write(message("X", Bytes())) catch err {
     }
@@ -35,12 +35,12 @@ pub type Connection {
   }
 
   // A statement without rows: create, insert, update, delete.
-  pub fn execute(self, query: sql.Query, params: List<sql.Value>) throws {
+  pub fn execute(self, query: sql.Query, params: List<sql.Value>) {
     run(self.conn, query: query.value, params: params)
   }
 
   // The same, returning the number of rows it changed.
-  pub fn execute_counting(self, query: sql.Query, params: List<sql.Value>) throws -> Int {
+  pub fn execute_counting(self, query: sql.Query, params: List<sql.Value>) -> Int {
     let r = run(self.conn, query: query.value, params: params)
     let words = r.tag.split(" ")
     return try (words.last() ?? "0").to_int() catch err {
@@ -49,13 +49,13 @@ pub type Connection {
   }
 
   // Rows as records, columns matched to fields by name.
-  pub fn query<T>(self, query: sql.Query, params: List<sql.Value>) throws -> List<T> {
+  pub fn query<T>(self, query: sql.Query, params: List<sql.Value>) -> List<T> {
     let r = run(self.conn, query: query.value, params: params)
     return sql.decode<T>(r.columns, rows: r.rows)
   }
 
   // The first row, or none.
-  pub fn query_one<T>(self, query: sql.Query, params: List<sql.Value>) throws -> T? {
+  pub fn query_one<T>(self, query: sql.Query, params: List<sql.Value>) -> T? {
     let r = run(self.conn, query: query.value, params: params)
     let rows = sql.decode<T>(r.columns, rows: r.rows.take(1))
     return rows.first()
@@ -63,7 +63,7 @@ pub type Connection {
 
   // Runs `work` in a transaction: everything or nothing. An error inside
   // rolls the changes back and comes out of `transaction`.
-  pub fn transaction<R>(self, work: fn() throws -> R) throws -> R {
+  pub fn transaction<R>(self, work: fn() -> R) -> R {
     self.execute("begin", [])
     let result = try work() catch err {
       self.execute("rollback", [])
@@ -75,7 +75,7 @@ pub type Connection {
 }
 
 // Connects to "postgres://user:password@host:port/database?sslmode=prefer".
-pub fn connect(address: String) throws -> Connection {
+pub fn connect(address: String) -> Connection {
   let u = url.parse(address)
   if u.scheme != "postgres" and u.scheme != "postgresql" {
     throw Failure(message: "postgres: the address must start with postgres://")
@@ -122,7 +122,7 @@ pub fn connect(address: String) throws -> Connection {
 
 // ---- login
 
-fn authenticate(conn: io.Stream, user: String, password: String) throws {
+fn authenticate(conn: io.Stream, user: String, password: String) {
   var nonce = ""
   var first_bare = ""
   var salted = Bytes()
@@ -210,7 +210,7 @@ type Result {
   tag: String
 }
 
-fn run(conn: io.Stream, query: String, params: List<sql.Value>) throws -> Result {
+fn run(conn: io.Stream, query: String, params: List<sql.Value>) -> Result {
   var out = Bytes()
   // Parse: an unnamed statement, the server infers parameter types
   var parse = Bytes()
@@ -301,7 +301,7 @@ fn param_text(v: sql.Value) -> String? {
 }
 
 // String from the server -> a value, by the column's type
-fn column_value(data: Bytes, type_id: Int) throws -> sql.Value {
+fn column_value(data: Bytes, type_id: Int) -> sql.Value {
   let text = data.text()
   if type_id == 16 {
     return sql.Value.Boolean(value: text == "t")
@@ -363,7 +363,7 @@ fn message(kind: String, body: Bytes) -> Bytes {
   return out
 }
 
-fn read_message(conn: io.Stream) throws -> Message {
+fn read_message(conn: io.Stream) -> Message {
   let head = conn.read_exact(5)
   let length = head.int_at(1, size: 4) - 4
   let body = if length > 0 { conn.read_exact(length) } else { Bytes() }
@@ -405,7 +405,7 @@ type Reader {
   }
 
   // text up to a zero byte
-  mutating fn cstring() throws -> String {
+  mutating fn cstring() -> String {
     let rest = self.data.slice(from: self.pos, to: self.data.length)
     let end = rest.index_of(Bytes([0])) ?? rest.length
     self.pos += end + 1

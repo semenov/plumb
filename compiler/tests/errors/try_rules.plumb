@@ -1,4 +1,4 @@
-fn load(path: String) throws -> Int {
+fn load(path: String) -> Int {
   throw Failure(message: "no ${path}")
 }
 
@@ -6,17 +6,26 @@ fn twice(f: fn(Int) -> Int) -> Int {
   return f(f(1))
 }
 
-// a failing call in a function that isn't `throws`: one error for all
-fn total() -> Int {
+// `throws` isn't needed
+fn total() throws -> Int {
   return load("a") + load("b")
 }
 
-fn main() throws {
+// the language calls `to_string` itself: it can't fail
+type Price {
+  cents: Int
+
+  fn to_string(self) -> String {
+    return "${load("x")}"
+  }
+}
+
+fn main() {
   // `try` without `catch` is not needed
   let a = try load("x")
   // nothing here can fail
   let b = try (a + 1) catch err { 0 }
   // a failing lambda where one that can't fail is expected
   let c = twice(n => n + load("y"))
-  print("${a} ${b} ${c} ${total()}")
+  print("${a} ${b} ${c} ${total()} ${Price(cents: 1)}")
 }

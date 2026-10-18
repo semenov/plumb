@@ -1892,7 +1892,9 @@ impl<'a> Lowerer<'a> {
         let mut stmts = vec![];
         let term;
         let blocks_extra;
-        if ft.throws {
+        // the function's own convention (a value's type may say it can fail
+        // when the function itself can't)
+        if ft.throws && self.prog.fns[id].throws {
             let dst = if ft.ret == Ty::Unit { None } else { Some(func.locals.len()) };
             if dst.is_some() {
                 func.locals.push(mir::Local { ty: ft.ret.clone(), name: "r".into(), self_ptr: false });

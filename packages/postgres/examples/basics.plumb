@@ -8,7 +8,7 @@ type User {
   score: Float?
 }
 
-fn main() throws {
+fn main() {
   with db = postgres.connect("postgres://plumb:secret@localhost:5432/plumb") {
     db.execute("drop table if exists users", [])
     db.execute("create table users (id serial primary key, name text not null, age int not null, active bool, score float8)", [])

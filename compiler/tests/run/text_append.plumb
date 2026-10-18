@@ -17,7 +17,7 @@ fn build(n: Int) -> String {
   return out
 }
 
-fn main() throws {
+fn main() {
   var out = ""
   for i in 0..<400000 {
     out = "${out}x"

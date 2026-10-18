@@ -74,7 +74,7 @@ fn failure(status: Int, message: String) -> http.Response {
   return http.json(status, ApiError(error: message))
 }
 
-fn create_user(req: http.Request, conn: db.Connection) throws -> http.Response {
+fn create_user(req: http.Request, conn: db.Connection) -> http.Response {
   let input = try json.decode<NewUser>(req.text()) catch err {
     return failure(400, message: err.message())
   }
@@ -90,7 +90,7 @@ fn create_user(req: http.Request, conn: db.Connection) throws -> http.Response {
   return http.json(201, User(id: id, name: input.name, email: input.email))
 }
 
-fn login(req: http.Request, conn: db.Connection) throws -> http.Response {
+fn login(req: http.Request, conn: db.Connection) -> http.Response {
   let input = try json.decode<Login>(req.text()) catch err {
     return failure(400, message: err.message())
   }
@@ -101,7 +101,7 @@ fn login(req: http.Request, conn: db.Connection) throws -> http.Response {
   return http.json(200, Token(token: sign(users[0].id), user_id: users[0].id))
 }
 
-fn list_notes(req: http.Request, conn: db.Connection) throws -> http.Response {
+fn list_notes(req: http.Request, conn: db.Connection) -> http.Response {
   let user = user_of(req) ?? 0
   if user == 0 {
     return failure(401, message: "log in first")
@@ -112,7 +112,7 @@ fn list_notes(req: http.Request, conn: db.Connection) throws -> http.Response {
   return http.json(200, notes)
 }
 
-fn get_note(req: http.Request, conn: db.Connection) throws -> http.Response {
+fn get_note(req: http.Request, conn: db.Connection) -> http.Response {
   let user = user_of(req) ?? 0
   if user == 0 {
     return failure(401, message: "log in first")
@@ -127,7 +127,7 @@ fn get_note(req: http.Request, conn: db.Connection) throws -> http.Response {
   return http.json(200, notes[0])
 }
 
-fn create_note(req: http.Request, conn: db.Connection) throws -> http.Response {
+fn create_note(req: http.Request, conn: db.Connection) -> http.Response {
   let user = user_of(req) ?? 0
   if user == 0 {
     return failure(401, message: "log in first")
@@ -146,7 +146,7 @@ fn create_note(req: http.Request, conn: db.Connection) throws -> http.Response {
   return http.json(201, Note(id: id, user_id: user, title: input.title, body: input.body, created_at: now))
 }
 
-fn main() throws {
+fn main() {
   let port = (env.get("PORT") ?? "8300").to_int()
   let path = env.get("DB") ?? "notes.db"
   with conn = db.open(path) {

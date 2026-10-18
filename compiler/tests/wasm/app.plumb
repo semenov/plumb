@@ -14,12 +14,12 @@ type Input {
   fail: Bool = false
 }
 
-fn count(conn: db.Connection) throws -> Int {
+fn count(conn: db.Connection) -> Int {
   let rows = conn.query<Note>("select id, text from notes", [])
   return rows.length
 }
 
-fn add_two(req: http.Request, conn: db.Connection) throws -> http.Response {
+fn add_two(req: http.Request, conn: db.Connection) -> http.Response {
   let input = json.decode<Input>(req.text())
   let before = count(conn)
   try conn.transaction(() => {
@@ -35,7 +35,7 @@ fn add_two(req: http.Request, conn: db.Connection) throws -> http.Response {
   return http.json(201, {"before": "${before}", "after": "${count(conn)}"})
 }
 
-fn main() throws {
+fn main() {
   with conn = db.open("notes") {
     var router = http.Router()
     router.post("/edge/two", req => add_two(req, conn: conn))

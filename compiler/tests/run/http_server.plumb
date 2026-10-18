@@ -15,20 +15,20 @@ type NewNote {
 }
 
 // the state every request shares is in the database
-fn open_notes() throws -> db.Connection {
+fn open_notes() -> db.Connection {
   with conn = db.open(":memory:") {
     conn.execute("create table notes (id integer primary key, title text not null, text text not null)", [])
     return conn
   }
 }
 
-fn create(conn: db.Connection, req: http.Request) throws -> http.Response {
+fn create(conn: db.Connection, req: http.Request) -> http.Response {
   let input = json.decode<NewNote>(req.text())
   let id = conn.insert("insert into notes (title, text) values (?, ?)", [input.title, input.text])
   return http.json(201, Note(id: id, title: input.title, text: input.text))
 }
 
-fn get(conn: db.Connection, req: http.Request) throws -> http.Response {
+fn get(conn: db.Connection, req: http.Request) -> http.Response {
   let id = (req.param("id") ?? "").to_int()
   let found = conn.query<Note>("select id, title, text from notes where id = ?", [id])
   if found.first() is some(note) {
@@ -70,7 +70,7 @@ test "created notes can be read back" {
   }
 }
 
-fn main() throws {
+fn main() {
   with conn = open_notes() {
     http.serve(router(conn), port: 18080)
   }

@@ -2,7 +2,7 @@
 // another terminal: redis-cli publish news "story 1"
 import redis
 
-fn main() throws {
+fn main() {
   with sub = redis.subscribe("localhost:6379", channels: ["news"]) {
     for _ in 0..<3 {
       let m = sub.receive()

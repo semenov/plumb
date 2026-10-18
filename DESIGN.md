@@ -140,7 +140,7 @@ Changing a value in place is done by a `mutating` method on your own type:
   code that runs can't be seen from the line. Swapping behavior hides it
   whatever the language does, so there is one way, made of what the
   language already has: a record of functions (`type Mailer { send:
-  fn(String) throws }`, `Mailer(send: to => ...)`, `mailer.send(to)`), as
+  fn(String) }`, `Mailer(send: to => ...)`, `mailer.send(to)`), as
   in Gleam and Elm. `Error` is the language's own interface:
   `type NotFound implements Error { ... }`.
 - **No new types over other types, and no aliases.** `type UserId = Int`
@@ -217,8 +217,8 @@ removed it). What stays an error is what is always a mistake:
   them.
 - Lambdas are `x => expr` or an indented block. They capture values by copy.
   Changing a captured `var` is an error.
-- `throws` passes through lambdas: `users.map(u => load(u))`.
-  Higher-order functions declare this once in the standard library.
+- A lambda can fail like any function: `users.map(u => load(u))` fails
+  when `load` does.
 
 ### Modules and packages
 
@@ -289,12 +289,30 @@ removed it). What stays an error is what is always a mistake:
   `a.to_float() / b.to_float()`.
 - A number literal takes the expected type: `let price: Decimal = 19.99`.
 
-### Errors: checked, untyped `throws`
+### Errors: any function can fail
 
-- A function that can fail says `throws` (without a list of types). Inside
-  a `throws` function, an error from a call goes up to the caller by
-  itself: the call has nothing in front of it. In a function that isn't
-  `throws`, a call that can fail is a compile error until it's handled.
+- **No `throws`** (Vlad, 2026-10-18). An error goes up to the caller by
+  itself, from any function, up to `main` (which prints it and exits with
+  1) or the server (a 500); `try ... catch` handles it where it matters.
+  `throws` was a function color: in servers and CLIs nearly every function
+  touches the database, the network or a file, so the mark was on almost
+  every signature and said little, one function starting to fail deep down
+  changed every signature above it, and it reached into function types
+  (`fn(Request) throws -> Response`, `rethrows`). Java's checked
+  exceptions, dropped by C# and Kotlin, are the same lesson.
+- **The compiler still knows** which functions can fail: it finds it from
+  their bodies, repeating the check until nothing new is found (main.rs).
+  A function that can't fail is compiled as a plain call, so pure code is
+  as fast as before (n-body was 2.4x slower with every function treated
+  as failing). The editor is to mark the calls that can (TODO).
+- A function value from outside (a parameter `f: fn(Int) -> Int`) may
+  fail; a lambda fails when its body can.
+- Two methods the language calls itself can't fail: an error's
+  `message()` and a type's `to_string()` (used by `"${x}"`); a failing
+  call inside them must be handled there.
+- The standard library still marks `throws` and `rethrows` in its own
+  signatures (so `xs.map(f)` with an `f` that can't fail stays a plain
+  call), and `plumb doc` shows which of its calls can fail.
 - `Error` is an interface (`fn message(self) -> String`) that any record can
   implement. Handling checks the type: `if err is NotFound`.
 - **`try` only handles, and always comes with `catch`.** A reader from
@@ -304,10 +322,9 @@ removed it). What stays an error is what is always a mistake:
   `try`"), and so is `try ... catch` over an expression where nothing can
   fail. `try ... catch` covers every call between them: in
   `try encoding.from_hex(t).text() catch err { "" }` both calls are handled.
-- What's given up: the line that can fail isn't marked. The signature
-  still says `throws`, the compiler knows every such call, and the
-  editor is to mark them (TODO) (Vlad's choice B, 2026-10-18; Swift and Rust mark
-  each call, Python, Kotlin and C# don't).
+- What's given up: the line that can fail isn't marked (Vlad's choice B,
+  2026-10-18; Swift and Rust mark each call, Python, Kotlin and C#
+  don't).
 - Two forms only:
 
   ```
@@ -322,9 +339,8 @@ removed it). What stays an error is what is always a mistake:
   The `catch` block ends with a value, or with `return`, `break`, `continue`
   or `throw`. The same applies to `match` arms and the right side of
   `??`: `let user = users[id] ?? throw NotFound(id: id)`.
-- An implementation may declare less than its interface: a method that never
-  fails doesn't have to be `throws`. Nothing is swallowed silently. `cause` gives a chain of context
-  for logs.
+- Nothing is swallowed silently. `cause` gives a chain of context for
+  logs.
 
 ### Bugs: stop at the task boundary
 
@@ -453,7 +469,7 @@ removed it). What stays an error is what is always a mistake:
 - **Static programs:** `plumb build --static` (Linux) links everything into
   one file that runs anywhere, like Go. On macOS the system libraries are
   always present, so it isn't needed.
-- **HTTP server:** a handler is `fn(Request) throws -> Response`. An error or
+- **HTTP server:** a handler is `fn(Request) -> Response`. An error or
   a bug becomes a 500. Handlers can be tested without a network.
 - **Third-party packages** work like Go's (see Modules and packages).
 
@@ -509,10 +525,9 @@ syntax slips in 40 files), so braces stay for the reasons below.
   A reader can't understand them without knowing the rule, whatever the
   keyword (`var`, `mut`, `inout`). Rust's `&mut` also suggests references and
   borrowing, which we don't have.
-- **`io` marker in signatures.** It's a second function color. Most of its
-  value is already covered by `throws`, and in a backend it would be on most
-  functions, so the signal would disappear. Tooling can infer purity if
-  needed.
+- **`io` marker in signatures.** A function color, and in a backend it
+  would be on most functions, so the signal would disappear (the same
+  reason `throws` went). Tooling can infer purity if needed.
 
 ## Compiler (`compiler/`)
 

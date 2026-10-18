@@ -1,7 +1,7 @@
 import http
 import time
 
-fn main() throws {
+fn main() {
   let t = time.now()
   with res = http.open(http.ClientRequest(url: "http://127.0.0.1:8099/", method: "HEAD", timeout: 3)) {
     print("HEAD status ${res.status()} after ${t.elapsed().seconds()} len ${res.header("content-length") ?? "-"}")

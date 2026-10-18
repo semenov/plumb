@@ -36,7 +36,7 @@ pub type Client {
   timeout: time.Duration = time.seconds(300)
 
   // One answer.
-  pub fn chat(self, chat: Chat) throws -> Reply {
+  pub fn chat(self, chat: Chat) -> Reply {
     let body = request_json(chat, stream: false, schema: none)
     let res = self.post("/chat/completions", body: body)
     let parsed = json.decode<ChatResponse>(res.text())
@@ -49,13 +49,13 @@ pub type Client {
   }
 
   // The shortest way: one question, the text of the answer.
-  pub fn ask(self, model: String, prompt: String) throws -> String {
+  pub fn ask(self, model: String, prompt: String) -> String {
     return self.chat(Chat(model: model, messages: [user(prompt)])).text
   }
 
   // An answer of type T: the model is given T's JSON Schema and must
   // follow it (structured outputs); the answer is decoded into T.
-  pub fn object<T>(self, chat: Chat) throws -> T {
+  pub fn object<T>(self, chat: Chat) -> T {
     let body = request_json(chat, stream: false, schema: json.schema<T>())
     let res = self.post("/chat/completions", body: body)
     let parsed = json.decode<ChatResponse>(res.text())
@@ -69,7 +69,7 @@ pub type Client {
   // Chats until the model answers without calling tools: each tool call is
   // run and its result sent back. An error in a tool goes to the model as
   // text, so it can react. At most `max_steps` answers.
-  pub fn run(self, chat: Chat, max_steps: Int) throws -> Reply {
+  pub fn run(self, chat: Chat, max_steps: Int) -> Reply {
     var current = chat
     for _ in 0..<max_steps {
       let reply = self.chat(current)
@@ -86,7 +86,7 @@ pub type Client {
   }
 
   // The answer's text as it's written. Get it with `with s = ai.stream(chat)`.
-  pub fn stream(self, chat: Chat) throws -> TextStream {
+  pub fn stream(self, chat: Chat) -> TextStream {
     let body = request_json(chat, stream: true, schema: none)
     with s = TextStream(response: http.open(self.request("/chat/completions", body: body))) {
       if s.response.status() >= 400 {
@@ -97,7 +97,7 @@ pub type Client {
   }
 
   // Embeddings: a vector of numbers per input text.
-  pub fn embed(self, model: String, inputs: List<String>) throws -> List<List<Float>> {
+  pub fn embed(self, model: String, inputs: List<String>) -> List<List<Float>> {
     let body = json.Value.Object(fields: {"model": text_value(model), "input": json.Value.Array(items: inputs.map(t => text_value(t)))})
     let res = self.post("/embeddings", body: body)
     let parsed = json.decode<EmbeddingResponse>(res.text())
@@ -113,7 +113,7 @@ pub type Client {
     return http.ClientRequest(url: "${self.base_url}${path}", method: "POST", headers: headers, body: json.encode(body).bytes(), timeout: self.timeout)
   }
 
-  fn post(self, path: String, body: json.Value) throws -> http.Response {
+  fn post(self, path: String, body: json.Value) -> http.Response {
     let res = http.send(self.request(path, body: body))
     if res.status >= 400 {
       throw api_error(res.status, body: res.text())
@@ -137,7 +137,7 @@ pub fn ollama() -> Client {
 
 // From the environment: LLM_BASE_URL (+ LLM_API_KEY), or OPENROUTER_API_KEY,
 // or OPENAI_API_KEY.
-pub fn from_env() throws -> Client {
+pub fn from_env() -> Client {
   if env.get("LLM_BASE_URL") is some(base) {
     return Client(base_url: base, api_key: env.get("LLM_API_KEY") ?? "")
   }
@@ -214,13 +214,13 @@ pub type Tool {
   description: String
   // JSON Schema of the arguments
   schema: String
-  handler: fn(String) throws -> String
+  handler: fn(String) -> String
 }
 
 // A tool whose arguments are an `A` record: the model sees A's JSON Schema;
 // its arguments are decoded into an A for `handler`, whose text goes back
 // to the model.
-pub fn tool<A>(name: String, description: String, handler: fn(A) throws -> String) -> Tool {
+pub fn tool<A>(name: String, description: String, handler: fn(A) -> String) -> Tool {
   return Tool(name: name, description: description, schema: json.schema<A>(), handler: args => handler(json.decode<A>(args)))
 }
 
@@ -229,7 +229,7 @@ pub type TextStream {
   response: http.ResponseStream
 
   // The next piece of text; none at the end.
-  pub fn next(self) throws -> String? {
+  pub fn next(self) -> String? {
     while self.response.read_line() is some(line) {
       if not line.starts_with("data:") {
         continue
@@ -250,7 +250,7 @@ pub type TextStream {
     return none
   }
 
-  pub fn close(self) throws {
+  pub fn close(self) {
     self.response.close()
   }
 }
@@ -373,7 +373,7 @@ fn parse_schema(s: String) -> json.Value {
   }
 }
 
-fn call_tool(tools: List<Tool>, call: ToolCall) throws -> String {
+fn call_tool(tools: List<Tool>, call: ToolCall) -> String {
   let t = tools.find(t => t.name == call.name) ?? throw Failure(message: "llm: the model called an unknown tool `${call.name}`")
   let handler = t.handler
   return try handler(call.arguments) catch err {

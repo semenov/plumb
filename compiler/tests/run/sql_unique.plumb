@@ -3,7 +3,7 @@
 import db
 import sql
 
-fn main() throws {
+fn main() {
   with conn = db.open(":memory:") {
     conn.execute("create table users (id integer primary key, email text unique)", [])
     conn.insert("insert into users (email) values (?)", ["a@b.c"])

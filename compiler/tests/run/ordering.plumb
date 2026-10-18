@@ -7,7 +7,7 @@ type User {
   name: String
 }
 
-fn main() throws {
+fn main() {
   let a = time.millis(5)
   let b = time.seconds(1)
   print("${a < b} ${b < a} ${[b, a].sorted()}")

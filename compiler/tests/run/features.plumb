@@ -61,7 +61,7 @@ type Point {
   y: Int
 }
 
-fn parse_all(texts: List<String>) throws -> List<Int> {
+fn parse_all(texts: List<String>) -> List<Int> {
   return texts.map(t => t.to_int())
 }
 

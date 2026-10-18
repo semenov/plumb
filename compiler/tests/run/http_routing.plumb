@@ -11,7 +11,7 @@ fn show(res: http.Response) -> String {
   return "${res.status} ${http.status_text(res.status)} [${body}] allow=${allow}"
 }
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/echo/:p", req => http.text(200, "p=${req.param("p") ?? ""} raw=${req.raw_path}"))
   router.get("/c+d", req => http.text(200, "plus"))

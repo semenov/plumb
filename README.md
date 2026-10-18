@@ -22,12 +22,12 @@ type NewNote {
   title: String
 }
 
-fn list_notes(conn: db.Connection) throws -> http.Response {
+fn list_notes(conn: db.Connection) -> http.Response {
   let notes = conn.query<Note>("select id, title, done from notes order by id", [])
   return http.json(200, notes)
 }
 
-fn add_note(conn: db.Connection, req: http.Request) throws -> http.Response {
+fn add_note(conn: db.Connection, req: http.Request) -> http.Response {
   let input = json.decode<NewNote>(req.text())
   if input.title.trim().is_empty() {
     return http.text(400, "the title is empty")
@@ -36,7 +36,7 @@ fn add_note(conn: db.Connection, req: http.Request) throws -> http.Response {
   return http.json(201, Note(id: conn.last_id(), title: input.title))
 }
 
-fn main() throws {
+fn main() {
   with conn = db.open("notes.db") {
     conn.execute("create table if not exists notes (id integer primary key, title text, done bool default false)", [])
     var router = http.Router()
@@ -61,9 +61,9 @@ here:
 - **The compiler is the reviewer.** Every error names the fix. Dropping the
   result of `xs.sorted()`, building SQL from strings, forgetting to close
   a file: all are compile errors.
-- **What matters is visible.** A function that can fail says `throws`; an
-  error goes up by itself, and `try ... catch` handles it where it's
-  written (`try` never stands alone). A function never changes its
+- **What matters is visible.** An error goes up by itself, from any
+  function, and `try ... catch` handles it where it's written (`try` never
+  stands alone). A function never changes its
   arguments: `products = restock(products, name: "Widget", amount: 3)`.
 - **Values, not references.** Records, enums and lists are values with
   copy-on-write. There is no `null`, no inheritance and no shared mutable
@@ -92,8 +92,8 @@ fn area(s: Shape) -> Float {
   }
 }
 
-// Errors: `throws` passes them up, `try ... catch` handles them
-fn load(path: String) throws -> Config {
+// Errors go up by themselves; `try ... catch` handles them
+fn load(path: String) -> Config {
   let text = try files.read(path) catch err {
     log.warn("no config, using defaults: ${err.message()}")
     return Config()
@@ -360,10 +360,8 @@ in a language meant to be simple and fast:
   (`a.plus(b)`), not `+`. Built-in number types (`Int`, `Float`,
   `Decimal`) have operators; time types have `<` but not `+`.
 - **Names follow what things are.** `xs.length` is the number of items;
-  `xs.count(x => x > 0)` counts the ones that pass a test. `task.wait()`
-  can fail even for a task that can't, because waiting can be
-  cancelled (Ctrl-C), so it needs a `throws` function or a `catch`; `channel.receive()` for the same reason, and it gives
-  `none` once the channel is closed and empty.
+  `xs.count(x => x > 0)` counts the ones that pass a test. `sleep` and
+  every other wait can fail, because waiting can be cancelled (Ctrl-C).
 - **`Int` and `Float` don't mix.** `total.to_float() / count.to_float()`
   reads noisier than `total / count`, but no value changes type silently,
   and `/` on two `Int`s (is that whole-number division?) doesn't exist:

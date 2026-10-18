@@ -1,12 +1,12 @@
 import http
 import time
 
-fn slow(i: Int) throws -> Int {
+fn slow(i: Int) -> Int {
   let r = http.get("http://127.0.0.1:8099/slow=1")
   return r.status
 }
 
-fn main() throws {
+fn main() {
   let t = time.now()
   var tasks: List<Task<Int>> = []
   for i in 0..<10 {

@@ -717,13 +717,24 @@ fn analyze(path: &str, sources: &mut Sources, overrides: &HashMap<PathBuf, Strin
     }
     let mut mods: Vec<(String, ast::Module, bool)> = loaded.into_iter().map(|l| (l.key, l.module, l.privileged)).collect();
     mods.push((entry_key, user, false));
-    let mut c = check::Checker::new();
-    c.source_texts = sources.files.iter().map(|f| f.text.clone()).collect();
-    if record {
-        c.record = Some(vec![]);
+    // Which of the program's functions can fail is found from their bodies:
+    // each pass starts from what the one before found, and the pass that
+    // finds nothing new is the result (everything in it agrees). A function
+    // only goes from "can't fail" to "can", so this ends.
+    let mut can_fail = std::collections::HashMap::new();
+    loop {
+        let mut c = check::Checker::new();
+        c.source_texts = sources.files.iter().map(|f| f.text.clone()).collect();
+        if record {
+            c.record = Some(vec![]);
+        }
+        c.can_fail = can_fail;
+        c.check_program(&mods);
+        if !c.can_fail_changed {
+            return Ok((c, uf));
+        }
+        can_fail = std::mem::take(&mut c.can_fail);
     }
-    c.check_program(&mods);
-    Ok((c, uf))
 }
 
 // `plumb init`, `plumb add`, `plumb fetch`, `plumb update`

@@ -2,7 +2,7 @@
 import redis
 import time
 
-fn main() throws {
+fn main() {
   with db = redis.connect("localhost:6379") {
     let start = time.now()
     for i in 0..<20000 {

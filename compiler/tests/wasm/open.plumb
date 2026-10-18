@@ -1,6 +1,6 @@
 import http
 
-fn main() throws {
+fn main() {
   with res = http.open(http.ClientRequest(url: "https://example.com/")) {
     print("${res.status()}")
   }

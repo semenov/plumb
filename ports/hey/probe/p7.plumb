@@ -1,6 +1,6 @@
 import time
 
-fn main() throws {
+fn main() {
   let start = time.now()
   for i in 0..<10 {
     time.sleep(time.millis(100))

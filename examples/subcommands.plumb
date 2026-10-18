@@ -11,7 +11,7 @@ type ListOptions {
   limit: Int = 10
 }
 
-fn main() throws {
+fn main() {
   let args = process.args()
   match args.first() ?? "" {
     "add" => {

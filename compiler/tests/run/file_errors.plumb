@@ -14,7 +14,7 @@ fn kind(err: Error) -> String {
   return "other"
 }
 
-fn main() throws {
+fn main() {
   with dir = files.temp_dir() {
     let missing = "${dir.path}/missing.txt"
     for p in [missing, dir.path] {

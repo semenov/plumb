@@ -9,7 +9,7 @@ type Claims {
   admin: Bool = false
 }
 
-fn main() throws {
+fn main() {
   let secret = "my secret"
   let token = jwt.sign(Claims(sub: "42", exp: time.unix_now() + 3600, admin: true), secret: secret)
   print("parts: ${token.split(".").length}")

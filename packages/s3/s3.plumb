@@ -23,13 +23,13 @@ pub type Client {
   access_key: String
   secret_key: String
 
-  pub fn put(self, bucket: String, key: String, data: Bytes, content_type: String) throws {
+  pub fn put(self, bucket: String, key: String, data: Bytes, content_type: String) {
     let res = self.call("PUT", path: "/${bucket}/${escape_path(key)}", query: {}, body: data, headers: {"content-type": content_type})
     check(res, what: "put ${bucket}/${key}")
   }
 
   // The object's data; none if there's no such key.
-  pub fn get(self, bucket: String, key: String) throws -> Bytes? {
+  pub fn get(self, bucket: String, key: String) -> Bytes? {
     let res = self.call("GET", path: "/${bucket}/${escape_path(key)}", query: {}, body: Bytes(), headers: {})
     if res.status == 404 {
       return none
@@ -39,13 +39,13 @@ pub type Client {
   }
 
   // Deleting a key that isn't there is fine.
-  pub fn delete(self, bucket: String, key: String) throws {
+  pub fn delete(self, bucket: String, key: String) {
     let res = self.call("DELETE", path: "/${bucket}/${escape_path(key)}", query: {}, body: Bytes(), headers: {})
     check(res, what: "delete ${bucket}/${key}")
   }
 
   // The keys starting with `prefix` ("" for all), all of them (page by page).
-  pub fn list(self, bucket: String, prefix: String) throws -> List<Object> {
+  pub fn list(self, bucket: String, prefix: String) -> List<Object> {
     var out: List<Object> = []
     var token = ""
     while true {
@@ -70,7 +70,7 @@ pub type Client {
     return out
   }
 
-  pub fn create_bucket(self, bucket: String) throws {
+  pub fn create_bucket(self, bucket: String) {
     let body = if self.region == "us-east-1" { "" } else { "<CreateBucketConfiguration><LocationConstraint>${self.region}</LocationConstraint></CreateBucketConfiguration>" }
     let res = self.call("PUT", path: "/${bucket}", query: {}, body: body.bytes(), headers: {})
     if res.status == 409 {
@@ -100,7 +100,7 @@ pub type Client {
     return "${self.endpoint}${path}?${canonical_query(query)}&X-Amz-Signature=${signature}"
   }
 
-  fn call(self, method: String, path: String, query: Map<String, String>, body: Bytes, headers: Map<String, String>) throws -> http.Response {
+  fn call(self, method: String, path: String, query: Map<String, String>, body: Bytes, headers: Map<String, String>) -> http.Response {
     let now = time.utc_now()
     let stamp = now.format("%Y%m%dT%H%M%SZ")
     let day = now.format("%Y%m%d")
@@ -151,7 +151,7 @@ pub fn aws(region: String, access_key: String, secret_key: String) -> Client {
   return Client(endpoint: "https://s3.${region}.amazonaws.com", region: region, access_key: access_key, secret_key: secret_key)
 }
 
-fn check(res: http.Response, what: String) throws {
+fn check(res: http.Response, what: String) {
   if res.status >= 300 {
     var detail = ""
     let doc = try xml.parse(res.text()) catch err {

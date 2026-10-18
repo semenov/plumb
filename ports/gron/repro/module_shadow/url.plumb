@@ -3,7 +3,7 @@
 // that the file name shadows the standard `url` module.
 import url
 
-pub fn host(u: String) throws -> String {
+pub fn host(u: String) -> String {
   return url.parse(u).host
 }
 

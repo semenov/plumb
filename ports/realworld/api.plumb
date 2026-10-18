@@ -74,7 +74,7 @@ pub fn reply<T>(status: Int, value: T) -> http.Response {
 }
 
 // The body as a T; anything unreadable is a 422 naming what's wrong.
-pub fn decode<T>(req: http.Request) throws -> T {
+pub fn decode<T>(req: http.Request) -> T {
   return try json.decode<T>(req.text()) catch err {
     throw invalid("body", problem: err.message())
   }
@@ -83,7 +83,7 @@ pub fn decode<T>(req: http.Request) throws -> T {
 // The fields inside the body's wrapper object: {"user": {...}} with
 // wrapper "user". For updates, where a field left out (keep the value)
 // differs from a field set to null (clear it).
-pub fn fields(req: http.Request, wrapper: String) throws -> Map<String, json.Value> {
+pub fn fields(req: http.Request, wrapper: String) -> Map<String, json.Value> {
   let doc = try json.parse(req.text()) catch err {
     throw invalid("body", problem: err.message())
   }
@@ -96,7 +96,7 @@ pub fn fields(req: http.Request, wrapper: String) throws -> Map<String, json.Val
 }
 
 // A text field that may not be null or empty.
-pub fn required_text(value: json.Value, field: String) throws -> String {
+pub fn required_text(value: json.Value, field: String) -> String {
   if value is json.Value.String(text) {
     if text.trim().is_empty() {
       throw blank(field)
@@ -110,7 +110,7 @@ pub fn required_text(value: json.Value, field: String) throws -> String {
 }
 
 // A text field that may be cleared: null and "" both give none.
-pub fn optional_text(value: json.Value, field: String) throws -> String? {
+pub fn optional_text(value: json.Value, field: String) -> String? {
   if value is json.Value.String(text) {
     return if text.is_empty() { none } else { text }
   }

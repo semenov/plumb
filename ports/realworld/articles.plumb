@@ -92,11 +92,11 @@ fn author(row: Row) -> profiles.Profile {
   return profiles.Profile(username: row.author_username, bio: row.author_bio, image: row.author_image, following: row.following)
 }
 
-fn tags(row: Row) throws -> List<String> {
+fn tags(row: Row) -> List<String> {
   return json.decode<List<String>>(row.tags)
 }
 
-fn full(row: Row) throws -> Article {
+fn full(row: Row) -> Article {
   return Article(
     slug: row.slug,
     title: row.title,
@@ -111,7 +111,7 @@ fn full(row: Row) throws -> Article {
   )
 }
 
-fn summary(row: Row) throws -> Summary {
+fn summary(row: Row) -> Summary {
   return Summary(
     slug: row.slug,
     title: row.title,
@@ -125,7 +125,7 @@ fn summary(row: Row) throws -> Summary {
   )
 }
 
-fn find(app: api.App, slug: String, viewer: Int) throws -> Row {
+fn find(app: api.App, slug: String, viewer: Int) -> Row {
   let found = app.conn.query<Row>(
     """
     select v.*,
@@ -138,7 +138,7 @@ fn find(app: api.App, slug: String, viewer: Int) throws -> Row {
   return found.first() ?? throw api.not_found("article")
 }
 
-fn answer(status: Int, app: api.App, slug: String, viewer: Int) throws -> http.Response {
+fn answer(status: Int, app: api.App, slug: String, viewer: Int) -> http.Response {
   return api.reply(status, ArticleBody(article: full(find(app, slug: slug, viewer: viewer))))
 }
 
@@ -153,7 +153,7 @@ type Filter {
   offset: Int = 0
 }
 
-fn number(req: http.Request, name: String, default: Int) throws -> Int {
+fn number(req: http.Request, name: String, default: Int) -> Int {
   let text = req.query(name) ?? ""
   if text.is_empty() {
     return default
@@ -167,7 +167,7 @@ fn number(req: http.Request, name: String, default: Int) throws -> Int {
   return n
 }
 
-fn list(app: api.App, filter: Filter, viewer: Int) throws -> http.Response {
+fn list(app: api.App, filter: Filter, viewer: Int) -> http.Response {
   let rows = page(app, filter: filter, viewer: viewer)
   var count = rows.first()?.total ?? 0
   if rows.is_empty() and filter.offset > 0 {
@@ -180,7 +180,7 @@ fn list(app: api.App, filter: Filter, viewer: Int) throws -> http.Response {
   return api.reply(200, ArticleList(articles: rows.map(r => summary(r)), articles_count: count))
 }
 
-fn page(app: api.App, filter: Filter, viewer: Int) throws -> List<Row> {
+fn page(app: api.App, filter: Filter, viewer: Int) -> List<Row> {
   return app.conn.query<Row>(
     """
     select v.*,
@@ -202,7 +202,7 @@ fn page(app: api.App, filter: Filter, viewer: Int) throws -> List<Row> {
 }
 
 // GET /api/articles?tag=&author=&favorited=&limit=&offset=
-pub fn get_list(req: http.Request, app: api.App) throws -> http.Response {
+pub fn get_list(req: http.Request, app: api.App) -> http.Response {
   let filter = Filter(
     author: req.query("author") ?? "",
     tag: req.query("tag") ?? "",
@@ -214,7 +214,7 @@ pub fn get_list(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // GET /api/articles/feed: articles by the authors the viewer follows.
-pub fn feed(req: http.Request, app: api.App) throws -> http.Response {
+pub fn feed(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   let filter = Filter(
     feed: true,
@@ -225,14 +225,14 @@ pub fn feed(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // GET /api/articles/:slug
-pub fn get(req: http.Request, app: api.App) throws -> http.Response {
+pub fn get(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.viewer(req, app) ?? 0
   return answer(200, app: app, slug: req.param("slug") ?? "", viewer: viewer)
 }
 
 // "How to Train Your Dragon!" -> "how-to-train-your-dragon", made unique
 // with a random ending when another article has it.
-fn make_slug(app: api.App, title: String, id: Int) throws -> String {
+fn make_slug(app: api.App, title: String, id: Int) -> String {
   let dashed = regex.compile("[^a-z0-9]+").replace(title.lower(), replacement: "-")
   var base = regex.compile("^-+|-+$").replace(dashed, replacement: "")
   if base.is_empty() {
@@ -249,7 +249,7 @@ fn clean_tags(tags: List<String>) -> List<String> {
   return tags.map(t => t.trim()).filter(t => not t.is_empty()).unique()
 }
 
-fn save_tags(app: api.App, article_id: Int, tags: List<String>) throws {
+fn save_tags(app: api.App, article_id: Int, tags: List<String>) {
   app.conn.execute("delete from article_tags where article_id = ?", [article_id])
   for tag in tags {
     app.conn.execute("insert into article_tags (article_id, tag) values (?, ?)", [article_id, tag])
@@ -257,7 +257,7 @@ fn save_tags(app: api.App, article_id: Int, tags: List<String>) throws {
 }
 
 // POST /api/articles
-pub fn create(req: http.Request, app: api.App) throws -> http.Response {
+pub fn create(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   let input = api.decode<NewArticleBody>(req).article
   if input.title.trim().is_empty() {
@@ -283,7 +283,7 @@ pub fn create(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // The article at :slug, if the viewer wrote it.
-fn own(req: http.Request, app: api.App, viewer: Int) throws -> Row {
+fn own(req: http.Request, app: api.App, viewer: Int) -> Row {
   let row = find(app, slug: req.param("slug") ?? "", viewer: viewer)
   if row.author_id != viewer {
     throw api.forbidden("article")
@@ -293,7 +293,7 @@ fn own(req: http.Request, app: api.App, viewer: Int) throws -> Row {
 
 // PUT /api/articles/:slug: only the fields given change; a new title
 // gives a new slug.
-pub fn update(req: http.Request, app: api.App) throws -> http.Response {
+pub fn update(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   let row = own(req, app: app, viewer: viewer)
   let fields = api.fields(req, wrapper: "article")
@@ -327,7 +327,7 @@ pub fn update(req: http.Request, app: api.App) throws -> http.Response {
   return answer(200, app: app, slug: slug, viewer: viewer)
 }
 
-fn tag_list(value: json.Value) throws -> List<String> {
+fn tag_list(value: json.Value) -> List<String> {
   if value is json.Value.Array(items) {
     var tags: List<String> = []
     for item in items {
@@ -343,7 +343,7 @@ fn tag_list(value: json.Value) throws -> List<String> {
 }
 
 // DELETE /api/articles/:slug
-pub fn delete(req: http.Request, app: api.App) throws -> http.Response {
+pub fn delete(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   let row = own(req, app: app, viewer: viewer)
   app.conn.execute("delete from articles where id = ?", [row.id])
@@ -351,7 +351,7 @@ pub fn delete(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // POST /api/articles/:slug/favorite
-pub fn favorite(req: http.Request, app: api.App) throws -> http.Response {
+pub fn favorite(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   let row = find(app, slug: req.param("slug") ?? "", viewer: viewer)
   app.conn.execute("insert or ignore into favorites (user_id, article_id) values (?, ?)", [viewer, row.id])
@@ -359,7 +359,7 @@ pub fn favorite(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // DELETE /api/articles/:slug/favorite
-pub fn unfavorite(req: http.Request, app: api.App) throws -> http.Response {
+pub fn unfavorite(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   let row = find(app, slug: req.param("slug") ?? "", viewer: viewer)
   app.conn.execute("delete from favorites where user_id = ? and article_id = ?", [viewer, row.id])
@@ -367,7 +367,7 @@ pub fn unfavorite(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // GET /api/tags: the most used first.
-pub fn tags_list(req: http.Request, app: api.App) throws -> http.Response {
+pub fn tags_list(req: http.Request, app: api.App) -> http.Response {
   let rows = app.conn.query<Tag>("select tag from article_tags group by tag order by count(*) desc, tag", [])
   return api.reply(200, TagList(tags: rows.map(r => r.tag)))
 }

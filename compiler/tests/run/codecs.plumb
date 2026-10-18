@@ -39,7 +39,7 @@ type Options {
   args: List<String> = []
 }
 
-fn main() throws {
+fn main() {
   let u = User(id: 1, name: "Ada \"Countess\"", role: Role.Admin, tags: ["math", "code"], address: Address(city: "London"), scores: {"chess": 3})
   let text = json.encode(u)
   print(text)

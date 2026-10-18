@@ -1,7 +1,7 @@
 import http
 import time
 
-fn main() throws {
+fn main() {
   let r = http.send(http.ClientRequest(url: "http://localhost:8095/echo", method: "POST", headers: {"Authorization": "Bearer abc"}, body: "hi".bytes()))
   print("${r.status} ${r.text()}")
   let start = time.now()

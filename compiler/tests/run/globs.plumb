@@ -5,7 +5,7 @@ fn short(root: String, found: List<String>) -> List<String> {
   return found.map(f => f.slice(from: root.length + 1, to: f.length))
 }
 
-fn main() throws {
+fn main() {
   let root = "/tmp/plumb-glob-test"
   files.delete_all(root)
   for f in ["src/a.plumb", "src/b.txt", "src/net/tcp.plumb", "src/net/deep/x.plumb", "logs/2026-01.log", "logs/2026-02.gz", "logs/2025-12.log"] {

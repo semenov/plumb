@@ -15,7 +15,7 @@ type Options {
   args: List<String> = []
 }
 
-fn main() throws {
+fn main() {
   let u = json.decode<User>("{\"userId\": 7, \"CreatedAt\": \"today\", \"is-admin\": true}")
   print("${u.user_id} ${u.created_at} ${u.is_admin}")
   print(json.encode_camel(u))

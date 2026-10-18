@@ -21,7 +21,7 @@ type User {
   tags: List<String>
 }
 
-fn main() throws {
+fn main() {
   let n = 300_000
   var rng = Rng(state: 2463534242)
   var users: List<User> = []

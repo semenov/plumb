@@ -5,7 +5,7 @@ import files
 import json
 import url
 
-fn main() throws {
+fn main() {
   // "caf" + Latin-1 é + " ok"
   let raw = Bytes([99, 97, 102, 233, 32, 111, 107])
   files.write_bytes("/tmp/plumb-utf8-input.txt", data: raw)

@@ -337,7 +337,7 @@ pub fn lex(line: String) -> List<token.Token> {
 // inside out. The errors come in the same order as Go's: those found on
 // the way down (numeric keys, unexpected tokens), then the value's, then
 // quoted keys' from the innermost out.
-pub fn ungron_tokens(ts: List<token.Token>) throws -> jsonraw.Value {
+pub fn ungron_tokens(ts: List<token.Token>) -> jsonraw.Value {
   if ts.is_empty() {
     throw Recoverable(msg: "empty input")
   }
@@ -418,7 +418,7 @@ enum Hole {
 // child isn't copied), then fills the holes on the way back up. Only one
 // child per level is walked down into; b from ungron_tokens never has more
 // (any other is merged with a call of its own).
-pub fn recursive_merge(a: jsonraw.Value, b: jsonraw.Value) throws -> jsonraw.Value {
+pub fn recursive_merge(a: jsonraw.Value, b: jsonraw.Value) -> jsonraw.Value {
   var holes: List<Hole> = []
   var x = a
   var y = b

@@ -3,7 +3,7 @@ import files
 import io
 import net
 
-fn session(conn: io.Stream) throws {
+fn session(conn: io.Stream) {
   conn.write_text("220 fake ESMTP\r\n")
   var log: List<String> = []
   while conn.read_line() is some(line) {
@@ -34,6 +34,6 @@ fn session(conn: io.Stream) throws {
   files.write("/tmp/sm2/commands.txt", log.join("\n"))
 }
 
-fn main() throws {
+fn main() {
   net.serve(2525, handler: conn => session(conn))
 }

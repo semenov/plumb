@@ -18,8 +18,7 @@ reasons behind the rules are in `DESIGN.md`.
 
 ## Files and programs
 
-- A file is a module. A program is a file with `fn main()` (or
-  `fn main() throws`). Run it: `plumb run app.plumb`. Tests: `plumb test` (the whole project).
+- A file is a module. A program is a file with `fn main()`. Run it: `plumb run app.plumb`. Tests: `plumb test` (the whole project).
 - `import json`, `import store.users` (the file `store/users.plumb` from the
   project root). Use names with the module prefix: `json.decode<T>(text)`,
   `users.find(id)`. No `from`, no `*`, no relative paths.
@@ -130,7 +129,7 @@ type Money {
 // an error in "${err}" is its message(); durations print as 1.5s, dates as ISO
 
 type Mailer {                  // behavior to swap (a fake in tests): a
-  send: fn(String) throws      // record of functions; there are no
+  send: fn(String)      // record of functions; there are no
 }                              // interfaces except `Error`
 let fake = Mailer(send: to => print("to ${to}"))
 fake.send("ada@example.com")
@@ -175,7 +174,7 @@ two places hold it; `if m.take(k) is some(v) { m[k] = grow(v) }` doesn't.
 ## Errors
 
 ```
-fn load(path: String) throws -> Config {          // can fail: `throws`
+fn load(path: String) -> Config {               // any function can fail:
   let text = files.read(path)                   // an error here goes up
   return json.decode<Config>(text)              // to the caller by itself
 }
@@ -190,9 +189,11 @@ let text = try files.read(path) catch err {     // or handle it here
   an error in its `cause` chain (`Failure(message:, cause: err)`, or your
   own error type's `cause: Error?` field) is a `NotFound`, and inside the
   `if`, `err` is that `NotFound`.
-- A failing call needs nothing in front of it: in a `throws` function
-  its error goes up by itself. In a function that isn't `throws` it's a
-  compile error: add `throws`, or handle the error with `try ... catch`.
+- Any function can fail, and nothing marks it: a failing call's error goes
+  up to the caller by itself, up to `main` (which prints it and exits
+  with 1) or the server (a 500). The compiler knows which calls can fail.
+  The one exception: an error's `message()` and a type's `to_string()`
+  can't fail (the language calls them itself); handle errors inside them.
 - `try` is only for handling, and always comes with `catch`:
   `try f() catch err { ... }`. Never `f() catch ...`, never `try f()` alone.
 - A `catch` block ends with a value, or with `return`, `throw`, `break` or
@@ -302,7 +303,7 @@ with conn = try postgres.connect(url) catch err {     // handle failure to open
   returned): it would find the resource closed.
 - A record with a `close(self)` method is a resource too. Its fields may
   take other resources: `Client(conn: net.connect(host, port))`.
-- A function may return a new resource (`fn open_db() throws -> db.Connection`).
+- A function may return a new resource (`fn open_db() -> db.Connection`).
   To set it up first and close it only on failure, return the `with`
   variable itself:
 
@@ -397,7 +398,7 @@ a request or job: `let l = log.with_fields({"request": "${id}"})`, then
 ## HTTP
 
 ```
-fn get_note(req: http.Request) throws -> http.Response {
+fn get_note(req: http.Request) -> http.Response {
   let id = (req.param("id") ?? "").to_int()
   return http.json(200, load_note(id))
 }
@@ -459,7 +460,7 @@ handlers through lambdas (there are no global variables, and on
 wasm-server nothing stays in memory between requests):
 
 ```
-fn add_todo(req: http.Request, conn: db.Connection) throws -> http.Response {
+fn add_todo(req: http.Request, conn: db.Connection) -> http.Response {
   let input = json.decode<NewTodo>(req.text())
   let id = conn.insert("insert into todos (title) values (?)", [input.title])
   return http.json(201, Todo(id: id, title: input.title))
@@ -471,7 +472,7 @@ fn make_router(conn: db.Connection) -> http.Router {
   return router
 }
 
-fn main() throws {
+fn main() {
   with conn = db.open("main") {
     http.serve(make_router(conn), port: 8080)
   }
@@ -591,7 +592,7 @@ path (`/admin/style.css` is `style.css`).
   ```
   import db
 
-  fn before() throws {          // before the new version goes live; a failure refuses the deploy
+  fn before() {          // before the new version goes live; a failure refuses the deploy
     with conn = db.open("main") {
       conn.transaction(() => {       // all or nothing
         conn.execute("alter table notes add column tag text", [])
@@ -599,7 +600,7 @@ path (`/admin/style.css` is `style.css`).
     }
   }
 
-  fn after() throws {           // after it's live, in the background: backfills, moving files
+  fn after() {           // after it's live, in the background: backfills, moving files
     with conn = db.open("main") {
       conn.execute("update notes set tag = 'old' where tag is null", [])
     }
@@ -634,7 +635,7 @@ answers that one request and returns. So the same file also runs as an
 ordinary server:
 
 ```
-fn main() throws {
+fn main() {
   with conn = db.open("notes") {            // a database granted to the app
     var router = http.Router()
     router.get("/notes", req => http.json(200, conn.query<Note>("select id, text from notes", [])))
@@ -681,7 +682,7 @@ fn main() throws {
 | `?.` can't change the value inside an optional | `var v = x ?? ...`, change `v`, then `x = v` |
 | `?.` reaches into an optional value, and this is a `T` | use `.` |
 | `catch` needs `try` before the call | `try f(x) catch err { ... }` |
-| this can fail, and the function isn't declared `throws` | `fn f() throws -> T`, or `try f(x) catch err { ... }` |
+| `throws` isn't needed | remove it: any function can fail |
 | `try` goes with `catch` | remove `try` |
 | `sorted` returns a new value and changes nothing | `xs.sort()`, or `xs = xs.sorted()` |
 | `f` has 3 or more parameters: name every argument after the first | `f(a, b: 1, c: 2)` |

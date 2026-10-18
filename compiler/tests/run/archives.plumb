@@ -3,7 +3,7 @@ import files
 import path
 import zlib
 
-fn main() throws {
+fn main() {
   let root = "/tmp/plumb-archive-test"
   files.delete_all(root)
   let long = "long".repeat(30)

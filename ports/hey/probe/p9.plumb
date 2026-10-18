@@ -1,6 +1,6 @@
 import time
 
-fn main() throws {
+fn main() {
   for ms in [1, 10, 50, 100] {
     let t = time.now()
     for i in 0..<5 {

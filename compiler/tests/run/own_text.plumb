@@ -38,7 +38,7 @@ type Oops implements Error {
   }
 }
 
-fn fail() throws {
+fn fail() {
   throw Oops(what: "x")
 }
 

@@ -8,7 +8,7 @@ fn depth(n: Int) -> Int {
   return 1 + depth(n - 1)
 }
 
-fn main() throws {
+fn main() {
   let t = spawn depth(process.args()[0].to_int())
   print("${t.wait()}")
 }

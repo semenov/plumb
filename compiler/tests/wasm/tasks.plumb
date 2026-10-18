@@ -1,6 +1,6 @@
 import http
 
-fn main() throws {
+fn main() {
   let t = spawn http.get("https://example.com")
   t.wait()
 }

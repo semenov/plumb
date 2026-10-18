@@ -3,7 +3,7 @@ type User {
   age: Int
 }
 
-fn load(path: String) throws -> User {
+fn load(path: String) -> User {
   throw Failure(message: "nope")
 }
 

@@ -7,7 +7,7 @@
 
 import http
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/articles/:slug", req => http.text(200, "article ${req.param("slug") ?? ""}"))
   router.get("/articles/feed", req => http.text(200, "feed"))

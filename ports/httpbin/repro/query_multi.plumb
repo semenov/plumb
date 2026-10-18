@@ -4,7 +4,7 @@
 import http
 import json
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/", req => http.text(200, "${json.encode(req.query_params)}\n"))
   http.serve(router, port: 18104)

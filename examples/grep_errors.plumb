@@ -1,6 +1,6 @@
 import io
 
-fn main() throws {
+fn main() {
   var count = 0
   while io.read_line() is some(line) {
     if line.contains("ERROR") {

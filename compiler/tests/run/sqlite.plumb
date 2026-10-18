@@ -8,12 +8,12 @@ type User {
   email: String?
 }
 
-fn add(conn: db.Connection, name: String, age: Int) throws -> Int {
+fn add(conn: db.Connection, name: String, age: Int) -> Int {
   conn.execute("insert into users (name, age, active) values (?, ?, ?)", [name, age, age < 60])
   return conn.last_id()
 }
 
-fn main() throws {
+fn main() {
   with conn = db.open(":memory:") {
     conn.execute("create table users (id integer primary key, name text not null, age integer, active integer, email text)", [])
     let ada = add(conn, name: "Ada", age: 36)

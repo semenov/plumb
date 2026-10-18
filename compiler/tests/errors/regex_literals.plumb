@@ -2,7 +2,7 @@
 // would refuse is an error at the literal (the .err file).
 import regex
 
-fn main() throws {
+fn main() {
   regex.compile("(\\d+)-(\\d+)")
   regex.compile("<(.+?)>")
   regex.compile("(?:ab)+")

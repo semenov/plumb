@@ -1,6 +1,6 @@
 import http
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/hello", req => http.text(200, "hello"))
   http.serve(router, port: 8200)

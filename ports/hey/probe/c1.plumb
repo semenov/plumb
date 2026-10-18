@@ -7,7 +7,7 @@ type Options {
   args: List<Text> = []
 }
 
-fn main() throws {
+fn main() {
   let o = cli.decode<Options>()
   print("${o.n} ${o.h} ${o.disable_keepalive} ${o.args}")
 }

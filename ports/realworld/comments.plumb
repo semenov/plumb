@@ -51,14 +51,14 @@ fn comment(row: Row) -> Comment {
 }
 
 // The id of the article at :slug.
-fn article(req: http.Request, app: api.App) throws -> Int {
+fn article(req: http.Request, app: api.App) -> Int {
   let found = app.conn.query<Id>("select id from articles where slug = ?", [req.param("slug") ?? ""])
   return (found.first() ?? throw api.not_found("article")).id
 }
 
 // The comments of an article (or the one with `id`, when it isn't 0),
 // oldest first.
-fn find(app: api.App, article_id: Int, id: Int, viewer: Int) throws -> List<Row> {
+fn find(app: api.App, article_id: Int, id: Int, viewer: Int) -> List<Row> {
   return app.conn.query<Row>(
     """
     select c.id, c.body, c.created_at, c.updated_at, c.author_id,
@@ -73,7 +73,7 @@ fn find(app: api.App, article_id: Int, id: Int, viewer: Int) throws -> List<Row>
 }
 
 // POST /api/articles/:slug/comments
-pub fn add(req: http.Request, app: api.App) throws -> http.Response {
+pub fn add(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   let article_id = article(req, app: app)
   let input = api.decode<NewCommentBody>(req).comment
@@ -90,7 +90,7 @@ pub fn add(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // GET /api/articles/:slug/comments
-pub fn list(req: http.Request, app: api.App) throws -> http.Response {
+pub fn list(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.viewer(req, app) ?? 0
   let article_id = article(req, app: app)
   let rows = find(app, article_id: article_id, id: 0, viewer: viewer)
@@ -98,7 +98,7 @@ pub fn list(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // DELETE /api/articles/:slug/comments/:id
-pub fn delete(req: http.Request, app: api.App) throws -> http.Response {
+pub fn delete(req: http.Request, app: api.App) -> http.Response {
   let viewer = auth.require(req, app)
   let article_id = article(req, app: app)
   let id = try (req.param("id") ?? "").to_int() catch err {

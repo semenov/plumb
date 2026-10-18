@@ -1,6 +1,6 @@
 import http
 
-fn upload(req: http.Request) throws -> http.Response {
+fn upload(req: http.Request) -> http.Response {
   var lines: List<String> = []
   for p in req.parts() {
     lines.append("${p.name} ${p.filename ?? "-"} ${p.content_type} ${p.data.length}")
@@ -8,14 +8,14 @@ fn upload(req: http.Request) throws -> http.Response {
   return http.text(200, lines.join("\n"))
 }
 
-fn login(req: http.Request) throws -> http.Response {
+fn login(req: http.Request) -> http.Response {
   let form = req.form()
   return http.text(200, "hello ${form["user"] ?? "?"}")
     .with_cookie(http.Cookie(name: "session", value: "abc123", max_age: 3600))
     .with_cookie(http.Cookie(name: "theme", value: "dark", http_only: false))
 }
 
-fn me(req: http.Request) throws -> http.Response {
+fn me(req: http.Request) -> http.Response {
   return http.text(200, "session=${req.cookie("session") ?? "none"} theme=${req.cookie("theme") ?? "none"}")
 }
 

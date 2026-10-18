@@ -2,7 +2,7 @@
 
 import http
 
-fn main() throws {
+fn main() {
   var router = http.Router(prefix: "/api")
   router.get("/users/:id", req => http.text(200, "user ${req.param("id") ?? ""}"))
   router.get("/", req => http.text(200, "root"))

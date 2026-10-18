@@ -19,7 +19,7 @@ type Config {
   version: String
 }
 
-fn main() throws {
+fn main() {
   let text = files.read("config.yaml")
   print(yaml.to_json(text))
   let c = yaml.decode<Config>(text)

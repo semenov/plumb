@@ -3,17 +3,17 @@
 
 import time
 
-fn slow_square(n: Int) throws -> Int {
+fn slow_square(n: Int) -> Int {
   time.sleep(time.millis(100))
   return n * n
 }
 
-fn fails(n: Int) throws -> Int {
+fn fails(n: Int) -> Int {
   time.sleep(time.millis(20))
   throw Failure(message: "task ${n} failed")
 }
 
-fn sum_squares(ns: List<Int>) throws -> Int {
+fn sum_squares(ns: List<Int>) -> Int {
   var pending: List<Task<Int>> = []
   for n in ns {
     pending.append(spawn slow_square(n))
@@ -25,7 +25,7 @@ fn sum_squares(ns: List<Int>) throws -> Int {
   return total
 }
 
-fn main() throws {
+fn main() {
   let start = time.now()
   let total = sum_squares([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
   let ms = start.elapsed().millis()

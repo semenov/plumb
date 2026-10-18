@@ -48,7 +48,7 @@ pub type Invalid implements Error {
   }
 }
 
-pub fn verify<T>(token: String, secret: String) throws -> T {
+pub fn verify<T>(token: String, secret: String) -> T {
   let t = split(token)
   if t.alg != "HS256" {
     throw Invalid(text: "jwt: expected an HS256 token, this one is ${t.alg}")
@@ -61,7 +61,7 @@ pub fn verify<T>(token: String, secret: String) throws -> T {
 }
 
 // RS256 (an RSA key) or ES256 (a P-256 key), by the key's type.
-pub fn sign_with<T>(claims: T, key: crypto.PrivateKey, algorithm: String) throws -> String {
+pub fn sign_with<T>(claims: T, key: crypto.PrivateKey, algorithm: String) -> String {
   if algorithm != "RS256" and algorithm != "ES256" {
     throw Failure(message: "jwt: sign_with takes RS256 or ES256")
   }
@@ -69,7 +69,7 @@ pub fn sign_with<T>(claims: T, key: crypto.PrivateKey, algorithm: String) throws
   return "${unsigned}.${part(crypto.sign(key, data: unsigned.bytes()))}"
 }
 
-pub fn verify_with<T>(token: String, key: crypto.PublicKey) throws -> T {
+pub fn verify_with<T>(token: String, key: crypto.PublicKey) -> T {
   let t = split(token)
   if t.alg != "RS256" and t.alg != "ES256" {
     throw Invalid(text: "jwt: expected an RS256 or ES256 token, this one is ${t.alg}")
@@ -86,7 +86,7 @@ pub type KeySet {
   keys: Map<String, crypto.PublicKey>
 }
 
-pub fn key_set(jwks: String) throws -> KeySet {
+pub fn key_set(jwks: String) -> KeySet {
   let doc = json.decode<Jwks>(jwks)
   var keys: Map<String, crypto.PublicKey> = {}
   for k in doc.keys {
@@ -104,7 +104,7 @@ pub fn key_set(jwks: String) throws -> KeySet {
 }
 
 // Verifies with the key the token names (its `kid`).
-pub fn verify_with_keys<T>(token: String, keys: KeySet) throws -> T {
+pub fn verify_with_keys<T>(token: String, keys: KeySet) -> T {
   let t = split(token)
   let key = keys.keys[t.kid] ?? throw Invalid(text: "jwt: no key with id \"${t.kid}\" in the key set")
   return verify_with<T>(token, key: key)
@@ -112,7 +112,7 @@ pub fn verify_with_keys<T>(token: String, keys: KeySet) throws -> T {
 
 // The claims without checking anything: only for looking inside a token
 // you will verify anyway (for example, to pick a key).
-pub fn read_unverified<T>(token: String) throws -> T {
+pub fn read_unverified<T>(token: String) -> T {
   return json.decode<T>(split(token).payload.text())
 }
 
@@ -151,7 +151,7 @@ type TimeClaims {
   nbf: Int?
 }
 
-fn split(token: String) throws -> Parts {
+fn split(token: String) -> Parts {
   let p = token.trim().split(".")
   if p.length != 3 {
     throw Invalid(text: "jwt: not a token (expected three parts separated by dots)")
@@ -162,7 +162,7 @@ fn split(token: String) throws -> Parts {
   return Parts(alg: header.alg, kid: header.kid ?? "", signed: "${p[0]}.${p[1]}", payload: unpart(p[1]), signature: unpart(p[2]))
 }
 
-fn claims<T>(payload: Bytes) throws -> T {
+fn claims<T>(payload: Bytes) -> T {
   let text = payload.text()
   let times = json.decode<TimeClaims>(text)
   let now = time.unix_now()
@@ -184,7 +184,7 @@ fn part(data: Bytes) -> String {
   return encoding.base64_url(data).replace("=", "")
 }
 
-fn unpart(text: String) throws -> Bytes {
+fn unpart(text: String) -> Bytes {
   var s = text.replace("-", "+").replace("_", "/")
   while s.length % 4 != 0 {
     s = "${s}="

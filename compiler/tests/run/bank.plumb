@@ -21,7 +21,7 @@ type InsufficientFunds implements Error {
   }
 }
 
-fn transfer(accounts: Map<Int, Account>, from: Int, to: Int, amount: Int) throws -> Map<Int, Account> {
+fn transfer(accounts: Map<Int, Account>, from: Int, to: Int, amount: Int) -> Map<Int, Account> {
   if amount <= 0 {
     throw Failure(message: "the amount must be positive")
   }

@@ -1,6 +1,6 @@
 import redis
 
-fn main() throws {
+fn main() {
   with db = redis.connect("redis://localhost:6379") {
     db.set("greeting", value: "hello")
     print(db.get("greeting") ?? "(none)")

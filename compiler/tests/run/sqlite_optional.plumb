@@ -8,7 +8,7 @@ type Row {
   age: Int?
 }
 
-fn main() throws {
+fn main() {
   with conn = db.open(":memory:") {
     conn.execute("create table users (name text, bio text, age integer)", [])
     let bio: String? = none

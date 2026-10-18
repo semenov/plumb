@@ -4,7 +4,7 @@ import time
 
 // http.send_all: requests run at the same time, so four answers
 // that each take half a second come in well under two seconds.
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/slow/:name", req => {
     time.sleep(time.millis(500))

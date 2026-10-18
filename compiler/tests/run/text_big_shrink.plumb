@@ -3,7 +3,7 @@
 
 import url
 
-fn main() throws {
+fn main() {
   let decoded = url.decode("%41".repeat(400000))
   print("${decoded.length}")
   let raw = Bytes([233]).concat("a".repeat(1100000).bytes())

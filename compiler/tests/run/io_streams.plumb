@@ -2,7 +2,7 @@ import io
 import files
 import process
 
-fn main() throws {
+fn main() {
   with p = process.start("sort", []) {
     p.write_text("pear\napple\nfig\n")
     p.close_input()

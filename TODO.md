@@ -35,6 +35,11 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
         rules, read(), contains_shared, lt_chan)
   - [ ] bug (old): `hey -n 20000 -c 10` against a local server segfaults
         (also with the version before; -n 3000 -c 10 is fine)
+- [x] **No `throws`: any function can fail** (Vlad, 2026-10-18). The
+      compiler finds which can from their bodies (the check repeats until
+      nothing new is found), so pure code stays as fast; `message()` and
+      `to_string()` can't fail
+  - [ ] the editor marks the calls that can fail (the compiler knows them)
 - [x] **A variant is made with its enum's name** (`Status.Draft`; bare in
       patterns), 2026-10-18, research/local-reasoning.md item 6
 - [ ] make `if m[k] is some(v) { m[k] = grow(v) }` as fast as with

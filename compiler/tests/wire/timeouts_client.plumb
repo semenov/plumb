@@ -8,7 +8,7 @@ import time
 
 // Reads until the server closes; the answer says whether that happened
 // about when the 2-second timeout says (the check runs once a second).
-fn closed_in_time(conn: io.Stream) throws -> Bool {
+fn closed_in_time(conn: io.Stream) -> Bool {
   let t0 = time.now()
   while true {
     let got = try conn.read(1000) catch _ { break }
@@ -20,7 +20,7 @@ fn closed_in_time(conn: io.Stream) throws -> Bool {
   return ms >= 1000 and ms <= 4500
 }
 
-fn main() throws {
+fn main() {
   let port = process.args()[0].to_int()
   with c = net.connect("127.0.0.1", port: port) {
     c.write_text("GET /slow HTTP/1.1\r\nhost: x\r\n")

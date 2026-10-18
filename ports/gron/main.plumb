@@ -183,8 +183,8 @@ let max_line = 1_048_576
 // different types in plumb (io.Stream, http bodies as Bytes), so the actions
 // get two functions instead of one reader type.
 type Input {
-  read_line: fn() throws -> String?
-  read_all: fn() throws -> Bytes
+  read_line: fn() -> String?
+  read_all: fn() -> Bytes
 }
 
 // An action failed: the exit code and the message.
@@ -207,7 +207,7 @@ fn main() {
   }
 }
 
-fn start() throws {
+fn start() {
   let flags = parse_flags(process.args())
 
   // Print version information
@@ -230,7 +230,7 @@ fn start() throws {
   )
 
   // Pick the action: gron, ungron, gron_values or gron_stream
-  let action: fn(Input, Options) throws = if ungron_flag {
+  let action: fn(Input, Options) = if ungron_flag {
     ungron_action
   } else if flags.values {
     gron_values
@@ -280,7 +280,7 @@ fn open_error(filename: String, err: Error) -> String {
   return err.message()
 }
 
-fn run(action: fn(Input, Options) throws, input: Input, opts: Options) {
+fn run(action: fn(Input, Options), input: Input, opts: Options) {
   try action(input, opts) catch err {
     if err is Fatal {
       fatal(err.code, message: err.text)
@@ -290,7 +290,7 @@ fn run(action: fn(Input, Options) throws, input: Input, opts: Options) {
 }
 
 // Prints a statement, as JSON with --json.
-fn print_statement(s: statements.Statement, opts: Options) throws {
+fn print_statement(s: statements.Statement, opts: Options) {
   var out = s
   if opts.json {
     out = s.jsonify()
@@ -303,7 +303,7 @@ fn print_statement(s: statements.Statement, opts: Options) throws {
 }
 
 // The default action: JSON in, assignment statements out.
-fn gron(input: Input, opts: Options) throws {
+fn gron(input: Input, opts: Options) {
   let data = try input.read_all() catch err {
     throw Fatal(code: exit_form_statements, text: "failed to form statements: ${err.message()}")
   }
@@ -322,7 +322,7 @@ fn gron(input: Input, opts: Options) throws {
 }
 
 // Like gron, but each line of the input is a separate JSON value.
-fn gron_stream(input: Input, opts: Options) throws {
+fn gron_stream(input: Input, opts: Options) {
   // The first line of output establishes that the top level is an array
   let top = statements.Statement(tokens: [
     token.Token(text: "json", typ: token.TokenType.Bare),
@@ -361,7 +361,7 @@ fn gron_stream(input: Input, opts: Options) throws {
 }
 
 // The reverse of gron: assignment statements in, JSON out.
-fn ungron_action(input: Input, opts: Options) throws {
+fn ungron_action(input: Input, opts: Options) {
   var ss: List<statements.Statement> = []
   while true {
     let line = try input.read_line() catch _ {
@@ -406,7 +406,7 @@ fn ungron_action(input: Input, opts: Options) throws {
 
 // Prints just the values of gron statements, without quotes; a bit like
 // jq -r: `json[0].user.name = "Sam";` gives `Sam`.
-fn gron_values(input: Input, opts: Options) throws {
+fn gron_values(input: Input, opts: Options) {
   // The Go version reads standard input here whatever the input is (a bug
   // kept for the same behavior).
   while io.read_line() is some(line) {

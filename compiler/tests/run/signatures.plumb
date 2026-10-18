@@ -1,7 +1,7 @@
 import crypto
 import files
 
-fn main() throws {
+fn main() {
   let dir = "keys_fixture"
   let msg = files.read_bytes("${dir}/msg.txt")
   for pair in [["rsa.pem", "rsa_pub.pem"], ["ec_trad.pem", "ec_pub.pem"]] {

@@ -12,7 +12,7 @@
 
 import db
 
-fn main() throws {
+fn main() {
   with conn = db.open(":memory:") {
     conn.execute("create table users (name text, bio text)", [])
     let bio: String? = none

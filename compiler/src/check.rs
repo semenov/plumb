@@ -83,6 +83,11 @@ pub struct ModScope {
 }
 
 pub struct Checker {
+    // which of the program's functions can fail, from the pass before
+    // (main.rs repeats the check until this stops changing)
+    pub can_fail: HashMap<String, bool>,
+    // a function found to fail in this pass that the pass began without
+    pub can_fail_changed: bool,
     pub prog: Program,
     pub diags: Vec<Diag>,
     // the files' text, for literals whose spelling matters (1.50 as a Decimal)
@@ -152,6 +157,8 @@ pub fn suggest<'a>(name: &str, candidates: impl Iterator<Item = &'a String>) -> 
 impl Checker {
     pub fn new() -> Checker {
         Checker {
+            can_fail: HashMap::new(),
+            can_fail_changed: false,
             prog: Program {
                 module_names: vec![],
                 defs: vec![],
@@ -399,13 +406,18 @@ impl Checker {
                 }
                 Ty::opt(i)
             }
-            TypeExpr::Func { params, ret, throws, .. } => {
+            TypeExpr::Func { params, ret, throws, span } => {
                 let ps = params.iter().map(|p| self.resolve_texpr(p, generics, md)).collect();
                 let r = match ret {
                     Some(r) => self.resolve_texpr(r, generics, md),
                     None => Ty::Unit,
                 };
-                Ty::func(ps, r, *throws)
+                // in a program any function can fail, so any function value can too
+                let user = !self.modules[md].privileged;
+                if user && *throws {
+                    self.err_help(*span, "`throws` isn't needed: any function can fail", "write `fn(Int) -> Int`");
+                }
+                Ty::func(ps, r, *throws || user)
             }
             TypeExpr::Combo(parts, sp) => {
                 let mut ids = vec![];
@@ -620,6 +632,16 @@ impl Checker {
         if owner.is_some() && self_mode == SelfMode::None {
             self.err_help(decl.span, "a method takes `self` as its first parameter", "write `fn name(self, ...)`; a function that doesn't need `self` goes outside the type");
         }
+        // Any function of a program can fail (2026-10-18): its errors go up
+        // by themselves. Only the standard library marks `throws` (so that
+        // `xs.map(f)` with an `f` that can't fail stays a plain call), and
+        // the two methods the language calls itself can't fail: an error's
+        // `message` and a value's `to_string` (used by "${x}").
+        let user = !self.modules[md].privileged;
+        if user && decl.throws {
+            self.err_help(decl.span, "`throws` isn't needed: any function can fail, and its errors go up by themselves", "remove `throws`; handle an error where it matters with `try f(x) catch err { ... }`");
+        }
+        let hook = owner.is_some() && self_mode == SelfMode::Value && params.is_empty() && ret == Ty::Text && is_hook_name(&decl.name);
         self.prog.fns.push(FnDef {
             name: decl.name.clone(),
             owner,
@@ -627,7 +649,7 @@ impl Checker {
             self_mode,
             params,
             ret,
-            throws: decl.throws || decl.rethrows,
+            throws: decl.throws || decl.rethrows || (user && !decl.is_const && !hook && self.can_fail.get(&fn_key(&self.modules[md].name, owner.map(|o| self.prog.defs[o].name.as_str()), &decl.name)).copied().unwrap_or(false)),
             rethrows: decl.rethrows,
             intrinsic: decl.intrinsic,
             body: None,
@@ -1058,7 +1080,10 @@ impl Checker {
 
     fn check_fn_body(&mut self, id: FnId, decl: &ast::FnDecl, md: usize) {
         let f = self.prog.fns[id].clone();
-        self.begin_fn(f.generics.clone(), f.ret.clone(), f.throws, md);
+        // a function of the program may always fail; whether it does is
+        // found from its body (except the language's hooks, which can't)
+        let inferred = !self.modules[md].privileged && !f.is_const && !is_hook(&f);
+        self.begin_fn(f.generics.clone(), f.ret.clone(), f.throws || inferred, md);
         let mut params = vec![];
         if f.self_mode != SelfMode::None {
             let owner = f.owner.unwrap();
@@ -1089,6 +1114,14 @@ impl Checker {
         let uses_throw = self.fc().uses_throw;
         let mut tb = self.end_fn(block);
         tb.params = params;
+        if inferred {
+            if uses_throw && !f.throws {
+                self.prog.fns[id].throws = true;
+                self.can_fail_changed = true;
+            }
+            let key = fn_key(&self.modules[md].name, f.owner.map(|o| self.prog.defs[o].name.as_str()), &f.name);
+            self.can_fail.insert(key, uses_throw || f.throws);
+        }
         if f.throws && !uses_throw && !f.intrinsic {
             // a `throws` function that can never fail is allowed (interfaces), no error
         }
@@ -2018,7 +2051,7 @@ impl Checker {
         // one error per function: the fix is the same for every call
         if !fc.throws_ok && !fc.throw_reported {
             fc.throw_reported = true;
-            self.err_help(span, "this can fail, and the function isn't declared `throws`", "add `throws` before `->`: `fn f() throws -> T`, or handle the error here: `try f(x) catch err { ... }`");
+            self.err_help(span, "this can fail, and an error's `message` or a value's `to_string` can't (the language calls them itself)", "handle the error here: `try f(x) catch err { ... }`");
         }
     }
 
@@ -4651,4 +4684,19 @@ fn not_fixed(e: &Expr) -> Option<Span> {
         }
         _ => Some(e.span),
     }
+}
+
+// A function's name for `Checker::can_fail`: the same in every pass.
+fn fn_key(module: &str, owner: Option<&str>, name: &str) -> String {
+    format!("{}::{}::{}", module, owner.unwrap_or(""), name)
+}
+
+fn is_hook_name(name: &str) -> bool {
+    name == "message" || name == "to_string"
+}
+
+// An error's `message` and a value's `to_string`: the language calls them
+// itself (in "${x}"), so they can't fail.
+fn is_hook(f: &FnDef) -> bool {
+    f.owner.is_some() && f.self_mode == SelfMode::Value && f.params.is_empty() && f.ret == Ty::Text && is_hook_name(&f.name)
 }

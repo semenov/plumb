@@ -7,14 +7,14 @@ type N {
   n: Int
 }
 
-fn slow() throws -> Int {
+fn slow() -> Int {
   with conn = db.open(":memory:") {
     let rows = conn.query<N>("with recursive c(x) as (select 1 union all select x + 1 from c where x < 3000000) select count(*) as n from c", [])
     return rows[0].n
   }
 }
 
-fn ticker(stop: Shared<Bool>) throws -> Int {
+fn ticker(stop: Shared<Bool>) -> Int {
   var worst = 0
   while true {
     with s = stop.lock() {
@@ -32,7 +32,7 @@ fn ticker(stop: Shared<Bool>) throws -> Int {
   return worst
 }
 
-fn main() throws {
+fn main() {
   let stop = Shared<Bool>(false)
   let tick = spawn ticker(stop)
   var tasks: List<Task<Int>> = []

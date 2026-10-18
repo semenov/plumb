@@ -5,7 +5,7 @@
 //   curl -si localhost:18103/204 ; curl -si localhost:18103/418 ; curl -si localhost:18103/304
 import http
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/204", req => http.text(204, "should be empty"))
   router.get("/418", req => http.text(418, "I'm a teapot!"))

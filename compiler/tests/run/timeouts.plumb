@@ -1,25 +1,25 @@
 import time
 
-fn slow() throws -> Int {
+fn slow() -> Int {
   time.sleep(time.seconds(10))
   return 1
 }
 
-fn quick() throws -> Int {
+fn quick() -> Int {
   return 42
 }
 
-fn failing() throws -> Int {
+fn failing() -> Int {
   throw Failure(message: "own error")
 }
 
-fn nested() throws -> Int {
+fn nested() -> Int {
   let a = spawn slow()
   let b = spawn slow()
   return a.wait() + b.wait()
 }
 
-fn main() throws {
+fn main() {
   print("quick: ${time.timeout(time.seconds(1), () => quick())}")
   let start = time.now()
   try time.timeout(time.millis(100), () => slow()) catch err {

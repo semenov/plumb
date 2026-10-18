@@ -1,6 +1,6 @@
 // Relative URLs: parsing them, and resolving them against a base (the RFC 3986 examples).
 import url
-fn main() throws {
+fn main() {
   let r = url.parse("/a/b?x=1#top")
   print("[${r.scheme}] [${r.host}] ${r.path} ${r.query} ${r.fragment ?? "-"}")
   let c = url.parse("//cdn.example:8080/x")

@@ -14,7 +14,7 @@ type StatsOptions {
   args: List<String> = []
 }
 
-fn run(args: List<String>) throws {
+fn run(args: List<String>) {
   match args.first() ?? "" {
     "add" => {
       let o = cli.decode_from<AddOptions>(args.drop(1))

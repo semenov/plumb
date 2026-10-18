@@ -26,14 +26,14 @@ fn router() -> http.Router {
   return r
 }
 
-fn post(body: String, kind: String) throws -> http.Response {
+fn post(body: String, kind: String) -> http.Response {
   var req = http.request("POST", "/signup")
   req.body = body.bytes()
   req.headers["content-type"] = kind
   return router().handle(req)
 }
 
-fn form(body: String) throws -> String {
+fn form(body: String) -> String {
   let res = post(body, kind: "application/x-www-form-urlencoded")
   return "${res.status} ${res.text()}"
 }
@@ -53,7 +53,7 @@ test "errors name the field" {
   expect e2 == "form: at $: the field `age` is missing"
 }
 
-fn __decode_check(body: String) throws -> String {
+fn __decode_check(body: String) -> String {
   var req = http.request("POST", "/signup")
   req.body = body.bytes()
   try req.decode_form<SignUp>() catch err {

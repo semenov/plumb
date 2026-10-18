@@ -48,7 +48,7 @@ pub fn configure_proxy(u: String, proxy: String, no_proxy: String) -> String? {
 }
 
 // A GET request to `u`, open for reading its body.
-pub fn get_url(u: String, insecure: Bool, proxy_url: String, no_proxy: String, version: String) throws -> http.ResponseStream {
+pub fn get_url(u: String, insecure: Bool, proxy_url: String, no_proxy: String, version: String) -> http.ResponseStream {
   // plumb's HTTP client has no settings for these two.
   if insecure and u.lower().starts_with("https") {
     throw Failure(message: "--insecure is not supported: plumb's HTTP client always checks certificates")

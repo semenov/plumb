@@ -23,7 +23,7 @@ type Email {
   paid: Bool
 }
 
-fn main() throws {
+fn main() {
   let views = template.load("views_fixture")
   print("${views.names()}")
   let menu = Menu(shop: "Tom's <Café>", items: [Item(name: "Soup", price: 4.50, spicy: true), Item(name: "Bread & butter", price: 1.20)], note: "<b>escaped</b>", html_note: "<b>raw</b>")

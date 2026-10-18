@@ -15,12 +15,12 @@
 
 import json
 
-pub fn decode<T>(text: String) throws -> T {
+pub fn decode<T>(text: String) -> T {
   return json.decode<T>(to_json(text))
 }
 
 // YAML as JSON text.
-pub fn to_json(text: String) throws -> String {
+pub fn to_json(text: String) -> String {
   var lines: List<Line> = []
   var number = 0
   for raw in text.replace("\r\n", "\n").split("\n") {
@@ -51,7 +51,7 @@ pub fn to_json(text: String) throws -> String {
 }
 
 // A value as YAML text (from its JSON form).
-pub fn encode<T>(value: T) throws -> String {
+pub fn encode<T>(value: T) -> String {
   let v = json.parse(json.encode(value))
   let text = emit(v, indent: 0)
   return "${if text.starts_with("\n") { text.slice(from: 1, to: text.length) } else { text }}\n"
@@ -78,7 +78,7 @@ type Parser {
   }
 
   // the value whose lines start at the current line, indented `indent`
-  mutating fn node(indent: Int) throws -> String {
+  mutating fn node(indent: Int) -> String {
     self.skip_blank()
     let line = self.lines[self.at]
     if line.text == "-" or line.text.starts_with("- ") {
@@ -97,7 +97,7 @@ type Parser {
     return scalar(parts.join(" "), line: line.number)
   }
 
-  mutating fn sequence(indent: Int) throws -> String {
+  mutating fn sequence(indent: Int) -> String {
     var items: List<String> = []
     while true {
       self.skip_blank()
@@ -132,7 +132,7 @@ type Parser {
     return "[${items.join(",")}]"
   }
 
-  mutating fn mapping(indent: Int) throws -> String {
+  mutating fn mapping(indent: Int) -> String {
     var fields: List<String> = []
     while true {
       self.skip_blank()
@@ -168,7 +168,7 @@ type Parser {
   }
 
   // the value after "key:" or "- " on the same line
-  mutating fn value(text: String, parent: Int, line: Int) throws -> String {
+  mutating fn value(text: String, parent: Int, line: Int) -> String {
     if text.starts_with("|") or text.starts_with(">") {
       return json.encode(self.block_text(text, parent: parent))
     }
@@ -258,7 +258,7 @@ type Flow {
     }
   }
 
-  mutating fn value() throws -> String {
+  mutating fn value() -> String {
     self.space()
     if self.at >= self.chars.length {
       return "null"
@@ -313,7 +313,7 @@ type Flow {
   }
 
   // a scalar inside a flow collection, up to , ] } (and : for keys)
-  mutating fn token(key: Bool) throws -> String {
+  mutating fn token(key: Bool) -> String {
     self.space()
     if self.at < self.chars.length and (self.chars[self.at] == "\"" or self.chars[self.at] == "'") {
       let q = self.chars[self.at]
@@ -423,7 +423,7 @@ fn unquote_key(key: String) -> String {
 
 // A scalar's JSON: null, booleans and numbers by YAML 1.2's core schema,
 // strings otherwise.
-fn scalar(text: String, line: Int) throws -> String {
+fn scalar(text: String, line: Int) -> String {
   let t = text.trim()
   if t.starts_with("\"") {
     if not t.ends_with("\"") or t.length < 2 {

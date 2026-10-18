@@ -3,7 +3,7 @@
 // formatting differs from Go/JS: 1.2345678901234567e+19 instead of
 // 12345678901234567000.
 import json
-fn main() throws {
+fn main() {
   let v = json.parse("[1.0, 1e5, 12345678901234567890, 0.1]")
   print(json.encode(v))
 }

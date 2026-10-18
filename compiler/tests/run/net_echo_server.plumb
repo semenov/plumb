@@ -1,7 +1,7 @@
 import io
 import net
 
-fn echo(conn: io.Stream) throws {
+fn echo(conn: io.Stream) {
   conn.write_text("hello ${conn.peer().starts_with("127.0.0.1") or conn.peer().starts_with("::1")}\n")
   while conn.read_line() is some(line) {
     if line == "quit" {
@@ -11,12 +11,12 @@ fn echo(conn: io.Stream) throws {
   }
 }
 
-fn main() throws {
+fn main() {
   spawn udp_echo()
   net.serve(17000, conn => echo(conn))
 }
 
-fn udp_echo() throws {
+fn udp_echo() {
   with sock = net.udp(17001) {
     while true {
       let d = sock.receive()

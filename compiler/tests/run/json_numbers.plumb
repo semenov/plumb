@@ -12,7 +12,7 @@ type Big {
   f: Float
 }
 
-fn main() throws {
+fn main() {
   let v = json.parse("[-0, -0.0, 1.50, 1e5, 12345678901234567890, 1e400, 3]")
   print(json.encode(v))
   if v is json.Value.Array(items) {

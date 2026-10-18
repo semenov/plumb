@@ -19,7 +19,7 @@ type Count {
   n: Int
 }
 
-fn main() throws {
+fn main() {
   with conn = db.open(":memory:") {
     let rows = conn.query<Count>(count_tables, [])
     print("${rows[0].n}")

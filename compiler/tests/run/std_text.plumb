@@ -10,11 +10,11 @@ type NotFound implements Error {
   }
 }
 
-fn load(id: Int) throws -> Int {
+fn load(id: Int) -> Int {
   throw NotFound(id: id)
 }
 
-fn main() throws {
+fn main() {
   print("${time.millis(1500)} ${time.Date(year: 2026, month: 9, day: 29)} ${time.from_unix(0)}")
   try load(7) catch e {
     print("failed: ${e}")

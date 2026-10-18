@@ -8,7 +8,7 @@ type Oops implements Error {
   }
 }
 
-fn f() throws -> Int {
+fn f() -> Int {
   throw Failure(message: "x")
 }
 

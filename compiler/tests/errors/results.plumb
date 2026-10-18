@@ -2,7 +2,7 @@ fn count(xs: List<Int>) -> Int {
   return xs.length
 }
 
-fn main() throws {
+fn main() {
   var xs = [3, 1, 2]
   var name = " Ada "
   // allowed: a result may be left unused

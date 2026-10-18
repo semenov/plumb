@@ -3,7 +3,7 @@
 //   curl -s localhost:18100/c+d     -> 404 "not found" (expected "plus route")
 import http
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/c+d", req => http.text(200, "plus route"))
   router.get("/echo/:p", req => http.text(200, "param=[${req.param("p") ?? ""}]\n"))

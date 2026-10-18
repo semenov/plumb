@@ -159,7 +159,7 @@ pub fn canonical_header_key(key: String) -> String {
 
 // A header filter from a comma-separated list of names with * wildcards
 // (the -exclude-headers option). None when the list is empty.
-pub fn exclude_headers_regex(exclude: String) throws -> regex.Regex? {
+pub fn exclude_headers_regex(exclude: String) -> regex.Regex? {
   var parts: List<String> = []
   for raw in exclude.split(",") {
     let s = raw.trim()
@@ -487,7 +487,7 @@ pub fn go_quote(s: String) -> String {
 }
 
 // Go's strconv.Atoi: optional sign, digits only.
-pub fn atoi(input: String) throws -> Int {
+pub fn atoi(input: String) -> Int {
   let digits = if input.starts_with("+") or input.starts_with("-") { input.slice(from: 1, to: input.length) } else { input }
   if not digits.is_digit() {
     throw BadInput(text: atoi_error(input))
@@ -497,11 +497,11 @@ pub fn atoi(input: String) throws -> Int {
   }
 }
 
-pub fn parse_status_code(input: String) throws -> Int {
+pub fn parse_status_code(input: String) -> Int {
   return parse_bounded_status_code(input, min: 100, max: 599)
 }
 
-pub fn parse_bounded_status_code(input: String, min: Int, max: Int) throws -> Int {
+pub fn parse_bounded_status_code(input: String, min: Int, max: Int) -> Int {
   let code = try atoi(input) catch err {
     throw BadInput(text: "invalid status code: ${go_quote(input)}: ${err.message()}")
   }
@@ -512,7 +512,7 @@ pub fn parse_bounded_status_code(input: String, min: Int, max: Int) throws -> In
 }
 
 // A Go-style duration ("1.5s", "250ms") or seconds as a number ("1.5").
-pub fn parse_duration(input: String) throws -> time.Duration {
+pub fn parse_duration(input: String) -> time.Duration {
   let d = try time.parse_duration(input) catch err {
     let n = try input.to_float() catch err2 {
       throw BadInput(text: "strconv.ParseFloat: parsing ${go_quote(input)}: invalid syntax")
@@ -522,7 +522,7 @@ pub fn parse_duration(input: String) throws -> time.Duration {
   return d
 }
 
-pub fn parse_bounded_duration(input: String, min: time.Duration, max: time.Duration) throws -> time.Duration {
+pub fn parse_bounded_duration(input: String, min: time.Duration, max: time.Duration) -> time.Duration {
   let d = parse_duration(input)
   if d.is_longer_than(max) {
     throw BadInput(text: "duration ${go_duration(d)} longer than ${go_duration(max)}")
@@ -582,7 +582,7 @@ pub type WeightedChoice {
   weight: Float
 }
 
-pub fn parse_weighted_choices(raw: String) throws -> List<WeightedChoice> {
+pub fn parse_weighted_choices(raw: String) -> List<WeightedChoice> {
   var choices: List<WeightedChoice> = []
   if raw == "" {
     return choices
@@ -657,7 +657,7 @@ pub fn new_rng(seed: Int) -> Rng {
   return r
 }
 
-pub fn parse_seed(raw: String) throws -> Rng {
+pub fn parse_seed(raw: String) -> Rng {
   if raw == "" {
     return new_rng(time.now().nanos)
   }
@@ -699,7 +699,7 @@ pub fn base64_url_padded(data: Bytes) -> String {
 }
 
 // Strict base64: the standard or URL-safe alphabet, with padding.
-pub fn decode_base64(text: String) throws -> Bytes {
+pub fn decode_base64(text: String) -> Bytes {
   if text.length % 4 != 0 {
     throw BadInput(text: "illegal base64 data at input byte ${text.length - text.length % 4}")
   }

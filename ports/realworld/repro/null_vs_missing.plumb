@@ -18,7 +18,7 @@ type Update {
   bio: String? = none
 }
 
-fn main() throws {
+fn main() {
   let left_out = json.decode<Update>("{}")
   let cleared = json.decode<Update>("{\"bio\": null, \"email\": null}")
   print("${left_out}")

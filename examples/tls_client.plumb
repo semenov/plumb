@@ -1,6 +1,6 @@
 import net
 
-fn main() throws {
+fn main() {
   with conn = net.connect_tls("example.com", 443) {
     conn.write("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".bytes())
     print(conn.read_line() ?? "none")

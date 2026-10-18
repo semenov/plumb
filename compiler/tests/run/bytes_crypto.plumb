@@ -10,7 +10,7 @@ type Blob {
   data: Bytes
 }
 
-fn main() throws {
+fn main() {
   var b = Bytes()
   b.append(104)
   b.append_text("ello")

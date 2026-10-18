@@ -11,11 +11,11 @@ type City {
   city: String
 }
 
-fn weather(c: City) throws -> String {
+fn weather(c: City) -> String {
   return "rain in ${c.city}"
 }
 
-fn main() throws {
+fn main() {
   let ai = llm.Client(base_url: "http://localhost:8096/v1", api_key: "test")
   let m = "test-model"
   print(ai.ask(m, prompt: "hello"))

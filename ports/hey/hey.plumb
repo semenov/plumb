@@ -97,7 +97,7 @@ fn write_err(text: String) {
 }
 
 // A `with` needs a throwing function: closing a stream can fail.
-fn write_stderr(text: String) throws {
+fn write_stderr(text: String) {
   with e = io.stderr() {
     e.write_text(text)
   }
@@ -303,7 +303,7 @@ fn is_redirect(status: Int) -> Bool {
 // The request to send after a redirect, the way Go's client does it:
 // 301/302/303 turn into a GET without a body (HEAD stays HEAD), 307/308
 // repeat the request.
-fn redirected(req: http.ClientRequest, status: Int, location: String) throws -> http.ClientRequest {
+fn redirected(req: http.ClientRequest, status: Int, location: String) -> http.ClientRequest {
   var next = req
   if location.contains("://") {
     next.url = location
@@ -330,7 +330,7 @@ fn redirected(req: http.ClientRequest, status: Int, location: String) throws -> 
   return next
 }
 
-fn make_request(w: Work) throws -> Result {
+fn make_request(w: Work) -> Result {
   let s = time.now()
   let offset = since(w.start, at: s)
   var req = w.request
@@ -383,7 +383,7 @@ fn make_request(w: Work) throws -> Result {
 }
 
 // One of the `-c` workers: its requests one after another, and their results.
-fn run_worker(w: Work, count: Int) throws -> List<Result> {
+fn run_worker(w: Work, count: Int) -> List<Result> {
   // Go: time.NewTicker(time.Duration(1e6/QPS) * time.Microsecond); the
   // first tick comes one period after the start, missed ticks are dropped.
   let period = if w.qps > 0.0 { (1000000.0 / w.qps).floor() * 1000 } else { 0 }
@@ -623,7 +623,7 @@ fn read_body(file: String) -> Bytes? {
   }
 }
 
-fn main() throws {
+fn main() {
   let o = parse_args(process.args())
   if o.args.is_empty() {
     usage_error("")

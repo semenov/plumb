@@ -3,7 +3,7 @@
 import http
 import process
 
-fn main() throws {
+fn main() {
   let url = process.args()[0]
   let r = try http.send(http.ClientRequest(url: url, proxy: "http://127.0.0.1:1")) catch err {
     print("through a missing proxy: failed")

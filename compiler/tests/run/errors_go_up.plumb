@@ -1,11 +1,11 @@
 // A failing call in a `throws` function sends its error up by itself;
 // `try ... catch` handles it where it's written.
 
-fn parse_all(texts: List<String>) throws -> List<Int> {
+fn parse_all(texts: List<String>) -> List<Int> {
   return texts.map(t => t.to_int())
 }
 
-fn first_number(texts: List<String>) throws -> Int {
+fn first_number(texts: List<String>) -> Int {
   let ns = parse_all(texts)
   return ns[0]
 }
@@ -15,7 +15,7 @@ fn sum_or_zero(texts: List<String>) -> Int {
   return try texts.map(t => t.to_int()).sum() catch err { 0 }
 }
 
-fn main() throws {
+fn main() {
   print("${first_number(["4", "5"])}")
   let n = try first_number(["x"]) catch err {
     print("caught: ${err}")

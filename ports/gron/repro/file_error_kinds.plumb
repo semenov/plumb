@@ -7,7 +7,7 @@
 // Run: touch /tmp/noperm && chmod 000 /tmp/noperm && plumb run repro/file_error_kinds.plumb
 import files
 
-fn main() throws {
+fn main() {
   for p in ["/nonexistent", "/tmp/noperm", "/tmp"] {
     let text = try files.read(p) catch err { "error: ${err.message()}" }
     print("read ${p}: [${text}]")

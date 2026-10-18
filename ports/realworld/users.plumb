@@ -63,7 +63,7 @@ fn answer(status: Int, account: Account, app: api.App) -> http.Response {
   return api.reply(status, UserBody(user: user))
 }
 
-fn check_password(password: String) throws {
+fn check_password(password: String) {
   if password.is_empty() {
     throw api.blank("password")
   }
@@ -72,13 +72,13 @@ fn check_password(password: String) throws {
   }
 }
 
-fn load(app: api.App, id: Int) throws -> Account {
+fn load(app: api.App, id: Int) -> Account {
   let found = app.conn.query<Account>("select * from users where id = ?", [id])
   return found.first() ?? throw api.unauthorized("is invalid")
 }
 
 // A username or email another user already has: a 409.
-fn check_free(app: api.App, username: String, email: String, id: Int) throws {
+fn check_free(app: api.App, username: String, email: String, id: Int) {
   let same_name = app.conn.query<Id>("select id from users where username = ? and id != ?", [username, id])
   if not same_name.is_empty() {
     throw api.taken("username")
@@ -90,7 +90,7 @@ fn check_free(app: api.App, username: String, email: String, id: Int) throws {
 }
 
 // POST /api/users
-pub fn register(req: http.Request, app: api.App) throws -> http.Response {
+pub fn register(req: http.Request, app: api.App) -> http.Response {
   let input = api.decode<RegistrationBody>(req).user
   let username = input.username.trim()
   let email = input.email.trim()
@@ -110,7 +110,7 @@ pub fn register(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // POST /api/users/login
-pub fn login(req: http.Request, app: api.App) throws -> http.Response {
+pub fn login(req: http.Request, app: api.App) -> http.Response {
   let input = api.decode<LoginBody>(req).user
   if input.email.trim().is_empty() {
     throw api.blank("email")
@@ -126,14 +126,14 @@ pub fn login(req: http.Request, app: api.App) throws -> http.Response {
 }
 
 // GET /api/user
-pub fn current(req: http.Request, app: api.App) throws -> http.Response {
+pub fn current(req: http.Request, app: api.App) -> http.Response {
   let id = auth.require(req, app)
   return answer(200, account: load(app, id: id), app: app)
 }
 
 // PUT /api/user: only the fields given change; bio and image can be
 // cleared with null or "".
-pub fn update(req: http.Request, app: api.App) throws -> http.Response {
+pub fn update(req: http.Request, app: api.App) -> http.Response {
   let id = auth.require(req, app)
   var account = load(app, id: id)
   let fields = api.fields(req, wrapper: "user")

@@ -28,7 +28,7 @@ type EmbedReq {
   input: List<String>
 }
 
-fn completions(req: http.Request) throws -> http.Response {
+fn completions(req: http.Request) -> http.Response {
   if (req.header("authorization") ?? "") != "Bearer test" {
     return http.text(401, "{\"error\": {\"message\": \"bad key\"}}")
   }
@@ -57,7 +57,7 @@ fn answer(content: String, finish: String, calls: String) -> http.Response {
   return http.bytes(200, data: body.bytes(), content_type: "application/json")
 }
 
-fn stream_words(out: io.Stream, text: String) throws {
+fn stream_words(out: io.Stream, text: String) {
   out.write_text(": PROCESSING\n\n")
   for w in "streamed answer to: ${text}".split(" ") {
     out.write_text("data: {\"choices\": [{\"delta\": {\"content\": ${json.encode("${w} ")}}}]}\n\n")
@@ -66,7 +66,7 @@ fn stream_words(out: io.Stream, text: String) throws {
   out.write_text("data: {\"choices\": [{\"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n")
 }
 
-fn embeddings(req: http.Request) throws -> http.Response {
+fn embeddings(req: http.Request) -> http.Response {
   let r = json.decode<EmbedReq>(req.text())
   var items: List<String> = []
   for i in 0..<r.input.length {
@@ -76,7 +76,7 @@ fn embeddings(req: http.Request) throws -> http.Response {
   return http.bytes(200, data: body.bytes(), content_type: "application/json")
 }
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.post("/v1/chat/completions", completions)
   router.post("/v1/embeddings", embeddings)

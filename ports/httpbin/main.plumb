@@ -26,7 +26,7 @@ type Options {
   unsafe_allow_dangerous_responses: Bool = false
 }
 
-fn main() throws {
+fn main() {
   let opts = cli.decode<Options>()
   var port = opts.port
   if port == 8080 {

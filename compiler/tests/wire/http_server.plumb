@@ -2,7 +2,7 @@
 import env
 import http
 
-fn main() throws {
+fn main() {
   let port = (env.get("PORT") ?? "18190").to_int()
   var router = http.Router()
   router.post("/echo", req => http.text(200, "${req.body.length} bytes: ${req.text()}"))

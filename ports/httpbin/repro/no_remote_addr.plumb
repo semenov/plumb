@@ -3,7 +3,7 @@
 // connection isn't exposed). go-httpbin's /ip needs r.RemoteAddr.
 import http
 
-fn main() throws {
+fn main() {
   var router = http.Router()
   router.get("/ip", req => http.text(200, "?\n"))   // req.remote_addr doesn't exist
   http.serve(router, port: 18105)

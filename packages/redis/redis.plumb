@@ -28,18 +28,18 @@ pub enum Reply {
 pub type Client {
   conn: io.Stream
 
-  pub fn close(self) throws {
+  pub fn close(self) {
     self.conn.close()
   }
 
   // Any command: `db.command(["LPUSH", "jobs", "42"])`.
-  pub fn command(self, args: List<String>) throws -> Reply {
+  pub fn command(self, args: List<String>) -> Reply {
     return send(self.conn, args: args)
   }
 
   // Several commands in one round trip; the replies in the same order. An
   // error reply comes back as an error after all replies are read.
-  pub fn pipeline(self, commands: List<List<String>>) throws -> List<Reply> {
+  pub fn pipeline(self, commands: List<List<String>>) -> List<Reply> {
     var out = Bytes()
     for c in commands {
       out.append_all(encode(c))
@@ -64,49 +64,49 @@ pub type Client {
 
   // ---- strings
 
-  pub fn get(self, key: String) throws -> String? {
+  pub fn get(self, key: String) -> String? {
     return optional_text(self.command(["GET", key]))
   }
 
-  pub fn set(self, key: String, value: String) throws {
+  pub fn set(self, key: String, value: String) {
     self.command(["SET", key, value])
   }
 
   // Set with an expiry: the key disappears after `seconds`.
-  pub fn set_for(self, key: String, value: String, seconds: Int) throws {
+  pub fn set_for(self, key: String, value: String, seconds: Int) {
     self.command(["SET", key, value, "EX", "${seconds}"])
   }
 
   // Set only if the key doesn't exist yet; true if it was set (a lock).
-  pub fn set_new(self, key: String, value: String, seconds: Int) throws -> Bool {
+  pub fn set_new(self, key: String, value: String, seconds: Int) -> Bool {
     return self.command(["SET", key, value, "NX", "EX", "${seconds}"]) is Status
   }
 
   // True if the key existed.
-  pub fn delete(self, key: String) throws -> Bool {
+  pub fn delete(self, key: String) -> Bool {
     return integer(self.command(["DEL", key])) > 0
   }
 
-  pub fn exists(self, key: String) throws -> Bool {
+  pub fn exists(self, key: String) -> Bool {
     return integer(self.command(["EXISTS", key])) > 0
   }
 
   // Adds one; a missing key counts as 0. Returns the new value.
-  pub fn increment(self, key: String) throws -> Int {
+  pub fn increment(self, key: String) -> Int {
     return integer(self.command(["INCR", key]))
   }
 
-  pub fn increment_by(self, key: String, amount: Int) throws -> Int {
+  pub fn increment_by(self, key: String, amount: Int) -> Int {
     return integer(self.command(["INCRBY", key, "${amount}"]))
   }
 
   // True if the key exists (and now expires).
-  pub fn expire(self, key: String, seconds: Int) throws -> Bool {
+  pub fn expire(self, key: String, seconds: Int) -> Bool {
     return integer(self.command(["EXPIRE", key, "${seconds}"])) > 0
   }
 
   // Seconds until the key expires; none if it doesn't expire or doesn't exist.
-  pub fn time_to_live(self, key: String) throws -> Int? {
+  pub fn time_to_live(self, key: String) -> Int? {
     let n = integer(self.command(["TTL", key]))
     if n < 0 {
       return none
@@ -116,21 +116,21 @@ pub type Client {
 
   // Keys matching a pattern like "user:*". Slow on big databases: use it
   // for tools, not in request handlers.
-  pub fn keys(self, pattern: String) throws -> List<String> {
+  pub fn keys(self, pattern: String) -> List<String> {
     return texts(self.command(["KEYS", pattern]))
   }
 
   // ---- hashes (a map under one key)
 
-  pub fn hash_get(self, key: String, field: String) throws -> String? {
+  pub fn hash_get(self, key: String, field: String) -> String? {
     return optional_text(self.command(["HGET", key, field]))
   }
 
-  pub fn hash_set(self, key: String, field: String, value: String) throws {
+  pub fn hash_set(self, key: String, field: String, value: String) {
     self.command(["HSET", key, field, value])
   }
 
-  pub fn hash_get_all(self, key: String) throws -> Map<String, String> {
+  pub fn hash_get_all(self, key: String) -> Map<String, String> {
     let items = texts(self.command(["HGETALL", key]))
     var out: Map<String, String> = {}
     var i = 0
@@ -141,24 +141,24 @@ pub type Client {
     return out
   }
 
-  pub fn hash_delete(self, key: String, field: String) throws -> Bool {
+  pub fn hash_delete(self, key: String, field: String) -> Bool {
     return integer(self.command(["HDEL", key, field])) > 0
   }
 
   // ---- lists (queues)
 
   // Adds to the end; returns the new length.
-  pub fn push(self, key: String, value: String) throws -> Int {
+  pub fn push(self, key: String, value: String) -> Int {
     return integer(self.command(["RPUSH", key, value]))
   }
 
   // Takes from the front; none if the list is empty.
-  pub fn pop_first(self, key: String) throws -> String? {
+  pub fn pop_first(self, key: String) -> String? {
     return optional_text(self.command(["LPOP", key]))
   }
 
   // Waits up to `seconds` (0: forever) for an item at the front: a job queue.
-  pub fn wait_first(self, key: String, seconds: Int) throws -> String? {
+  pub fn wait_first(self, key: String, seconds: Int) -> String? {
     let r = self.command(["BLPOP", key, "${seconds}"])
     let items = texts(r)
     if items.length < 2 {
@@ -168,37 +168,37 @@ pub type Client {
   }
 
   // Items `from` to `to` (inclusive; -1 is the last).
-  pub fn range(self, key: String, from: Int, to: Int) throws -> List<String> {
+  pub fn range(self, key: String, from: Int, to: Int) -> List<String> {
     return texts(self.command(["LRANGE", key, "${from}", "${to}"]))
   }
 
-  pub fn length(self, key: String) throws -> Int {
+  pub fn length(self, key: String) -> Int {
     return integer(self.command(["LLEN", key]))
   }
 
   // ---- sets
 
   // True if it was new.
-  pub fn set_add(self, key: String, member: String) throws -> Bool {
+  pub fn set_add(self, key: String, member: String) -> Bool {
     return integer(self.command(["SADD", key, member])) > 0
   }
 
-  pub fn set_remove(self, key: String, member: String) throws -> Bool {
+  pub fn set_remove(self, key: String, member: String) -> Bool {
     return integer(self.command(["SREM", key, member])) > 0
   }
 
-  pub fn set_contains(self, key: String, member: String) throws -> Bool {
+  pub fn set_contains(self, key: String, member: String) -> Bool {
     return integer(self.command(["SISMEMBER", key, member])) > 0
   }
 
-  pub fn set_members(self, key: String) throws -> List<String> {
+  pub fn set_members(self, key: String) -> List<String> {
     return texts(self.command(["SMEMBERS", key]))
   }
 
   // ---- publish / subscribe
 
   // Returns how many subscribers received it.
-  pub fn publish(self, channel: String, message: String) throws -> Int {
+  pub fn publish(self, channel: String, message: String) -> Int {
     return integer(self.command(["PUBLISH", channel, message]))
   }
 }
@@ -214,12 +214,12 @@ pub type Message {
 pub type Subscription {
   conn: io.Stream
 
-  pub fn close(self) throws {
+  pub fn close(self) {
     self.conn.close()
   }
 
   // Waits for the next message.
-  pub fn receive(self) throws -> Message {
+  pub fn receive(self) -> Message {
     while true {
       let items = texts(read_reply(self.conn))
       if items.length == 3 and items[0] == "message" {
@@ -232,7 +232,7 @@ pub type Subscription {
 
 // Connects to "redis://host:port", "redis://:password@host:port/2" (the
 // number picks the database), or "host:port".
-pub fn connect(address: String) throws -> Client {
+pub fn connect(address: String) -> Client {
   // closed if the setup fails; handed to the caller if it succeeds
   with client = Client(conn: open_stream(address)) {
     setup(client.conn, address: address)
@@ -240,7 +240,7 @@ pub fn connect(address: String) throws -> Client {
   }
 }
 
-pub fn subscribe(address: String, channels: List<String>) throws -> Subscription {
+pub fn subscribe(address: String, channels: List<String>) -> Subscription {
   with sub = Subscription(conn: open_stream(address)) {
     setup(sub.conn, address: address)
     var args = ["SUBSCRIBE"]
@@ -254,17 +254,17 @@ pub fn subscribe(address: String, channels: List<String>) throws -> Subscription
   }
 }
 
-fn open_stream(address: String) throws -> io.Stream {
+fn open_stream(address: String) -> io.Stream {
   let u = parse_address(address)
   return net.connect(u.host, u.port ?? 6379)
 }
 
-fn send(conn: io.Stream, args: List<String>) throws -> Reply {
+fn send(conn: io.Stream, args: List<String>) -> Reply {
   conn.write(encode(args))
   return read_reply(conn)
 }
 
-fn setup(conn: io.Stream, address: String) throws {
+fn setup(conn: io.Stream, address: String) {
   let u = parse_address(address)
   if u.password is some(p) {
     if u.user is some(name) and not name.is_empty() {
@@ -279,7 +279,7 @@ fn setup(conn: io.Stream, address: String) throws {
   }
 }
 
-fn parse_address(address: String) throws -> url.Url {
+fn parse_address(address: String) -> url.Url {
   if address.contains("://") {
     return url.parse(address)
   }
@@ -299,7 +299,7 @@ fn encode(args: List<String>) -> Bytes {
   return out
 }
 
-fn read_reply(conn: io.Stream) throws -> Reply {
+fn read_reply(conn: io.Stream) -> Reply {
   let line = conn.read_line() ?? throw Failure(message: "redis: the server closed the connection")
   if line.is_empty() {
     throw Failure(message: "redis: an empty reply")

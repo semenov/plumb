@@ -10,7 +10,7 @@ type Count {
   n: Int
 }
 
-fn main() throws {
+fn main() {
   with conn = db.open(":memory:") {
     conn.execute("create table t (x int)", [])
     var router = http.Router()

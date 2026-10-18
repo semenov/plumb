@@ -12,7 +12,7 @@ type Note {
   data: Bytes?
 }
 
-fn main() throws {
+fn main() {
   with db = postgres.connect("postgres://plumb:secret@localhost:5432/plumb") {
     db.execute("drop table if exists notes", [])
     db.execute("create table notes (id serial primary key, body text unique, created timestamptz default now(), data bytea)", [])
@@ -37,7 +37,7 @@ fn main() throws {
   }
 }
 
-fn add_two(db: postgres.Connection) throws -> Int {
+fn add_two(db: postgres.Connection) -> Int {
   db.execute("insert into notes (body) values ($1)", ["one"])
   db.execute("insert into notes (body) values ($1)", ["one"])
   return 2

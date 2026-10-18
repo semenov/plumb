@@ -10,7 +10,7 @@ import io
 import process
 import time
 
-fn main() throws {
+fn main() {
   // never true: the program only has an http call in it
   if process.args().length > 5 {
     let res = http.get("http://127.0.0.1:1/")
