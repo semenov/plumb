@@ -462,7 +462,7 @@ impl Checker {
                 }
                 match self.lookup_global(name, md) {
                     Some(Global::Type(d)) => {
-                        if !self.tasks_allowed(md) && [self.prog.b.task, self.prog.b.shared, self.prog.b.channel].contains(&d) {
+                        if !self.internal(md) && [self.prog.b.task, self.prog.b.shared, self.prog.b.channel].contains(&d) {
                             self.no_tasks(*span, name);
                             return Ty::Err;
                         }
@@ -691,6 +691,11 @@ impl Checker {
                     self.add_methods(d, &e.methods, &e.generics, md);
                 }
                 ast::Item::Interface(i) => {
+                    // the language's own (`Error`); programs swap behavior
+                    // with a record of functions
+                    if !self.internal(md) {
+                        self.err_help(i.span, "interfaces aren't in Plumb: at a call through one, the code that runs can't be seen", format!("to swap behavior (a fake in tests), keep functions in a record: `type {} {{ send: fn(String) throws }}`, then `{}(send: text => ...)`; errors implement `Error`", i.name, i.name));
+                    }
                     let d = self.def_id(&i.name, md);
                     let mut ids = vec![];
                     for im in &i.methods {
@@ -1985,10 +1990,11 @@ impl Checker {
         e
     }
 
-    // The standard library runs on tasks; so may the compiler's own tests
-    // of the runtime (PLUMB_INTERNAL_TASKS=1, set by tests/run.sh).
-    fn tasks_allowed(&self, md: usize) -> bool {
-        self.modules[md].privileged || std::env::var_os("PLUMB_INTERNAL_TASKS").is_some()
+    // What only the standard library uses (tasks, its own interfaces); so
+    // may the compiler's tests of the runtime (PLUMB_INTERNAL=1, set by
+    // tests/run.sh).
+    fn internal(&self, md: usize) -> bool {
+        self.modules[md].privileged || std::env::var_os("PLUMB_INTERNAL").is_some()
     }
 
     // `spawn`, `Task`, `Shared` and `Channel` in user code (removed on
@@ -2534,7 +2540,7 @@ impl Checker {
                 // tasks are the standard library's own: user code runs one
                 // step after another
                 let md = self.fc().module;
-                if !self.tasks_allowed(md) {
+                if !self.internal(md) {
                     self.no_tasks(span, "spawn");
                     self.expr(x, None);
                     return mk(TK::Unit, Ty::Err);
@@ -2615,6 +2621,7 @@ impl Checker {
         }
         // an enum variant without fields
         if let Some((d, idx)) = self.find_variant(name, expected, span) {
+            self.bare_variant(d, name, span);
             let (fields, ng) = match &self.prog.defs[d].kind {
                 TypeKind::Enum { variants } => (variants[idx].fields.len(), self.prog.defs[d].generics.len()),
                 _ => (0, 0),
@@ -2675,6 +2682,18 @@ impl Checker {
                 Some(found[0])
             }
         }
+    }
+
+    // A variant is made with its enum's name (`Status.Draft`): bare, it reads
+    // like a type or a function. Patterns leave it out (the enum is known).
+    fn bare_variant(&mut self, d: DefId, name: &str, span: Span) {
+        if self.modules[self.fc().module].privileged {
+            return;
+        }
+        let e = self.prog.defs[d].name.clone();
+        let md = self.prog.defs[d].module;
+        let full = if md == self.fc().module || md == 0 { format!("{}.{}", e, name) } else { format!("{}.{}.{}", self.prog.module_names[md], e, name) };
+        self.err_help(span, format!("`{}` is a variant of `{}`: write `{}`", name, e, full), "in a pattern (`match`, `is`) the bare name is right: the enum is known there");
     }
 
     // `module.Enum` written before a variant name
@@ -2949,6 +2968,7 @@ impl Checker {
                         Some(Global::Type(d)) => self.ctor(d, &explicit, args, span, expected),
                         None => {
                             if let Some((d, i)) = self.find_variant(name, expected, span) {
+                                self.bare_variant(d, name, span);
                                 return self.variant_ctor(d, i, args, span, expected);
                             }
                             let hint = match name.as_str() {
@@ -3519,7 +3539,7 @@ impl Checker {
                 };
                 TExpr { kind: TK::Record { def: d, fields }, ty, span }
             }
-            TypeKind::Builtin if (d == self.prog.b.shared || d == self.prog.b.channel) && !self.tasks_allowed(self.fc().module) => {
+            TypeKind::Builtin if (d == self.prog.b.shared || d == self.prog.b.channel) && !self.internal(self.fc().module) => {
                 let name = self.prog.defs[d].name.clone();
                 self.no_tasks(span, &name);
                 TExpr { kind: TK::Unit, ty: Ty::Err, span }

@@ -45,7 +45,7 @@ fn fail() throws {
 fn main() {
   let m = Money(cents: 1250)
   print("total: ${m}")
-  print("${[m, Money(cents: 5)]} ${Circle(r: 2)} ${[Square(side: 3)]}")
+  print("${[m, Money(cents: 5)]} ${Shape.Circle(r: 2)} ${[Shape.Square(side: 3)]}")
   let o = Order(id: 1, total: m, note: none)
   print("${o}")
   let maybe: Money? = m

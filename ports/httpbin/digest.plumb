@@ -50,8 +50,8 @@ pub fn challenge(realm: String, algorithm: Algorithm) -> String {
   let entropy = crypto.random_bytes(32)
   let opaque_val = entropy.slice(from: 0, to: 16)
   let nonce_val = "${time.now().nanos}:${entropy.slice(from: 16, to: 31).hex()}"
-  let opaque = hash(opaque_val, algorithm: Md5)
-  let nonce = hash(nonce_val.bytes(), algorithm: Md5)
+  let opaque = hash(opaque_val, algorithm: Algorithm.Md5)
+  let nonce = hash(nonce_val.bytes(), algorithm: Algorithm.Md5)
   let name = algorithm_name(algorithm)
   return "Digest qop=auth, realm=\"${sanitize_realm(realm)}\", algorithm=${name}, nonce=${nonce}, opaque=${opaque}"
 }
@@ -69,7 +69,7 @@ fn parse_authorization(value: String) -> Authorization? {
     return none
   }
   let auth = parse_dict_header(value.slice(from: space + 1, to: value.length))
-  let algo = if (auth["algorithm"] ?? "").lower() == "sha-256" { Sha256 } else { Md5 }
+  let algo = if (auth["algorithm"] ?? "").lower() == "sha-256" { Algorithm.Sha256 } else { Algorithm.Md5 }
   return Authorization(
     algorithm: algo,
     cnonce: auth["cnonce"] ?? "",

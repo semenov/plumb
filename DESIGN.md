@@ -130,10 +130,19 @@ Changing a value in place is done by a `mutating` method on your own type:
 - **Generics without bounds.** `<T>` means "any type, the same one
   everywhere." It doesn't need bounds: `==`, hashing and `sort_by` work for
   everything.
-- **An interface used as a type** means "any type that implements it, and they
-  can differ": `List<Describable>`. This doesn't overlap with generics.
-- **Interfaces are implemented explicitly:** `type User implements
-  Describable`. The compiler checks it.
+- **A variant is made with its enum's name:** `Status.Published(at: t)`
+  (2026-10-18, local reasoning: bare, `Published(at: t)` reads exactly
+  like building a record or calling a function). In a pattern the enum is
+  known from the value, so the name is bare there: `match s { Draft => ...
+  }`, `if v is Null`, for imported enums too.
+- **No interfaces of your own** (Vlad, 2026-10-18, by the local-reasoning
+  test in research/local-reasoning.md): at a call through an interface the
+  code that runs can't be seen from the line. Swapping behavior hides it
+  whatever the language does, so there is one way, made of what the
+  language already has: a record of functions (`type Mailer { send:
+  fn(String) throws }`, `Mailer(send: to => ...)`, `mailer.send(to)`), as
+  in Gleam and Elm. `Error` is the language's own interface:
+  `type NotFound implements Error { ... }`.
 - **No new types over other types, and no aliases.** `type UserId = Int`
   was a distinct type, but everyone read it as an alias, and in the ports,
   the packages and 386 agent-written programs nobody declared one (Vlad
@@ -354,7 +363,7 @@ removed it). What stays an error is what is always a mistake:
   WebSocket connections side by side, `parallel_map`, `send_all` and
   `time.timeout` use them. User code can't name them (`check.rs`
   `no_tasks`); the compiler's own runtime tests can, with
-  `PLUMB_INTERNAL_TASKS=1`. An error names the call to use instead.
+  `PLUMB_INTERNAL=1`. An error names the call to use instead.
 - **Ctrl-C cancels `main`.** Waits stop with `Cancelled`, `with`
   blocks close their resources, and the program ends with 130. A second
   Ctrl-C ends it at once. A loop that never waits checks
@@ -376,8 +385,8 @@ removed it). What stays an error is what is always a mistake:
 - Tests run in parallel. They're isolated automatically, because there's no
   global mutable state. External things use `with` and temporary resources
   (`files.temp_dir()`).
-- No mocking framework (no reflection). Anything replaceable is passed as an
-  interface-typed parameter (`Clock`, `Mailer`). The standard library ships
+- No mocking framework (no reflection). Anything replaceable is passed as a
+  record of functions (`Mailer`). The standard library ships
   test implementations: a fixed clock, an in-memory file system, calling an
   HTTP handler without a network.
 - One binary: `plumb run`, `plumb build`, `plumb test`, `plumb fmt`, `plumb doc`,
@@ -541,8 +550,7 @@ wrong thing; Vlad chose (see `research/critique-response.md`):
   unused `let` or import (as in Go: they hide forgotten results).
 - **Generics stay without bounds** (Vlad, after a second look). Generic
   code is mostly library code; a helper that needs ordering or a method
-  takes a function (`largest(xs, key: x => x.score)`) or an interface-typed
-  list. `max`, `sum`, `sorted` keep their built-in knowledge of numbers.
+  takes a function (`largest(xs, key: x => x.score)`). `max`, `sum`, `sorted` keep their built-in knowledge of numbers.
 - **Fields stay visible everywhere** (Vlad, after a second look). Most
   types are data read by other files (JSON bodies, rows, configs); `pub` on
   every field, or a second visibility keyword, would cost everywhere for
@@ -570,11 +578,6 @@ wrong thing; Vlad chose (see `research/critique-response.md`):
 
 ## Open questions
 
-- **Changing a value behind an interface** without `var` parameters: a
-  function `copy(from: Storage + Listable, to: Storage) -> Storage` returns
-  the destination as `Storage`, so the caller loses its concrete type
-  (`FileStorage`). Options: generics with interface bounds (removed earlier),
-  or accept it.
 - **String representation:** `split`/`lines`/`words` allocate every piece
   (5 million small allocations in the `words` benchmark, where Go returns
   views into the original text). Making `String` a view (pointer + length +

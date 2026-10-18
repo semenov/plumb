@@ -98,3 +98,29 @@ without learning.
 - `fn to_string(self)` used by `"${x}"`: expected, and only for text.
 - Loose JSON key matching (`createdAt` fills `created_at`): convenience at
   the boundary, said in the docs.
+
+## Outcome (2026-10-18, the same day)
+
+- **1. Interfaces: removed.** `interface` in a program is an error that
+  shows the record of functions; `Error` stays.
+- **2. `with`: kept.** On a closer look it passes the test better than the
+  alternative: the block *is* the lifetime, visible on the line. Closing
+  at the end of the enclosing block would be a rule the reader must know,
+  and it matters exactly where code goes wrong (a file written and read
+  back in one block: writes are buffered; a temporary folder). The rule
+  about lambdas that outlive a resource stays either way, and "use
+  `with`" is an error that names its fix.
+- **3. Generics: kept.** The packages need them (`postgres.query<T>`,
+  `yaml.decode<T>`, `jwt.verify<T>`), and so do small helpers that wrap
+  decoding (`api.decode<T>(req)`); a line that uses one reads fine.
+- **4. `mutating fn`: kept.** `stack.push(x)` is read right by everyone,
+  only works on a `var`, and the alternative breaks every collection-like
+  type for one keyword.
+- **5. `m.take(k)`: stays as an ordinary method** (remove and return); the
+  advice to use it for speed goes once the compiler makes the plain form
+  fast (TODO).
+- **6. Variants: done.** Made with the enum's name (`Status.Published(at:
+  t)`); bare in patterns, where the enum is known.
+- **7. `err is X` through causes: kept.** What a handler means by "is this
+  a NotFound" is the cause chain; a second spelling would be a second way.
+- **8. `-> Never`: kept.** "returns never" reads as English.

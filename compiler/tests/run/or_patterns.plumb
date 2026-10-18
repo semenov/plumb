@@ -28,6 +28,6 @@ fn small(n: Int?) -> String {
 }
 
 fn main() {
-  print("${["break", "if", "case"].map(w => keyword(w))} ${round(Circle(r: 1.0))} ${round(Dot)} ${round(Square(side: 2.0))}")
+  print("${["break", "if", "case"].map(w => keyword(w))} ${round(Shape.Circle(r: 1.0))} ${round(Shape.Dot)} ${round(Shape.Square(side: 2.0))}")
   print("${small(1)} ${small(none)} ${small(5)}")
 }

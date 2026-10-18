@@ -31,7 +31,7 @@ type Counter {
 }
 
 fn main() {
-  let shapes = [Circle(radius: 1.0), Rectangle(width: 20.0, height: 30.0), Empty, Rectangle(width: 5.0, height: 5.0)]
+  let shapes = [Shape.Circle(radius: 1.0), Shape.Rectangle(width: 20.0, height: 30.0), Shape.Empty, Shape.Rectangle(width: 5.0, height: 5.0)]
   var c = Counter()
   for s in shapes {
     print("${label(s)}: ${area(s)}")

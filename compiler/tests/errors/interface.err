@@ -1,0 +1,7 @@
+error: interfaces aren't in Plumb: at a call through one, the code that runs can't be seen
+  --> interface.plumb:3:11
+  |
+3 | interface Mailer {
+  |           ^^^^^^
+  = help: to swap behavior (a fake in tests), keep functions in a record: `type Mailer { send: fn(String) throws }`, then `Mailer(send: text => ...)`; errors implement `Error`
+1 error(s)

@@ -57,8 +57,8 @@ pub type Lexer {
 
   // Runs the lexer and returns the tokens.
   pub mutating fn lex() -> List<token.Token> {
-    var state = Statement
-    while state != Done {
+    var state = State.Statement
+    while state != State.Done {
       state = match state {
         Statement => self.lex_statement()
         BareWord => self.lex_bare_word()
@@ -67,7 +67,7 @@ pub type Lexer {
         QuotedKey => self.lex_quoted_key()
         Value => self.lex_value()
         Ignore => self.lex_ignore()
-        Done => Done
+        Done => State.Done
       }
     }
     return self.tokens
@@ -157,55 +157,55 @@ pub type Lexer {
   mutating fn lex_statement() -> State {
     let r = self.peek()
     if r == 46 or identifier.valid_first_rune(r) {
-      return BareWord
+      return State.BareWord
     }
     if r == 91 {
-      return Braces
+      return State.Braces
     }
     if r == 32 or r == 61 {
-      return Value
+      return State.Value
     }
     if r == 45 {
       // grep -A etc can add '--' lines to the output: kept but not used
-      return Ignore
+      return State.Ignore
     }
     if r == jsonraw.rune_error {
-      return Done
+      return State.Done
     }
-    self.emit(Invalid)
-    return Done
+    self.emit(token.TokenType.Invalid)
+    return State.Done
   }
 
   // Bare identifiers: the 'foo' in 'foo.bar' or 'foo[0]'.
   mutating fn lex_bare_word() -> State {
     if self.accept(".") {
-      self.emit(Dot)
+      self.emit(token.TokenType.Dot)
     }
     if not identifier.valid_first_rune(self.next()) {
       self.backup()
-      self.emit(Invalid)
-      return Done
+      self.emit(token.TokenType.Invalid)
+      return State.Done
     }
     while identifier.valid_secondary_rune(self.next()) {
     }
     self.backup()
-    self.emit(Bare)
-    return Statement
+    self.emit(token.TokenType.Bare)
+    return State.Statement
   }
 
   // Keys in square braces.
   mutating fn lex_braces() -> State {
     self.accept("[")
-    self.emit(LBrace)
+    self.emit(token.TokenType.LBrace)
     let r = self.peek()
     if is_number(r) {
-      return NumericKey
+      return State.NumericKey
     }
     if r == 34 {
-      return QuotedKey
+      return State.QuotedKey
     }
-    self.emit(Invalid)
-    return Done
+    self.emit(token.TokenType.Invalid)
+    return State.Done
   }
 
   // Numeric keys in square braces.
@@ -215,15 +215,15 @@ pub type Lexer {
     while is_number(self.next()) {
     }
     self.backup()
-    self.emit(NumericKey)
+    self.emit(token.TokenType.NumericKey)
     if self.accept("]") {
-      self.emit(RBrace)
+      self.emit(token.TokenType.RBrace)
     } else {
-      self.emit(Invalid)
-      return Done
+      self.emit(token.TokenType.Invalid)
+      return State.Done
     }
     self.ignore()
-    return Statement
+    return State.Statement
   }
 
   // Quoted keys in square braces.
@@ -233,15 +233,15 @@ pub type Lexer {
     self.accept("\"")
     self.accept_until_unescaped("\"")
     self.accept("\"")
-    self.emit(QuotedKey)
+    self.emit(token.TokenType.QuotedKey)
     if self.accept("]") {
-      self.emit(RBrace)
+      self.emit(token.TokenType.RBrace)
     } else {
-      self.emit(Invalid)
-      return Done
+      self.emit(token.TokenType.Invalid)
+      return State.Done
     }
     self.ignore()
-    return Statement
+    return State.Statement
   }
 
   // The value at the end of a statement.
@@ -249,9 +249,9 @@ pub type Lexer {
     self.accept_run(" ")
     self.ignore()
     if self.accept("=") {
-      self.emit(Equals)
+      self.emit(token.TokenType.Equals)
     } else {
-      return Done
+      return State.Done
     }
     self.accept_run(" ")
     self.ignore()
@@ -259,35 +259,35 @@ pub type Lexer {
     if self.accept("\"") {
       self.accept_until_unescaped("\"")
       self.accept("\"")
-      self.emit(Str)
+      self.emit(token.TokenType.Str)
     } else if self.accept("t") {
       self.accept_run("rue")
-      self.emit(True)
+      self.emit(token.TokenType.True)
     } else if self.accept("f") {
       self.accept_run("alse")
-      self.emit(False)
+      self.emit(token.TokenType.False)
     } else if self.accept("n") {
       self.accept_run("ul")
-      self.emit(Null)
+      self.emit(token.TokenType.Null)
     } else if self.accept("[") {
       self.accept("]")
-      self.emit(EmptyArray)
+      self.emit(token.TokenType.EmptyArray)
     } else if self.accept("{") {
       self.accept("}")
-      self.emit(EmptyObject)
+      self.emit(token.TokenType.EmptyObject)
     } else {
       // Assume a number
       self.accept_until(";")
-      self.emit(Number)
+      self.emit(token.TokenType.Number)
     }
 
     self.accept_run(" ")
     self.ignore()
     if self.accept(";") {
-      self.emit(Semi)
+      self.emit(token.TokenType.Semi)
     }
     // The value is always the last thing in the statement
-    return Done
+    return State.Done
   }
 
   // Accepts everything to the end and emits it as an Ignored token.
@@ -295,8 +295,8 @@ pub type Lexer {
     while self.next() != jsonraw.rune_error {
     }
     self.backup()
-    self.emit(Ignored)
-    return Done
+    self.emit(token.TokenType.Ignored)
+    return State.Done
   }
 }
 
@@ -452,7 +452,7 @@ pub fn recursive_merge(a: jsonraw.Value, b: jsonraw.Value) throws -> jsonraw.Val
           }
         }
         if down {
-          holes.append(InObject(fields: out, key: down_key))
+          holes.append(Hole.InObject(fields: out, key: down_key))
         } else {
           done = jsonraw.Value.Object(fields: out)
         }
@@ -491,7 +491,7 @@ pub fn recursive_merge(a: jsonraw.Value, b: jsonraw.Value) throws -> jsonraw.Val
           }
         }
         if down {
-          holes.append(InArray(items: out, index: down_index))
+          holes.append(Hole.InArray(items: out, index: down_index))
         } else {
           done = jsonraw.Value.Array(items: out)
         }

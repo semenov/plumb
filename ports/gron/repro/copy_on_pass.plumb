@@ -31,16 +31,16 @@ fn add_value(v: Value, item: Value) -> Value {
     Array(items) => {
       var out = items
       out.append(item)
-      Array(items: out)
+      Value.Array(items: out)
     }
-    Null => Array(items: [item])
+    Null => Value.Array(items: [item])
   }
 }
 
 fn run_enum(n: Int) -> Int {
-  var v = Null
+  var v = Value.Null
   for _ in 0..<n {
-    v = add_value(v, item: Null)
+    v = add_value(v, item: Value.Null)
   }
   return match v {
     Array(items) => items.length

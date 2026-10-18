@@ -1,0 +1,25 @@
+// interfaces are the language's own (`Error`); behavior is swapped with a
+// record of functions
+interface Mailer {
+  fn send(self, to: String) throws
+}
+
+type Mail {
+  send: fn(String) throws
+}
+
+type Missing implements Error {
+  fn message(self) -> String {
+    return "missing"
+  }
+}
+
+fn welcome(mail: Mail, to: String) throws {
+  mail.send(to)
+}
+
+fn main() throws {
+  let fake = Mail(send: to => print("to ${to}"))
+  welcome(fake, to: "ada@example.com")
+  throw Missing()
+}

@@ -29,17 +29,20 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
         private to http; the types are the prelude's internal part, out of
         `plumb doc`. parallel_map and time.timeout work on wasm-server
         (`if __has_tasks()` is left out there). Runtime tests use them
-        with PLUMB_INTERNAL_TASKS=1
+        with PLUMB_INTERNAL=1
   - [ ] cleanup: Shared and Channel are now unused by the standard
         library: remove them from the checker, codegen and runtime (lock
         rules, read(), contains_shared, lt_chan)
   - [ ] bug (old): `hey -n 20000 -c 10` against a local server segfaults
         (also with the version before; -n 3000 -c 10 is fine)
-- [ ] **Interfaces: keep or remove?** (Vlad, 2026-10-18: keep for now.)
-      0 declared in 441 agent-written files; only `Error` is used; a record
-      of functions (`type Mailer { send: fn(...) }`) covers fakes in tests,
-      as in Gleam. Decide by the next real backend with tests written
-      without hints: if no one reaches for `interface`, remove it
+- [x] **A variant is made with its enum's name** (`Status.Draft`; bare in
+      patterns), 2026-10-18, research/local-reasoning.md item 6
+- [ ] make `if m[k] is some(v) { m[k] = grow(v) }` as fast as with
+      `m.take(k)` (no copy of the value), then drop that advice from the guide
+- [x] **No interfaces of your own** (Vlad, 2026-10-18, local reasoning:
+      research/local-reasoning.md): a record of functions swaps behavior;
+      `Error` stays. The compiler's own interface tests run with
+      PLUMB_INTERNAL=1 (Error uses the same machinery)
 - [x] **No `let _ =`: a result may be left unused** (Vlad, 2026-10-18).
       Still errors: dropping a new version of the receiver (`xs.sorted()`,
       `name.trim()`), a value computed and never used, a task nobody
@@ -83,10 +86,9 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
   - [x] call stacks on panic (the Plumb functions, from frame pointers and
         dladdr; inlined ones don't show) and the right file for a panic in
         an imported file (it had no location)
-  - [ ] later: locations on thrown errors; changing
-        through interface-typed list elements; Decimal with 38 digits;
+  - [ ] later: locations on thrown errors; Decimal with 38 digits;
         `var ys = xs; ys.append(2)` never read (a method call counts as a
-        read); a lock wait-for graph for deadlocks in servers
+        read)
 - [x] **A String is always valid UTF-8** (Vlad chose A, 2026-09-29):
       invalid bytes become U+FFFD on the way in; `Bytes.text()` strict,
       `Bytes.text_lossy()`; HTTP `text()` can't fail

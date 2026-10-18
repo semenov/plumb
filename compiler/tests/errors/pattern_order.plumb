@@ -3,7 +3,7 @@ enum Shape {
 }
 
 fn main() {
-  let r = Rect(width: 2.0, height: 10.0)
+  let r = Shape.Rect(width: 2.0, height: 10.0)
   match r {
     Rect(height, width) => print("height=${height} width=${width}")
   }

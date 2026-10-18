@@ -26,7 +26,7 @@ reasons behind the rules are in `DESIGN.md`.
 - Without `pub`, a function or type is private to its file.
 - A local variable can't have the name of an imported module (`let path = ...`
   with `import path` is an error).
-- The top level holds `import`, `type`, `enum`, `interface`, `fn`, `test`
+- The top level holds `import`, `type`, `enum`, `fn`, `test`
   and **`let` for fixed values**: `let max_retries = 5`,
   `pub let default_port = 8080`, `let usage = """..."""`. The value is
   made of literals, other top-level `let`s, and lists, maps and records of
@@ -94,7 +94,7 @@ let kind = match word {
 ```
 
 Patterns: literals, `_`, a name, `some(p)`, `none`, `Variant(p, ...)`, a
-record type inside an interface (`NotFound(id)`), and `p | q`.
+an error type (`NotFound(id)`), and `p | q`.
 
 No semicolons. Braces always. `if` conditions have no parentheses.
 Two-space indentation; `plumb fmt` lays files out the standard way.
@@ -114,8 +114,12 @@ enum Status {                  // variants, with or without data
   Draft
   Published(at: String)
 }
-let s = Published(at: "today")     // variants of your own enums: bare names
-let v = json.Value.Null            // from another module: module.Enum.Variant
+let s = Status.Published(at: "today")   // a variant with its enum's name
+let v = json.Value.Null                 // from another module: module.Enum.Variant
+let shown = match s {                   // in a pattern the enum is known:
+  Draft => "draft"                      // the bare name
+  Published(at) => "since ${at}"
+}
 
 type Money {
   cents: Int
@@ -125,11 +129,11 @@ type Money {
 }
 // an error in "${err}" is its message(); durations print as 1.5s, dates as ISO
 
-type User implements Describable { ... }   // interfaces are explicit
-
-interface Describable {
-  fn describe(self) -> String
-}
+type Mailer {                  // behavior to swap (a fake in tests): a
+  send: fn(String) throws      // record of functions; there are no
+}                              // interfaces except `Error`
+let fake = Mailer(send: to => print("to ${to}"))
+fake.send("ada@example.com")
 ```
 
 - Methods go inside the type: `fn describe(self) -> String { ... }`. A method
@@ -498,7 +502,7 @@ A name missing from the data is an error (with the line), not empty text.
 
 ```
 test "discount never goes below zero" {
-  expect apply(Fixed(50.0), total: 30.0) == 0.0
+  expect apply(Discount.Fixed(50.0), total: 30.0) == 0.0
 }
 ```
 

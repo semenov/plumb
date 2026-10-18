@@ -70,7 +70,7 @@ pub type Token {
 
   // The text as printed.
   pub fn format(self) -> String {
-    if self.typ == Equals {
+    if self.typ == TokenType.Equals {
       return " ${self.text} "
     }
     return self.text
@@ -121,12 +121,12 @@ pub let green = Color(on: "32", off: "0")
 // The token for a JSON value.
 pub fn value_token(v: jsonraw.Value) -> Token {
   return match v {
-    Object(_) => Token(text: "{}", typ: EmptyObject)
-    Array(_) => Token(text: "[]", typ: EmptyArray)
-    Number(text) => Token(text: text, typ: Number)
-    String(value) => Token(text: quote_string(value), typ: Str)
-    Bool(value) => if value { Token(text: "true", typ: True) } else { Token(text: "false", typ: False) }
-    Null => Token(text: "null", typ: Null)
+    Object(_) => Token(text: "{}", typ: TokenType.EmptyObject)
+    Array(_) => Token(text: "[]", typ: TokenType.EmptyArray)
+    Number(text) => Token(text: text, typ: TokenType.Number)
+    String(value) => Token(text: quote_string(value), typ: TokenType.Str)
+    Bool(value) => if value { Token(text: "true", typ: TokenType.True) } else { Token(text: "false", typ: TokenType.False) }
+    Null => Token(text: "null", typ: TokenType.Null)
   }
 }
 
@@ -202,7 +202,7 @@ test "quote_string" {
 }
 
 test "value tokens" {
-  expect value_token(jsonraw.Value.Number(text: "1.50e3")) == Token(text: "1.50e3", typ: Number)
-  expect value_token(jsonraw.Value.Null).typ == Null
+  expect value_token(jsonraw.Value.Number(text: "1.50e3")) == Token(text: "1.50e3", typ: TokenType.Number)
+  expect value_token(jsonraw.Value.Null).typ == TokenType.Null
   expect value_token(jsonraw.Value.Array(items: [])).text == "[]"
 }

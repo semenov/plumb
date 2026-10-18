@@ -20,7 +20,7 @@ type Address {
 type User {
   id: Int
   name: String
-  role: Role = Member
+  role: Role = Role.Member
   tags: List<String> = []
   address: Address?
   scores: Map<String, Int> = {}
@@ -40,7 +40,7 @@ type Options {
 }
 
 fn main() throws {
-  let u = User(id: 1, name: "Ada \"Countess\"", role: Admin, tags: ["math", "code"], address: Address(city: "London"), scores: {"chess": 3})
+  let u = User(id: 1, name: "Ada \"Countess\"", role: Role.Admin, tags: ["math", "code"], address: Address(city: "London"), scores: {"chess": 3})
   let text = json.encode(u)
   print(text)
   let back = json.decode<User>(text)

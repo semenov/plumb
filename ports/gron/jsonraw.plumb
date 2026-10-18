@@ -138,10 +138,10 @@ type Parser {
         let next = self.byte(self.pos)
         if c == 91 and next == 93 {
           self.pos += 1
-          value = Array(items: [])
+          value = Value.Array(items: [])
         } else if c == 123 and next == 125 {
           self.pos += 1
-          value = Object(fields: {})
+          value = Value.Object(fields: {})
         } else if c == 91 {
           open.append(Open(is_object: false))
           continue
@@ -174,7 +174,7 @@ type Parser {
         if open[i].is_object {
           if next == 125 {
             if open.pop() is some(done) {
-              value = Object(fields: done.fields)
+              value = Value.Object(fields: done.fields)
             }
             continue
           }
@@ -185,7 +185,7 @@ type Parser {
         } else {
           if next == 93 {
             if open.pop() is some(done) {
-              value = Array(items: done.items)
+              value = Value.Array(items: done.items)
             }
             continue
           }
@@ -205,7 +205,7 @@ type Parser {
       return Value.String(value: self.parse_string())
     }
     if c == 45 or is_digit(c) {
-      return Number(text: self.parse_number())
+      return Value.Number(text: self.parse_number())
     }
     if c == 116 {
       self.literal("true")
@@ -217,7 +217,7 @@ type Parser {
     }
     if c == 110 {
       self.literal("null")
-      return Null
+      return Value.Null
     }
     throw self.invalid(c, context: "looking for beginning of value")
   }
@@ -585,7 +585,7 @@ pub fn write(v: Value, style: Style) -> String {
         out.append(style.bracket("}"))
       } else {
         let keys = fields.keys().sorted()
-        open.append(Level(values: keys.map(k => fields[k] ?? Null), keys: keys, closing: "}"))
+        open.append(Level(values: keys.map(k => fields[k] ?? Value.Null), keys: keys, closing: "}"))
       }
     } else {
       out.append(style.scalar(next))
@@ -737,7 +737,7 @@ test "syntax errors are worded as Go's" {
 }
 
 test "decode_first stops after the first value" {
-  expect (decode_first("{\"a\":1} trailing".bytes())) == Value.Object(fields: {"a": Number(text: "1")})
+  expect (decode_first("{\"a\":1} trailing".bytes())) == Value.Object(fields: {"a": Value.Number(text: "1")})
   let scalar = try decode_first("1x".bytes()) catch err { Value.String(value: err.message()) }
   expect scalar == Value.String(value: "invalid character 'x' after top-level value")
 }

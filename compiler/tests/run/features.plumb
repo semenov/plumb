@@ -21,9 +21,9 @@ enum Tree {
 
 fn insert(tree: Tree, v: Int) -> Tree {
   return match tree {
-    Leaf => Node(left: Leaf, value: v, right: Leaf)
-    Node(l, x, r) if v < x => Node(left: insert(l, v), value: x, right: r)
-    Node(l, x, r) => Node(left: l, value: x, right: insert(r, v))
+    Leaf => Tree.Node(left: Tree.Leaf, value: v, right: Tree.Leaf)
+    Node(l, x, r) if v < x => Tree.Node(left: insert(l, v), value: x, right: r)
+    Node(l, x, r) => Tree.Node(left: l, value: x, right: insert(r, v))
   }
 }
 
@@ -83,7 +83,7 @@ test "generic stack" {
 }
 
 test "recursive enum" {
-  var t: Tree = Leaf
+  var t: Tree = Tree.Leaf
   for v in [5, 2, 8, 1, 9, 3] {
     t = insert(t, v)
   }

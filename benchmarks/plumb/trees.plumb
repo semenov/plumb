@@ -5,9 +5,9 @@ enum Tree {
 
 fn build(depth: Int) -> Tree {
   if depth == 0 {
-    return Leaf
+    return Tree.Leaf
   }
-  return Node(left: build(depth - 1), right: build(depth - 1))
+  return Tree.Node(left: build(depth - 1), right: build(depth - 1))
 }
 
 fn check(tree: Tree) -> Int {

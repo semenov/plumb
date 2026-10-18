@@ -13,7 +13,7 @@ export PLUMB_SPLIT_STRICT=1
 case $PLUMB_BIN in /*) ;; *) PLUMB_BIN=$(pwd)/$PLUMB_BIN ;; esac
 fail=0
 # tests of the runtime may start tasks of their own (user code can't)
-export PLUMB_INTERNAL_TASKS=1
+export PLUMB_INTERNAL=1
 for f in *.plumb; do
   name=${f%.plumb}
   if [ -f "$name.out" ]; then
@@ -36,7 +36,7 @@ for f in *.plumb; do
 done
 # error messages: each program in errors/ with a .err file must give
 # exactly those messages
-unset PLUMB_INTERNAL_TASKS
+unset PLUMB_INTERNAL
 cd ../errors || exit 1
 for f in *.plumb; do
   [ -f "${f%.plumb}.err" ] || continue
@@ -47,7 +47,7 @@ for f in *.plumb; do
 done
 cd ../run || exit 1
 # over real connections: each script's output must match its .out
-export PLUMB_INTERNAL_TASKS=1
+export PLUMB_INTERNAL=1
 cd ../wire || exit 1
 for f in *.sh; do
   out=$(PLUMB_BIN=$PLUMB_BIN ./"$f" 2>/dev/null)
@@ -59,7 +59,7 @@ done
 # name; with wasi-sdk
 # (WASI_SDK, /opt/wasi-sdk, ~/wasi-sdk or the one plumb downloaded) an app
 # builds into a component
-unset PLUMB_INTERNAL_TASKS
+unset PLUMB_INTERNAL
 cd ../wasm || exit 1
 for f in tasks open; do
   out=$($PLUMB_BIN build --target wasm-server $f.plumb -o $T/$f.wasm 2>&1)
