@@ -128,7 +128,8 @@ our backend behind it. What they hit, roughly in order:
    - sending emails after the response;
    - cleanups, daily digests, retries of webhooks.
 
-   The server has queues and cron; Plumb has no API for them on wasm yet.
+   Done (2026-10-18): `queue.send`, `router.queue` and `router.cron`, on the
+   server's durable queues and cron, and inside the program under `plumb run`.
 7. **AI calls:** a vibe-coded app very often calls an LLM. Today that
    breaks in two ways:
    - the 10-second request limit is too short for such calls;

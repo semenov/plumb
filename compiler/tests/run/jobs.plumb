@@ -1,0 +1,52 @@
+// queue.send, router.queue and router.run_jobs in tests
+
+import http
+import json
+import queue
+
+type Welcome {
+  to: String
+}
+
+fn make_router() -> http.Router {
+  var router = http.Router()
+  router.post("/signup", req => {
+    queue.send("emails", json.encode(Welcome(to: req.text())))
+    http.text(201, "welcome")
+  })
+  router.queue("emails", job => {
+    let w = json.decode<Welcome>(job.payload)
+    if w.to == "bad" {
+      throw Failure(message: "can't send to ${w.to}")
+    }
+  })
+  return router
+}
+
+test "a signup queues one email" {
+  let router = make_router()
+  var req = http.request("POST", "/signup")
+  req.body = "ada@example.com".bytes()
+  let res = router.handle(req)
+  expect res.status == 201
+  expect router.run_jobs() == 1
+  expect router.run_jobs() == 0
+}
+
+test "a job's error comes out of run_jobs" {
+  let router = make_router()
+  var req = http.request("POST", "/signup")
+  req.body = "bad".bytes()
+  router.handle(req)
+  let err = expect throws router.run_jobs()
+  expect err.message() == "can't send to bad"
+}
+
+test "jobs of a test don't reach the next one" {
+  queue.send("emails", "{}")
+  expect true
+}
+
+test "the queue starts empty" {
+  expect make_router().run_jobs() == 0
+}

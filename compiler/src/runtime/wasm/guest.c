@@ -72,6 +72,11 @@ extern void __wasm_import_platform_sdk_storage_url(uint8_t *, size_t, int64_t, u
 __attribute__((__import_module__("platform:sdk/storage@0.1.0"), __import_name__("upload-url")))
 extern void __wasm_import_platform_sdk_storage_upload_url(uint8_t *, size_t, int64_t, uint8_t *, size_t, int32_t, int64_t, uint8_t *);
 
+// Imported Functions from `platform:sdk/queue@0.1.0`
+
+__attribute__((__import_module__("platform:sdk/queue@0.1.0"), __import_name__("send")))
+extern void __wasm_import_platform_sdk_queue_send(uint8_t *, size_t, uint8_t *, size_t, int64_t, uint8_t *);
+
 // Imported Functions from `wasi:io/poll@0.2.12`
 
 __attribute__((__import_module__("wasi:io/poll@0.2.12"), __import_name__("[method]pollable.ready")))
@@ -312,6 +317,23 @@ extern void __wasm_import_wasi_http_outgoing_handler_handle(int32_t, int32_t, in
 // Exported Functions from `wasi:http/incoming-handler@0.2.12`
 
 
+// Exported Functions from `platform:sdk/events@0.1.0`
+
+__attribute__((__weak__, __export_name__("cabi_post_platform:sdk/events@0.1.0#handle")))
+void __wasm_export_exports_platform_sdk_events_handle_post_return(uint8_t * arg0) {
+  switch ((int32_t) (int32_t) *((uint8_t*) (arg0 + 0))) {
+    case 0: {
+      break;
+    }
+    case 1: {
+      if ((*((size_t*) (arg0 + (2*sizeof(void*))))) > 0) {
+        free(*((uint8_t **) (arg0 + sizeof(void*))));
+      }
+      break;
+    }
+  }
+}
+
 // Canonical ABI intrinsics
 
 __attribute__((__weak__, __export_name__("cabi_realloc")))
@@ -322,6 +344,9 @@ void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
   if (!ret) abort();
   return ret;
 }
+
+__attribute__((__aligned__(sizeof(void*))))
+static uint8_t RET_AREA[(3*sizeof(void*))];
 
 // Helper Functions
 
@@ -597,6 +622,29 @@ void platform_sdk_storage_result_string_string_free(platform_sdk_storage_result_
     guest_string_free(&ptr->val.ok);
   } else {
     guest_string_free(&ptr->val.err);
+  }
+}
+
+void platform_sdk_queue_error_free(platform_sdk_queue_error_t *ptr) {
+  switch ((int32_t) ptr->tag) {
+    case 0: {
+      guest_string_free(&ptr->val.unknown_queue);
+      break;
+    }
+    case 1: {
+      break;
+    }
+    case 2: {
+      guest_string_free(&ptr->val.unavailable);
+      break;
+    }
+  }
+}
+
+void platform_sdk_queue_result_void_error_free(platform_sdk_queue_result_void_error_t *ptr) {
+  if (!ptr->is_err) {
+  } else {
+    platform_sdk_queue_error_free(&ptr->val.err);
   }
 }
 
@@ -1181,6 +1229,18 @@ void wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_f
   if (!ptr->is_err) {
   } else {
     wasi_http_outgoing_handler_error_code_free(&ptr->val.err);
+  }
+}
+
+void exports_platform_sdk_events_event_free(exports_platform_sdk_events_event_t *ptr) {
+  guest_string_free(&ptr->id);
+  guest_string_free(&ptr->name);
+}
+
+void exports_platform_sdk_events_result_void_string_free(exports_platform_sdk_events_result_void_string_t *ptr) {
+  if (!ptr->is_err) {
+  } else {
+    guest_string_free(&ptr->val.err);
   }
 }
 
@@ -1975,6 +2035,48 @@ bool platform_sdk_storage_upload_url(guest_string_t *key, uint64_t max_bytes, gu
   }
   if (!result.is_err) {
     *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
+}
+
+bool platform_sdk_queue_send(guest_string_t *name, guest_list_u8_t *payload, uint64_t delay_ms, platform_sdk_queue_error_t *err) {
+  __attribute__((__aligned__(8)))
+  uint8_t ret_area[(16+2*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_platform_sdk_queue_send((uint8_t *) (*name).ptr, (*name).len, (uint8_t *) (*payload).ptr, (*payload).len, (int64_t) (delay_ms), ptr);
+  platform_sdk_queue_result_void_error_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      platform_sdk_queue_error_t variant;
+      variant.tag = (int32_t) *((uint8_t*) (ptr + 8));
+      switch ((int32_t) variant.tag) {
+        case 0: {
+          variant.val.unknown_queue = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + 16))), (*((size_t*) (ptr + (16+1*sizeof(void*))))) };
+          break;
+        }
+        case 1: {
+          variant.val.too_large = (uint64_t) (*((int64_t*) (ptr + 16)));
+          break;
+        }
+        case 2: {
+          variant.val.unavailable = (guest_string_t) { (uint8_t*)(*((uint8_t **) (ptr + 16))), (*((size_t*) (ptr + (16+1*sizeof(void*))))) };
+          break;
+        }
+      }
+
+      result.val.err = variant;
+      break;
+    }
+  }
+  if (!result.is_err) {
     return 1;
   } else {
     *err = result.val.err;
@@ -6599,6 +6701,32 @@ bool wasi_http_outgoing_handler_handle(wasi_http_outgoing_handler_own_outgoing_r
 __attribute__((__export_name__("wasi:http/incoming-handler@0.2.12#handle")))
 void __wasm_export_exports_wasi_http_incoming_handler_handle(int32_t arg, int32_t arg0) {
   exports_wasi_http_incoming_handler_handle((exports_wasi_http_incoming_handler_own_incoming_request_t) { arg }, (exports_wasi_http_incoming_handler_own_response_outparam_t) { arg0 });
+}
+
+__attribute__((__export_name__("platform:sdk/events@0.1.0#handle")))
+uint8_t * __wasm_export_exports_platform_sdk_events_handle(uint8_t * arg, size_t arg0, int32_t arg1, uint8_t * arg2, size_t arg3, uint8_t * arg4, size_t arg5, int32_t arg6) {
+  exports_platform_sdk_events_event_t arg7 = (exports_platform_sdk_events_event_t) {
+    (guest_string_t) (guest_string_t) { (uint8_t*)(arg), (arg0) },
+    (exports_platform_sdk_events_kind_t) arg1,
+    (guest_string_t) (guest_string_t) { (uint8_t*)(arg2), (arg3) },
+    (guest_list_u8_t) (guest_list_u8_t) { (uint8_t*)(arg4), (arg5) },
+    (uint32_t) (uint32_t) (arg6),
+  };
+  exports_platform_sdk_events_result_void_string_t ret;
+  guest_string_t err;
+  ret.is_err = !exports_platform_sdk_events_handle(&arg7, &err);
+  if (ret.is_err) {
+    ret.val.err = err;
+  }
+  uint8_t *ptr = (uint8_t *) &RET_AREA;
+  if ((ret).is_err) {
+    const guest_string_t *payload8 = &(ret).val.err;*((int8_t*)(ptr + 0)) = 1;
+    *((size_t*)(ptr + (2*sizeof(void*)))) = (*payload8).len;
+    *((uint8_t **)(ptr + sizeof(void*))) = (uint8_t *) (*payload8).ptr;
+  } else {
+    *((int8_t*)(ptr + 0)) = 0;
+  }
+  return ptr;
 }
 
 // Ensure that the *_component_type.o object is linked in

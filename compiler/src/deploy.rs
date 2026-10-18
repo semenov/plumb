@@ -269,6 +269,7 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
         h
     };
     let (mut components, mut files, mut apps, mut sql_checks) = (vec![], vec![], vec![], vec![]);
+    let mut app_jobs: Vec<(String, String)> = vec![];
     for app in &p.apps {
         if let Some(main) = &app.main {
             let main = root.join(main);
@@ -286,6 +287,15 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
             let mut sources = crate::diag::Sources::default();
             if let Some((prog, _)) = crate::front_end(&main.to_string_lossy(), &mut sources) {
                 let own = crate::api::own_modules(&prog, crate::STD_NAMES);
+                // the queues and cron jobs it handles
+                let jobs = crate::api::jobs(&prog, &sources, &|m| own.contains(&m))?;
+                if !jobs.queues.is_empty() {
+                    app_jobs.push((app.name.clone(), format!("\"queues\":{}", json_list(&jobs.queues))));
+                }
+                if !jobs.cron.is_empty() {
+                    let cron: Vec<String> = jobs.cron.iter().map(|(n, s)| format!("{}:{}", json_str(n), json_str(s))).collect();
+                    app_jobs.push((app.name.clone(), format!("\"cron\":{{{}}}", cron.join(","))));
+                }
                 for c in crate::api::sql_checks(&prog, &sources, &|m| own.contains(&m)) {
                     let fields = match &c.fields {
                         Some((all, required)) => format!(",\"fields\":{},\"required\":{}", json_list(all), json_list(required)),
@@ -316,6 +326,7 @@ fn build_release(root: &Path, p: &ProjectConfig, extra_domains: &[&str], build: 
         if app.spa {
             settings.push("\"spa\":true".to_string());
         }
+        settings.extend(app_jobs.iter().filter(|(a, _)| *a == app.name).map(|(_, j)| j.clone()));
         apps.push(format!("{}:{{{}}}", json_str(&app.name), settings.join(",")));
     }
     let mut schema = vec![];

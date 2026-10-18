@@ -18,6 +18,7 @@ import io
 import json
 import log
 import net
+import queue
 import time
 
 pub type Request {
@@ -392,6 +393,14 @@ type Route {
   handler: fn(Request) throws -> Response
 }
 
+// A queue's handler, or a cron job's.
+type JobRoute {
+  name: String
+  // the cron schedule; "" for a queue
+  schedule: String = ""
+  handler: fn(queue.Job) throws
+}
+
 // Runs around every request: gets the request and `next` (the rest of the
 // chain: other middleware, then the route) and returns a response.
 //   router.use((req, next) => {
@@ -405,6 +414,7 @@ pub type Router {
   prefix: String = ""
   routes: List<Route> = []
   middleware: List<Middleware> = []
+  jobs: List<JobRoute> = []
 
   // Adds middleware: the first added runs first (outermost).
   pub mutating fn use(m: Middleware) {
@@ -447,6 +457,55 @@ pub type Router {
   //   router.websocket("/chat", ws => chat(ws))
   pub mutating fn websocket(pattern: String, handler: fn(WebSocket) throws) {
     self.get(pattern, req => upgrade(req, handler: handler))
+  }
+
+  // Handles the messages put on the queue `name` with `queue.send`, after
+  // the responses: an error makes the message come back later.
+  //   router.queue("emails", job => send_welcome(job.payload))
+  pub mutating fn queue(name: String, handler: fn(queue.Job) throws) {
+    self.add_job(JobRoute(name: name, handler: handler))
+  }
+
+  // Runs `handler` on a schedule: cron's five fields (minute, hour, day of
+  // the month, month, day of the week; in UTC), or six with seconds first.
+  // `*` is every value, `*/15` every 15th, `1-5` a range, `1,15` a list.
+  //   router.cron("digest", schedule: "0 9 * * 1-5", handler: job => send_digest())
+  pub mutating fn cron(name: String, schedule: String, handler: fn(queue.Job) throws) {
+    if cron_fields(schedule) is none {
+      panic("cron \"${name}\": \"${schedule}\" is not a schedule: five fields (minute hour day month weekday) or six with seconds first")
+    }
+    self.add_job(JobRoute(name: name, schedule: schedule, handler: handler))
+  }
+
+  // Runs a queue message or a cron tick with its handler.
+  pub fn run_job(self, job: queue.Job) throws {
+    for r in self.jobs {
+      if r.name == job.name {
+        r.handler(job)
+        return
+      }
+    }
+    throw Failure(message: "no handler for \"${job.name}\": add `router.queue(\"${job.name}\", ...)`")
+  }
+
+  // For tests: runs the queue messages waiting now, each once, and returns
+  // how many ran; a handler's error comes out here.
+  //   let res = router.handle(signup)
+  //   expect router.run_jobs() == 1
+  pub fn run_jobs(self) throws -> Int {
+    var ran = 0
+    while take_job(__queue_take(9223372036854775807)) is some(job) {
+      self.run_job(job)
+      ran += 1
+    }
+    return ran
+  }
+
+  mutating fn add_job(job: JobRoute) {
+    if self.jobs.any(j => j.name == job.name) {
+      panic("\"${job.name}\" has a handler already: one per queue or cron job")
+    }
+    self.jobs.append(job)
   }
 
   // Serves the files in `dir` under `prefix`: files("/static", dir: "public")
@@ -667,6 +726,11 @@ pub fn status_text(status: Int) -> String
 // Serves the router until the program is stopped (Ctrl-C), then returns.
 // It logs "listening on http://localhost:<port>" when ready, and "stopped".
 pub fn serve(router: Router, port: Int) throws {
+  if take_job(__event()) is some(job) {
+    router.run_job(job)
+    return
+  }
+  start_jobs(router)
   __serve(port, req => router.handle(req))
 }
 
@@ -692,10 +756,194 @@ pub type ServerOptions {
 }
 
 pub fn serve_with(router: Router, options: ServerOptions) throws {
+  if take_job(__event()) is some(job) {
+    router.run_job(job)
+    return
+  }
+  start_jobs(router)
   __serve_on(options.host, port: options.port, max_body: options.max_body, idle_ns: options.idle_timeout.nanos, read_ns: options.read_timeout.nanos, write_ns: options.write_timeout.nanos, handler: req => router.handle(req))
 }
 
 fn __serve_on(host: String, port: Int, max_body: Int, idle_ns: Int, read_ns: Int, write_ns: Int, handler: fn(Request) throws -> Response) throws
+
+// ---- queues and cron (`queue.send`, `Router.queue`, `Router.cron`) ----
+
+// The program's own queue (not on wasm-server, where the server keeps it):
+// a message due by `now_ms` as "id␟name␟attempt␟payload", or "".
+fn __queue_take(now_ms: Int) -> String
+
+fn __queue_push(id: String, name: String, payload: String, attempt: Int, at_ms: Int)
+
+// On wasm-server: the queue message or cron tick this instance was started
+// for, as above; "" when it answers a request (and always elsewhere).
+fn __event() -> String
+
+// While `serve` runs, `tick(from_ms, to_ms)` is called every 200 ms with
+// the time since the last call (not on wasm-server).
+fn __set_tick(tick: fn(Int, Int) throws)
+
+let job_sep = "\u{1f}"
+
+fn take_job(text: String) -> queue.Job? {
+  if text.is_empty() {
+    return none
+  }
+  var parts: List<String> = []
+  var rest = text
+  while parts.length < 3 {
+    let i = rest.index_of(job_sep) ?? rest.length
+    parts.append(rest.slice(from: 0, to: i))
+    rest = if i < rest.length { rest.slice(from: i + 1, to: rest.length) } else { "" }
+  }
+  let attempt = try parts[2].to_int() catch err {
+    1
+  }
+  return queue.Job(id: parts[0], name: parts[1], payload: rest, attempt: attempt)
+}
+
+fn start_jobs(router: Router) {
+  if not router.jobs.is_empty() {
+    __set_tick((from_ms, to_ms) => tick(router, from_ms: from_ms, to_ms: to_ms))
+  }
+}
+
+// Cron ticks due in (from_ms, to_ms] go on the queue; then the queue's due
+// messages run. A failed one comes back after 2, 4, 8 and 16 seconds, as
+// on wasm-server, and is given up after the 5th attempt.
+fn tick(router: Router, from_ms: Int, to_ms: Int) throws {
+  for r in router.jobs {
+    if r.schedule.is_empty() {
+      continue
+    }
+    let spec = cron_fields(r.schedule) ?? CronSpec()
+    for s in from_ms.div(1000) + 1..=to_ms.div(1000) {
+      if cron_due(spec, at: time.from_unix(s)) {
+        __queue_push("cron-${r.name}-${s}", name: r.name, payload: "", attempt: 1, at_ms: to_ms)
+      }
+    }
+  }
+  while take_job(__queue_take(to_ms)) is some(job) {
+    try router.run_job(job) catch err {
+      if job.attempt >= 5 {
+        log.error("${job.name}: job ${job.id} failed ${job.attempt} times, giving up: ${err}")
+      } else {
+        log.warn("${job.name}: job ${job.id} failed (attempt ${job.attempt}), trying again: ${err}")
+        __queue_push(job.id, name: job.name, payload: job.payload, attempt: job.attempt + 1, at_ms: to_ms + 1000 * 1.shift_left(job.attempt))
+      }
+    }
+  }
+}
+
+// A cron schedule: the values each field allows.
+type CronSpec {
+  seconds: Set<Int> = {}
+  minutes: Set<Int> = {}
+  hours: Set<Int> = {}
+  days: Set<Int> = {}
+  months: Set<Int> = {}
+  weekdays: Set<Int> = {}
+  // `*` in the day of the month or of the week: only the other one counts
+  any_day: Bool = true
+  any_weekday: Bool = true
+}
+
+fn cron_fields(schedule: String) -> CronSpec? {
+  var f = schedule.words()
+  if f.length == 5 {
+    f.insert("0", at: 0)
+  }
+  if f.length != 6 {
+    return none
+  }
+  let seconds = cron_field(f[0], low: 0, high: 59)
+  let minutes = cron_field(f[1], low: 0, high: 59)
+  let hours = cron_field(f[2], low: 0, high: 23)
+  let days = cron_field(f[3], low: 1, high: 31)
+  let months = cron_field(f[4], low: 1, high: 12)
+  let weekdays = cron_field(f[5], low: 0, high: 7)
+  if seconds is none or minutes is none or hours is none or days is none or months is none or weekdays is none {
+    return none
+  }
+  // 7 is Sunday too
+  var wd = weekdays
+  if wd.contains(7) {
+    wd.add(0)
+  }
+  return CronSpec(seconds: seconds, minutes: minutes, hours: hours, days: days, months: months, weekdays: wd, any_day: f[3] == "*", any_weekday: f[5] == "*")
+}
+
+// One field: `*`, `5`, `1-5`, `*/15`, `10-50/10`, or a list of them: `1,15`.
+fn cron_field(text: String, low: Int, high: Int) -> Set<Int>? {
+  var out: Set<Int> = {}
+  for part in text.split(",") {
+    var range = part
+    var step = 1
+    if part.index_of("/") is some(i) {
+      step = try part.slice(from: i + 1, to: part.length).to_int() catch err {
+        return none
+      }
+      range = part.slice(from: 0, to: i)
+    }
+    var from = low
+    var to = high
+    if range != "*" {
+      if range.index_of("-") is some(i) {
+        from = try range.slice(from: 0, to: i).to_int() catch err {
+          return none
+        }
+        to = try range.slice(from: i + 1, to: range.length).to_int() catch err {
+          return none
+        }
+      } else {
+        from = try range.to_int() catch err {
+          return none
+        }
+        // `5/15`: from 5, every 15th
+        to = if step > 1 { high } else { from }
+      }
+    }
+    if step < 1 or from < low or to > high or from > to {
+      return none
+    }
+    var v = from
+    while v <= to {
+      out.add(v)
+      v += step
+    }
+  }
+  return out
+}
+
+fn cron_due(c: CronSpec, at: time.DateTime) -> Bool {
+  if not (c.seconds.contains(at.second) and c.minutes.contains(at.minute) and c.hours.contains(at.hour) and c.months.contains(at.month)) {
+    return false
+  }
+  let day = c.days.contains(at.day)
+  let weekday = c.weekdays.contains(weekday_number(at.weekday()))
+  if c.any_day and c.any_weekday {
+    return true
+  }
+  if c.any_day {
+    return weekday
+  }
+  if c.any_weekday {
+    return day
+  }
+  // both given: either one (cron's rule)
+  return day or weekday
+}
+
+fn weekday_number(d: time.Weekday) -> Int {
+  return match d {
+    time.Weekday.Sunday => 0
+    time.Weekday.Monday => 1
+    time.Weekday.Tuesday => 2
+    time.Weekday.Wednesday => 3
+    time.Weekday.Thursday => 4
+    time.Weekday.Friday => 5
+    time.Weekday.Saturday => 6
+  }
+}
 
 // ---- client (HTTPS works) ----
 // A response with any status is not an error: check `response.status`.

@@ -1,0 +1,40 @@
+// Work for later: a message put on a queue is handled after the response,
+// by the router's handler for that queue, and retried if the handler fails
+// (after 2, 4, 8 and 16 seconds; then it's given up and logged).
+//   router.post("/signup", req => {
+//     ...
+//     queue.send("emails", json.encode(Welcome(to: user.email)))
+//     http.text(201, "welcome")
+//   })
+//   router.queue("emails", job => send_welcome(json.decode<Welcome>(job.payload)))
+// Jobs that run on a schedule are `router.cron`. On wasm-server the server
+// keeps the queue (a message is stored before `send` returns); under
+// `plumb run` it's kept in the program until `http.serve`'s handlers take
+// it, and in tests `router.run_jobs()` runs what's waiting.
+// A message may arrive more than once: `job.id` is the same each time.
+
+import time
+
+// A queue message or a cron tick, as a handler gets it.
+pub type Job {
+  // the same on every retry
+  id: String
+  // the queue's name, or the cron job's
+  name: String
+  payload: String
+  // 1 on the first delivery
+  attempt: Int
+}
+
+// Puts a message on the queue `name`.
+pub fn send(name: String, payload: String) throws {
+  __send(name, payload: payload, delay_ms: 0)
+}
+
+// Puts a message on the queue `name`, to be handled no earlier than `delay`
+// from now: queue.send_later("reminders", payload: id, delay: time.hours(24))
+pub fn send_later(name: String, payload: String, delay: time.Duration) throws {
+  __send(name, payload: payload, delay_ms: delay.millis())
+}
+
+fn __send(name: String, payload: String, delay_ms: Int) throws

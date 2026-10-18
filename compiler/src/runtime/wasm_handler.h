@@ -128,3 +128,78 @@ void exports_wasi_http_incoming_handler_handle(exports_wasi_http_incoming_handle
     wasi_http_types_incoming_request_drop_own(request);
 }
 
+
+// ---------------------------------------------------------------- queues and cron
+// The host calls `events.handle` for a queue message or a cron tick, in a
+// fresh instance like a request: `main` runs, and its http.serve hands the
+// job to the router (std/http.plumb `__event`). An error, a panic or a
+// timeout makes the host deliver it again later.
+
+// the job this instance was started for, "id␟name␟attempt␟payload"
+static lt_text *lt_wasm_event;
+static bool lt_wasm_event_taken;
+
+static lt_text *lt_wasm_event_text(void) {
+    if (!lt_wasm_event) return lt_text_cstr("");
+    lt_wasm_event_taken = true;
+    lt_text_dup(lt_wasm_event);
+    return lt_wasm_event;
+}
+
+bool exports_platform_sdk_events_handle(exports_platform_sdk_events_event_t *event, guest_string_t *err) {
+    char att[24];
+    int an = snprintf(att, sizeof att, "%u", (unsigned)event->attempt);
+    int64_t n = (int64_t)event->id.len + 1 + (int64_t)event->name.len + 1 + an + 1 + (int64_t)event->payload.len;
+    lt_text *t = lt_text_new(n);
+    char *p = t->data;
+    memcpy(p, event->id.ptr, event->id.len), p += event->id.len, *p++ = 0x1f;
+    memcpy(p, event->name.ptr, event->name.len), p += event->name.len, *p++ = 0x1f;
+    memcpy(p, att, (size_t)an), p += an, *p++ = 0x1f;
+    memcpy(p, event->payload.ptr, event->payload.len);
+    exports_platform_sdk_events_event_free(event);
+    lt_wasm_event = lt_text_valid(t);
+    lt_wasm_event_taken = false;
+#ifdef LT_WASM_STEP
+    lt_err e = lt_make_failure(lt_text_cstr("a migration step takes no queue messages"));
+#else
+    lt_err e = lt_program_main();
+#endif
+    bool ok = true;
+    if (e.obj) {
+        lt_text *m = lt_error_message(e);
+        lt_log("ERROR", m);
+        guest_string_dup_n(err, m->data, (size_t)m->len);
+        lt_text_drop(m);
+        lt_iface_drop(e);
+        ok = false;
+    } else if (!lt_wasm_event_taken) {
+        const char *m = "main ended without calling http.serve, so the job has no handler";
+        lt_wasm_log_error(m);
+        guest_string_dup(err, m);
+        ok = false;
+    }
+    lt_text_drop(lt_wasm_event);
+    lt_wasm_event = NULL;
+    fflush(stdout);
+    return ok;
+}
+
+static lt_err lt_wasm_queue_send(lt_text *name, lt_text *payload, int64_t delay_ms) {
+    guest_string_t nm = { (uint8_t *)name->data, (size_t)name->len };
+    guest_list_u8_t pl = { (uint8_t *)payload->data, (size_t)payload->len };
+    platform_sdk_queue_error_t qe;
+    if (platform_sdk_queue_send(&nm, &pl, delay_ms > 0 ? (uint64_t)delay_ms : 0, &qe)) return (lt_err){ 0 };
+    char buf[700];
+    switch (qe.tag) {
+    case PLATFORM_SDK_QUEUE_ERROR_UNKNOWN_QUEUE:
+        snprintf(buf, sizeof buf, "queue: no queue named \"%.*s\": add `router.queue(\"%.*s\", ...)` to the app that handles it", (int)(name->len > 100 ? 100 : name->len), name->data, (int)(name->len > 100 ? 100 : name->len), name->data);
+        break;
+    case PLATFORM_SDK_QUEUE_ERROR_TOO_LARGE:
+        snprintf(buf, sizeof buf, "queue: the message is too big (%llu bytes): put the data in the database and send its id", (unsigned long long)qe.val.too_large);
+        break;
+    default:
+        snprintf(buf, sizeof buf, "queue: %.*s", (int)(qe.val.unavailable.len > 600 ? 600 : qe.val.unavailable.len), (const char *)qe.val.unavailable.ptr);
+    }
+    platform_sdk_queue_error_free(&qe);
+    return lt_make_failure(lt_text_cstr(buf));
+}

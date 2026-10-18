@@ -5,7 +5,7 @@ declarations with their comments, bodies left out. `import <module>`,
 then use `module.name`. Functions without a body are built into the
 compiler and runtime.
 
-Modules: [`files`](#files), [`path`](#path), [`io`](#io), [`process`](#process), [`env`](#env), [`cli`](#cli), [`term`](#term), [`log`](#log), [`time`](#time), [`json`](#json), [`http`](#http), [`net`](#net), [`sql`](#sql), [`db`](#db), [`crypto`](#crypto), [`encoding`](#encoding), [`random`](#random), [`regex`](#regex), [`csv`](#csv), [`xml`](#xml), [`template`](#template), [`url`](#url), [`zlib`](#zlib), [`archive`](#archive), [`math`](#math), [`storage`](#storage), and the [prelude](#prelude)
+Modules: [`files`](#files), [`path`](#path), [`io`](#io), [`process`](#process), [`env`](#env), [`cli`](#cli), [`term`](#term), [`log`](#log), [`time`](#time), [`json`](#json), [`http`](#http), [`net`](#net), [`sql`](#sql), [`db`](#db), [`crypto`](#crypto), [`encoding`](#encoding), [`random`](#random), [`regex`](#regex), [`csv`](#csv), [`xml`](#xml), [`template`](#template), [`url`](#url), [`zlib`](#zlib), [`archive`](#archive), [`math`](#math), [`queue`](#queue), [`storage`](#storage), and the [prelude](#prelude)
 (available everywhere without `import`).
 
 ## files
@@ -933,6 +933,7 @@ pub type Router {
   prefix: String = ""
   routes: List<Route> = []
   middleware: List<Middleware> = []
+  jobs: List<JobRoute> = []
   // Adds middleware: the first added runs first (outermost).
   pub mutating fn use(m: Middleware)
   pub mutating fn get(pattern: String, handler: fn(Request) throws -> Response)
@@ -949,6 +950,22 @@ pub type Router {
   // over it until it returns (the connection then closes).
   //   router.websocket("/chat", ws => chat(ws))
   pub mutating fn websocket(pattern: String, handler: fn(WebSocket) throws)
+  // Handles the messages put on the queue `name` with `queue.send`, after
+  // the responses: an error makes the message come back later.
+  //   router.queue("emails", job => send_welcome(job.payload))
+  pub mutating fn queue(name: String, handler: fn(queue.Job) throws)
+  // Runs `handler` on a schedule: cron's five fields (minute, hour, day of
+  // the month, month, day of the week; in UTC), or six with seconds first.
+  // `*` is every value, `*/15` every 15th, `1-5` a range, `1,15` a list.
+  //   router.cron("digest", schedule: "0 9 * * 1-5", handler: job => send_digest())
+  pub mutating fn cron(name: String, schedule: String, handler: fn(queue.Job) throws)
+  // Runs a queue message or a cron tick with its handler.
+  pub fn run_job(self, job: queue.Job) throws
+  // For tests: runs the queue messages waiting now, each once, and returns
+  // how many ran; a handler's error comes out here.
+  //   let res = router.handle(signup)
+  //   expect router.run_jobs() == 1
+  pub fn run_jobs(self) throws -> Int
   // Serves the files in `dir` under `prefix`: files("/static", dir: "public")
   // answers /static/css/site.css with public/css/site.css. Paths can't leave
   // `dir`, and hidden files (".env", ".git") are not served.
@@ -1730,6 +1747,47 @@ pub fn exp(x: Float) -> Float
 pub fn hypot(x: Float, y: Float) -> Float
 pub fn is_nan(x: Float) -> Bool
 pub fn infinity() -> Float
+```
+
+## queue
+
+Work for later: a message put on a queue is handled after the response,
+by the router's handler for that queue, and retried if the handler fails
+(after 2, 4, 8 and 16 seconds; then it's given up and logged).
+
+```
+router.post("/signup", req => {
+  ...
+  queue.send("emails", json.encode(Welcome(to: user.email)))
+  http.text(201, "welcome")
+})
+router.queue("emails", job => send_welcome(json.decode<Welcome>(job.payload)))
+```
+
+Jobs that run on a schedule are `router.cron`. On wasm-server the server
+keeps the queue (a message is stored before `send` returns); under
+`plumb run` it's kept in the program until `http.serve`'s handlers take
+it, and in tests `router.run_jobs()` runs what's waiting.
+A message may arrive more than once: `job.id` is the same each time.
+
+```
+// A queue message or a cron tick, as a handler gets it.
+pub type Job {
+  // the same on every retry
+  id: String
+  // the queue's name, or the cron job's
+  name: String
+  payload: String
+  // 1 on the first delivery
+  attempt: Int
+}
+
+// Puts a message on the queue `name`.
+pub fn send(name: String, payload: String) throws
+
+// Puts a message on the queue `name`, to be handled no earlier than `delay`
+// from now: queue.send_later("reminders", payload: id, delay: time.hours(24))
+pub fn send_later(name: String, payload: String, delay: time.Duration) throws
 ```
 
 ## storage

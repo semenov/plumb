@@ -3420,6 +3420,25 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
             "process.find" => format!("lt_process_find({})", a[0]),
             "process.__run" => format!("({{ int64_t s_; lt_text *o_, *e_; lt_err r_ = lt_process_run_ex({}, {}, {}->data, {}, {}, &s_, &o_, &e_); if (!r_.obj) *{out} = (__typeof__(*{out})){{ s_, o_, e_ }}; r_; }})", a[0], a[1], a[2], a[3], a[4], out = a[5]),
             "env.__set" => format!("lt_env_set({}, {})", a[0], a[1]),
+            // queues: the host's on wasm-server, the program's own elsewhere
+            "queue.__send" => {
+                if self.wasm {
+                    format!("lt_wasm_queue_send({}, {}, {})", a[0], a[1], a[2])
+                } else {
+                    format!("lt_queue_send({}, {}, {})", a[0], a[1], a[2])
+                }
+            }
+            "http.__queue_take" => format!("lt_queue_take({})", a[0]),
+            "http.__queue_push" => format!("lt_queue_push({}, {}, {}, {}, {})", a[0], a[1], a[2], a[3], a[4]),
+            "http.__event" => (if self.wasm { "lt_wasm_event_text()" } else { "lt_text_cstr(\"\")" }).to_string(),
+            "http.__set_tick" => {
+                if self.wasm {
+                    "((void)0)".to_string()
+                } else {
+                    self.threads = true;
+                    format!("({{ lt_fn f_ = {}; lt_fn_dup(f_); lt_http_tick = f_; }})", a[0])
+                }
+            }
             "log.debug" => format!("lt_log(\"DEBUG\", {})", a[0]),
             "files.read_bytes" => format!("lt_files_read_bytes({}, {})", a[0], a[1]),
             "files.write_bytes" => format!("lt_files_write_bytes({}, {})", a[0], a[1]),
@@ -4137,7 +4156,7 @@ static void lt_panic_error(lt_err e, int line) { lt_text *m = lt_error_message(e
                     FnKind::Test(n) => n.clone(),
                     _ => String::new(),
                 };
-                let _ = writeln!(main, "  {{ lt_buf logs = {{0}}; lt_log_capture = &logs; lt_err e = {}(); flockfile(stderr); lt_log_capture = NULL; funlockfile(stderr); if (e.obj) {{ failed++; lt_text *m = lt_error_message(e); printf(\"FAIL  %s\\n      %.*s\\n\", {}, (int)m->len, m->data); if (logs.len) {{ printf(\"      its log:\\n\"); lt_print_indented(logs.d, logs.len); }} lt_text_drop(m); lt_iface_drop(e); }} else {{ passed++; printf(\"ok    %s\\n\", {}); }} lt_buf_free(&logs); }}", f.name, c_str(&name), c_str(&name));
+                let _ = writeln!(main, "  {{ lt_queue_clear(); lt_buf logs = {{0}}; lt_log_capture = &logs; lt_err e = {}(); flockfile(stderr); lt_log_capture = NULL; funlockfile(stderr); if (e.obj) {{ failed++; lt_text *m = lt_error_message(e); printf(\"FAIL  %s\\n      %.*s\\n\", {}, (int)m->len, m->data); if (logs.len) {{ printf(\"      its log:\\n\"); lt_print_indented(logs.d, logs.len); }} lt_text_drop(m); lt_iface_drop(e); }} else {{ passed++; printf(\"ok    %s\\n\", {}); }} lt_buf_free(&logs); }}", f.name, c_str(&name), c_str(&name));
                 let _ = i;
             }
             main += "  printf(\"\\n%d passed, %d failed\\n\", passed, failed);\n  lt_tests_failed = failed;\n}\n";

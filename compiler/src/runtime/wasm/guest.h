@@ -246,6 +246,29 @@ typedef struct {
   } val;
 } platform_sdk_storage_result_string_string_t;
 
+typedef struct platform_sdk_queue_error_t {
+  uint8_t tag;
+  union {
+    guest_string_t     unknown_queue;
+    uint64_t     too_large;
+    guest_string_t     unavailable;
+  } val;
+} platform_sdk_queue_error_t;
+
+// No queue with this name is configured.
+#define PLATFORM_SDK_QUEUE_ERROR_UNKNOWN_QUEUE 0
+// Payload larger than the limit (bytes).
+#define PLATFORM_SDK_QUEUE_ERROR_TOO_LARGE 1
+// The queue store couldn't take the message.
+#define PLATFORM_SDK_QUEUE_ERROR_UNAVAILABLE 2
+
+typedef struct {
+  bool is_err;
+  union {
+    platform_sdk_queue_error_t err;
+  } val;
+} platform_sdk_queue_result_void_error_t;
+
 typedef struct wasi_io_poll_own_pollable_t {
   int32_t __handle;
 } wasi_io_poll_own_pollable_t;
@@ -800,6 +823,29 @@ typedef wasi_http_types_own_incoming_request_t exports_wasi_http_incoming_handle
 
 typedef wasi_http_types_own_response_outparam_t exports_wasi_http_incoming_handler_own_response_outparam_t;
 
+typedef uint8_t exports_platform_sdk_events_kind_t;
+
+#define EXPORTS_PLATFORM_SDK_EVENTS_KIND_QUEUE 0
+#define EXPORTS_PLATFORM_SDK_EVENTS_KIND_CRON 1
+
+typedef struct exports_platform_sdk_events_event_t {
+  // Unique per message; the same on every retry (for idempotency).
+  guest_string_t   id;
+  exports_platform_sdk_events_kind_t   kind;
+  // The queue name, or the cron job name.
+  guest_string_t   name;
+  guest_list_u8_t   payload;
+  // 1 on the first delivery.
+  uint32_t   attempt;
+} exports_platform_sdk_events_event_t;
+
+typedef struct {
+  bool is_err;
+  union {
+    guest_string_t err;
+  } val;
+} exports_platform_sdk_events_result_void_string_t;
+
 // Imported Functions from `platform:sdk/sql@0.1.0`
 // Runs a statement that returns rows (at most 10,000; see `cursor`).
 // Parameters bind to $1, $2, ...
@@ -851,6 +897,11 @@ extern bool platform_sdk_storage_url(guest_string_t *key, uint64_t ttl_ms, guest
 // up to `max-bytes`, stored with `content-type` (empty: the client's
 // Content-Type) and, if `public`, readable by anyone.
 extern bool platform_sdk_storage_upload_url(guest_string_t *key, uint64_t max_bytes, guest_string_t *content_type, bool public_, uint64_t ttl_ms, guest_string_t *ret, guest_string_t *err);
+
+// Imported Functions from `platform:sdk/queue@0.1.0`
+// Queues `payload` for `name`, delivered no earlier than `delay-ms` from
+// now.
+extern bool platform_sdk_queue_send(guest_string_t *name, guest_list_u8_t *payload, uint64_t delay_ms, platform_sdk_queue_error_t *err);
 
 // Imported Functions from `wasi:io/poll@0.2.12`
 // Return the readiness of a pollable. This function never blocks.
@@ -1375,6 +1426,9 @@ extern bool wasi_http_outgoing_handler_handle(wasi_http_outgoing_handler_own_out
 // Exported Functions from `wasi:http/incoming-handler@0.2.12`
 void exports_wasi_http_incoming_handler_handle(exports_wasi_http_incoming_handler_own_incoming_request_t request, exports_wasi_http_incoming_handler_own_response_outparam_t response_out);
 
+// Exported Functions from `platform:sdk/events@0.1.0`
+bool exports_platform_sdk_events_handle(exports_platform_sdk_events_event_t *event, guest_string_t *err);
+
 // Helper Functions
 
 void guest_list_u8_free(guest_list_u8_t *ptr);
@@ -1442,6 +1496,10 @@ void platform_sdk_storage_list_object_free(platform_sdk_storage_list_object_t *p
 void platform_sdk_storage_result_list_object_string_free(platform_sdk_storage_result_list_object_string_t *ptr);
 
 void platform_sdk_storage_result_string_string_free(platform_sdk_storage_result_string_string_t *ptr);
+
+void platform_sdk_queue_error_free(platform_sdk_queue_error_t *ptr);
+
+void platform_sdk_queue_result_void_error_free(platform_sdk_queue_result_void_error_t *ptr);
 
 extern void wasi_io_poll_pollable_drop_own(wasi_io_poll_own_pollable_t handle);
 
@@ -1626,6 +1684,10 @@ void wasi_http_outgoing_handler_error_code_free(wasi_http_outgoing_handler_error
 void wasi_http_outgoing_handler_option_own_request_options_free(wasi_http_outgoing_handler_option_own_request_options_t *ptr);
 
 void wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_free(wasi_http_outgoing_handler_result_own_future_incoming_response_error_code_t *ptr);
+
+void exports_platform_sdk_events_event_free(exports_platform_sdk_events_event_t *ptr);
+
+void exports_platform_sdk_events_result_void_string_free(exports_platform_sdk_events_result_void_string_t *ptr);
 
 // Sets the string `ret` to reference the input string `s` without copying it
 void guest_string_set(guest_string_t *ret, const char*s);

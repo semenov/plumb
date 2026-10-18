@@ -1,0 +1,21 @@
+// a server runs its cron jobs and queue messages, and retries a failed one
+// after 2 seconds
+
+import http
+import process
+import queue
+
+fn main() throws {
+  var router = http.Router()
+  router.cron("every_second", schedule: "* * * * * *", handler: job => {
+    queue.send("work", "tick ${job.attempt}")
+  })
+  router.queue("work", job => {
+    if job.attempt == 1 {
+      throw Failure(message: "first try fails")
+    }
+    print("${job.name}: ${job.payload} on attempt ${job.attempt}")
+    process.exit(0)
+  })
+  http.serve(router, port: 18611)
+}

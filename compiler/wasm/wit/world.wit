@@ -1,12 +1,15 @@
 package plumb:wasm-server;
 
 /// A Plumb program built with `plumb build --target wasm-server`: an HTTP
-/// handler with the platform's databases, cache and file storage, which can make HTTP
-/// requests of its own.
+/// handler with the platform's databases, cache, file storage and queues,
+/// which can make HTTP requests of its own, and which also takes queue
+/// messages and cron ticks.
 world guest {
     import platform:sdk/sql@0.1.0;
     import platform:sdk/cache@0.1.0;
     import platform:sdk/storage@0.1.0;
+    import platform:sdk/queue@0.1.0;
     import wasi:http/outgoing-handler@0.2.12;
     export wasi:http/incoming-handler@0.2.12;
+    export platform:sdk/events@0.1.0;
 }

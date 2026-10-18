@@ -87,6 +87,50 @@ pub fn sql_checks(prog: &Program, sources: &Sources, own: &dyn Fn(usize) -> bool
     out
 }
 
+/// The queues and cron jobs an app handles, for the server: every
+/// `router.queue(name, ...)` and `router.cron(name, schedule: ..., ...)` of
+/// its own code. Their names and schedules must be written in the call;
+/// `Err` says where one isn't.
+pub struct Jobs {
+    pub queues: Vec<String>,
+    pub cron: Vec<(String, String)>,
+}
+
+pub fn jobs(prog: &Program, sources: &Sources, own: &dyn Fn(usize) -> bool) -> Result<Jobs, String> {
+    let mut out = Jobs { queues: vec![], cron: vec![] };
+    let mut problem = None;
+    for f in prog.fns.iter().filter(|f| own(f.module)) {
+        let Some(b) = &f.body else { continue };
+        walk_block(&b.block, &mut |e| {
+            let TK::MutCall { fn_id, args, .. } = &e.kind else { return };
+            let callee = &prog.fns[*fn_id];
+            let on_router = callee.owner.is_some_and(|o| prog.defs[o].name == "Router" && prog.module_names.get(prog.defs[o].module).map(String::as_str) == Some("http"));
+            if !on_router || !matches!(callee.name.as_str(), "queue" | "cron") {
+                return;
+            }
+            let text = |i: usize| match args.get(i).map(|a| &a.kind) {
+                Some(TK::Text(t)) => Some(t.clone()),
+                _ => None,
+            };
+            match (callee.name.as_str(), text(0), text(1)) {
+                ("queue", Some(name), _) => out.queues.push(name),
+                ("cron", Some(name), Some(schedule)) => out.cron.push((name, schedule)),
+                _ => {
+                    problem.get_or_insert(format!("{}: write the {} name{} right in `router.{}(...)`: the server needs to know it before the app runs", at(sources, e), callee.name, if callee.name == "cron" { " and schedule" } else { "" }, callee.name));
+                }
+            }
+        });
+    }
+    match problem {
+        Some(p) => Err(p),
+        None => {
+            out.queues.sort();
+            out.queues.dedup();
+            Ok(out)
+        }
+    }
+}
+
 /// A record's field names: all, and those it can't do without.
 fn record_fields(prog: &Program, t: &Ty) -> Option<(Vec<String>, Vec<String>)> {
     let Ty::Adt(d, _) = t else { return None };

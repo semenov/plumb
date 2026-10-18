@@ -2036,3 +2036,119 @@ static const char *lt_http_reason(int64_t s) {
     }
 }
 static lt_text *lt_http_status_text(int64_t s) { return lt_text_cstr(lt_http_reason(s)); }
+
+// ---------------------------------------------------------------- queue
+// `queue.send` outside wasm-server: messages wait in the program until
+// http.serve's tick (or a test's `router.run_jobs()`) takes them. Kept with
+// malloc, not the counted allocator: what's left at exit isn't a leak.
+
+typedef struct lt_qjob {
+    struct lt_qjob *next;
+    char *id, *name, *payload;
+    int64_t id_len, name_len, payload_len, attempt, at_ms;
+} lt_qjob;
+
+static lt_qjob *lt_queue_head, *lt_queue_tail;
+static int64_t lt_queue_ids;
+#ifdef LT_THREADS
+static pthread_mutex_t lt_queue_mu = PTHREAD_MUTEX_INITIALIZER;
+#define LT_QUEUE_LOCK() pthread_mutex_lock(&lt_queue_mu)
+#define LT_QUEUE_UNLOCK() pthread_mutex_unlock(&lt_queue_mu)
+#else
+#define LT_QUEUE_LOCK() ((void)0)
+#define LT_QUEUE_UNLOCK() ((void)0)
+#endif
+
+static char *lt_queue_copy(const char *s, int64_t n) {
+    char *p = (char *)malloc((size_t)n + 1);
+    memcpy(p, s, (size_t)n);
+    p[n] = 0;
+    return p;
+}
+
+static int64_t lt_unix_millis_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+// `id` "": a new one
+static void lt_queue_push(lt_text *id, lt_text *name, lt_text *payload, int64_t attempt, int64_t at_ms) {
+    lt_qjob *j = (lt_qjob *)calloc(1, sizeof *j);
+    LT_QUEUE_LOCK();
+    if (id->len == 0) {
+        char buf[32];
+        int n = snprintf(buf, sizeof buf, "job-%lld", (long long)++lt_queue_ids);
+        j->id = lt_queue_copy(buf, n);
+        j->id_len = n;
+    } else {
+        j->id = lt_queue_copy(id->data, id->len);
+        j->id_len = id->len;
+    }
+    j->name = lt_queue_copy(name->data, name->len);
+    j->name_len = name->len;
+    j->payload = lt_queue_copy(payload->data, payload->len);
+    j->payload_len = payload->len;
+    j->attempt = attempt;
+    j->at_ms = at_ms;
+    if (lt_queue_tail) lt_queue_tail->next = j;
+    else lt_queue_head = j;
+    lt_queue_tail = j;
+    LT_QUEUE_UNLOCK();
+}
+
+static void lt_queue_free(lt_qjob *j) {
+    free(j->id);
+    free(j->name);
+    free(j->payload);
+    free(j);
+}
+
+// the first message due by `now_ms`: "id␟name␟attempt␟payload", or ""
+static lt_text *lt_queue_take(int64_t now_ms) {
+    LT_QUEUE_LOCK();
+    lt_qjob *prev = NULL, *j = lt_queue_head;
+    while (j && j->at_ms > now_ms) {
+        prev = j;
+        j = j->next;
+    }
+    if (j) {
+        if (prev) prev->next = j->next;
+        else lt_queue_head = j->next;
+        if (lt_queue_tail == j) lt_queue_tail = prev;
+    }
+    LT_QUEUE_UNLOCK();
+    if (!j) return lt_text_cstr("");
+    char att[24];
+    int an = snprintf(att, sizeof att, "%lld", (long long)j->attempt);
+    int64_t n = j->id_len + 1 + j->name_len + 1 + an + 1 + j->payload_len;
+    lt_text *t = lt_text_new(n);
+    char *p = t->data;
+    memcpy(p, j->id, (size_t)j->id_len), p += j->id_len, *p++ = 0x1f;
+    memcpy(p, j->name, (size_t)j->name_len), p += j->name_len, *p++ = 0x1f;
+    memcpy(p, att, (size_t)an), p += an, *p++ = 0x1f;
+    memcpy(p, j->payload, (size_t)j->payload_len);
+    lt_queue_free(j);
+    return t;
+}
+
+// before each test: messages left by the one before are gone
+static void lt_queue_clear(void) {
+    LT_QUEUE_LOCK();
+    while (lt_queue_head) {
+        lt_qjob *n = lt_queue_head->next;
+        lt_queue_free(lt_queue_head);
+        lt_queue_head = n;
+    }
+    lt_queue_tail = NULL;
+    LT_QUEUE_UNLOCK();
+}
+
+#ifndef __wasi__
+static lt_err lt_queue_send(lt_text *name, lt_text *payload, int64_t delay_ms) {
+    lt_text *none = lt_text_cstr("");
+    lt_queue_push(none, name, payload, 1, lt_unix_millis_now() + (delay_ms > 0 ? delay_ms : 0));
+    lt_text_drop(none);
+    return (lt_err){ 0 };
+}
+#endif

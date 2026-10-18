@@ -353,24 +353,27 @@ doesn't wait checks `process.interrupted()`. A second Ctrl-C exits at once.
 (A program started with `&` from a script ignores SIGINT, as the shell
 asks; SIGTERM still works.)
 
-Work after the response (a welcome email): a handler waits for the tasks
-it starts, so `spawn` there would hold the reply. Start one worker in
-`main` and give it jobs through a channel:
+Work after the response (a welcome email) and work on a schedule: a
+queue and cron, handled by the router (`plumb doc queue`):
 
 ```
-fn main() throws {
-  let emails = Channel<String>(capacity: 1000)
-  let worker = spawn send_emails(emails)        // for address in emails { ... }
-  var router = http.Router()
-  router.post("/signup", req => {
-    emails.try_send(req.text())                 // queued: the reply doesn't wait
-    http.text(201, "welcome")
-  })
-  http.serve(router, port: 8080)
-  emails.close()                                // then the worker finishes
-  worker.wait()
+router.post("/signup", req => {
+  queue.send("emails", req.text())                // stored: the reply doesn't wait
+  http.text(201, "welcome")
+})
+router.queue("emails", job => send_welcome(job.payload))   // an error: retried
+router.cron("digest", schedule: "0 9 * * 1-5", handler: job => send_digest())
+
+test "a signup sends an email" {                  // tests run what's queued
+  router.handle(signup)
+  expect router.run_jobs() == 1
 }
 ```
+
+A failed job comes back after 2, 4, 8 and 16 s, and may arrive twice
+(`job.id` stays the same). `queue.send_later(name, payload:, delay:)`
+waits first. Write queue names and schedules right in the call: the
+server learns them from the code on deploy. Cron is in UTC.
 
 Sending to many listeners (chat, live updates over WebSockets): one
 `Channel` per listener, kept in a `Shared` map. The sender uses

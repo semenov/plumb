@@ -668,6 +668,40 @@ done:
 // `host`: "" listens on every address (IPv4 and IPv6), "127.0.0.1" or
 // "::1" only on this machine, or an interface's address.
 static lt_err lt_http_serve_on(lt_text *host, int64_t port, int64_t max_body, int64_t idle_ns, int64_t read_ns, int64_t write_ns, lt_fn handler);
+
+// http.serve's tick (queues and cron, std/http.plumb): set before the
+// server starts, then called every 200 ms from a task of its own with the
+// time since the last call, until the server stops. A panic in a job ends
+// that job only.
+static lt_fn lt_http_tick;
+
+static void lt_http_ticker(lt_task *t) {
+    (void)t;
+    int64_t last = lt_unix_millis_now();
+    while (!lt_http_stop) {
+        lt_err e = lt_sleep_nanos(200 * 1000000LL);
+        if (e.obj) {
+            lt_iface_drop(e);
+            break;
+        }
+        if (lt_http_stop) break;
+        int64_t now = lt_unix_millis_now();
+        lt_task *me = lt_current();
+        jmp_buf jb;
+        me->panic_jmp = &jb;
+        if (setjmp(jb) == 0) {
+            e = ((lt_err (*)(lt_env *, int64_t, int64_t))lt_http_tick.fn)(lt_http_tick.env, last, now);
+            if (e.obj) {
+                lt_text *m = lt_error_message(e);
+                lt_log("ERROR", m);
+                lt_text_drop(m);
+                lt_iface_drop(e);
+            }
+        }
+        me->panic_jmp = NULL;
+        last = now;
+    }
+}
 static lt_err lt_http_serve(int64_t port, lt_fn handler) {
     lt_text *all = lt_text_cstr("");
     int64_t minute = (int64_t)60 * 1000000000;
@@ -744,6 +778,8 @@ bound:
         lt_log("INFO", m);
         lt_text_drop(m);
     }
+    char no_arg = 0;
+    if (lt_http_tick.fn) lt_spawn_detached(lt_http_ticker, &no_arg, 1);
     while (!lt_http_stop) {
         int c = accept(fd, NULL, NULL);
         if (c < 0) {

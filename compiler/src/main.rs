@@ -78,7 +78,7 @@ Options:
 
 // The standard library's modules, for `plumb doc`.
 const STD_NAMES: &[&str] = &[
-    "files", "path", "io", "process", "env", "cli", "term", "log", "time", "json", "http", "net", "sql", "db", "crypto", "encoding", "random", "regex", "csv", "xml", "template", "url", "zlib", "archive", "math", "storage",
+    "files", "path", "io", "process", "env", "cli", "term", "log", "time", "json", "http", "net", "sql", "db", "crypto", "encoding", "random", "regex", "csv", "xml", "template", "url", "zlib", "archive", "math", "storage", "queue",
 ];
 
 // `plumb help`, `plumb guide`, `plumb doc`
@@ -508,6 +508,7 @@ fn std_module(name: &str) -> Option<&'static str> {
         "log" => include_str!("std/log.plumb"),
         "random" => include_str!("std/random.plumb"),
         "storage" => include_str!("std/storage.plumb"),
+        "queue" => include_str!("std/queue.plumb"),
         "json" => include_str!("std/json.plumb"),
         "cli" => include_str!("std/cli.plumb"),
         "http" => include_str!("std/http.plumb"),

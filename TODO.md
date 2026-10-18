@@ -12,6 +12,17 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
       `experiments/`, which keep what the agents wrote then)
   - [ ] the editor marks the calls that can fail (an LSP inlay hint or
         semantic token), since the line no longer says it
+- [ ] **Sequential code only** (Vlad, 2026-10-18; tag `pre-sequential`):
+      remove spawn, Task, Shared, Channel and http.start; keep
+      parallel_map and http.send_all
+  - [x] step 1: `queue.send` / `send_later`, `router.queue`, `router.cron`,
+        `router.run_jobs()` for tests; on wasm-server the server's queues
+        and cron (wasm-server: deployed apps get `queues` and `cron`,
+        queue names kept per project), natively a queue in the program
+        that `http.serve` runs every 200 ms
+  - [ ] step 2: rewrite what uses tasks, channels and Shared (tests,
+        examples, hey, the websocket chat)
+  - [ ] step 3: remove them from the language and the docs
 - [ ] **Interfaces: keep or remove?** (Vlad, 2026-10-18: keep for now.)
       0 declared in 441 agent-written files; only `Error` is used; a record
       of functions (`type Mailer { send: fn(...) }`) covers fakes in tests,
