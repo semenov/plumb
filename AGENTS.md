@@ -225,9 +225,11 @@ xs.map(x => parse(x))            // a lambda that calls a failing function
 
 - **A function never changes its arguments.** Return the new value and
   assign it: `items = add_item(items, item: x)`.
-- **Results must be used.** A call whose result you don't need is written
-  `let _ = f()`. `list.sort()` changes the list in place; `list.sorted()`
-  returns a new one. A `let` that is never used, and an import that is
+- **A result may be left unused**: `emails.try_send(x)` alone is fine.
+  But a method that only returns a new version of its value changes
+  nothing, so dropping its result is an error: `list.sort()` changes the
+  list in place, `list.sorted()` returns a new one (`xs = xs.sorted()`).
+  A `let` that is never used, and an import that is
   never used, are errors too; so is changing a `var` that is never read
   afterward (`var first = list[0]; first.qty = 9` changes a copy: write
   `list[0].qty = 9`).
@@ -361,7 +363,7 @@ fn main() throws {
   let worker = spawn send_emails(emails)        // for address in emails { ... }
   var router = http.Router()
   router.post("/signup", req => {
-    let _ = emails.try_send(req.text())         // queued: the reply doesn't wait
+    emails.try_send(req.text())                 // queued: the reply doesn't wait
     http.text(201, "welcome")
   })
   http.serve(router, port: 8080)
@@ -380,7 +382,7 @@ let listeners = Shared<Map<Int, Channel<String>>>({})
 // the sender (only reads the map: senders don't wait for each other):
 with ls = listeners.read() {
   for entry in ls {
-    let _ = entry.value.try_send(text)   // false: that listener is full
+    entry.value.try_send(text)           // false: that listener is full
   }
 }
 ```
@@ -715,7 +717,7 @@ fn main() throws {
 | `catch` needs `try` before the call | `try f(x) catch err { ... }` |
 | this can fail, and the function isn't declared `throws` | `fn f() throws -> T`, or `try f(x) catch err { ... }` |
 | `try` goes with `catch` | remove `try` |
-| the result is not used | `let _ = f()` |
+| `sorted` returns a new value and changes nothing | `xs.sort()`, or `xs = xs.sorted()` |
 | `f` has 3 or more parameters: name every argument after the first | `f(a, b: 1, c: 2)` |
 | the SQL must be written right here | put values in the parameter list |
 | expected `String`, found `Int` | `"${n}"` or `n.to_string()` |

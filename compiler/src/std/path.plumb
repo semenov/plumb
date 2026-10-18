@@ -35,7 +35,7 @@ pub fn clean(path: String) -> String {
   for p in parts(path) {
     if p == ".." {
       if not out.is_empty() and out.last() != "..".to_string() {
-        let _ = out.pop()
+        out.pop()
       } else if not is_absolute(path) {
         out.append("..")
       }

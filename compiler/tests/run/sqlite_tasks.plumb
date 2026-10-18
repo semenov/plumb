@@ -61,7 +61,7 @@ fn check(path: String) throws {
       tasks.append(spawn conn.insert("insert into t (who) values ('many')", []))
     }
     for t in tasks {
-      let _ = t.wait()
+      t.wait()
     }
     print("many: ${count(conn, "many")}")
   }

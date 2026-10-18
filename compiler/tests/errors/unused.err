@@ -9,5 +9,5 @@ error: `r` is never used
   |
 8 |   let r = compute()
   |       ^
-  = help: remove it, or write `let _ = ...` to drop a value on purpose
+  = help: remove it (to call a function for what it does, write the call alone)
 2 error(s)

@@ -68,7 +68,7 @@ pub type Statement {
       }
     }
     if j[j.length - 1].typ == token.TokenType.Comma {
-      let _ = j.pop()
+      j.pop()
     }
     j.append(token.Token(text: "]", typ: token.TokenType.LBrace))
     j.append(token.Token(text: ",", typ: token.TokenType.Comma))

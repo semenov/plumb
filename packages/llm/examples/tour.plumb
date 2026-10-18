@@ -37,7 +37,7 @@ fn main() throws {
   let vectors = ai.embed("embed-model", inputs: ["a", "bbb"])
   print("${vectors}")
   let bad = llm.Client(base_url: "http://localhost:8096/v1", api_key: "wrong")
-  let _ = try bad.ask(m, prompt: "x") catch err {
+  try bad.ask(m, prompt: "x") catch err {
     print(err.message())
     return
   }

@@ -17,7 +17,7 @@ fn main() throws {
   time.sleep(time.millis(200))
   with db = redis.connect("localhost:6379") {
     for i in 0..<3 {
-      let _ = db.publish("news", message: "story ${i}")
+      db.publish("news", message: "story ${i}")
     }
   }
   for line in listener.wait() {
@@ -35,7 +35,7 @@ fn main() throws {
       batch.append(["SET", "k${i}", "v"])
     }
     let s2 = time.now()
-    let _ = db.pipeline(batch)
+    db.pipeline(batch)
     print("20000 sets pipelined: ${(20000 * 1000).div(s2.elapsed().millis() + 1)} per second")
   }
 }

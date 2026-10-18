@@ -17,7 +17,7 @@ fn main() throws {
     db.execute("drop table if exists notes", [])
     db.execute("create table notes (id serial primary key, body text unique, created timestamptz default now(), data bytea)", [])
     // transactions: an error rolls everything back
-    let _ = try db.transaction(() => add_two(db)) catch err {
+    try db.transaction(() => add_two(db)) catch err {
       print("transaction: ${err.message()}")
       0
     }

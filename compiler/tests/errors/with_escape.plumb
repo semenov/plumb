@@ -19,5 +19,5 @@ fn make() throws -> http.Router {
 }
 
 fn main() throws {
-  let _ = make()
+  make()
 }

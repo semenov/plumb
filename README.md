@@ -58,8 +58,8 @@ here:
 
 - **One way to write each thing.** The syntax is the mainstream C-family
   one, and the rules are stricter than in mainstream languages.
-- **The compiler is the reviewer.** Every error names the fix. Ignoring a
-  result, building SQL from strings, forgetting to close a file, leaking a
+- **The compiler is the reviewer.** Every error names the fix. Dropping the
+  result of `xs.sorted()`, building SQL from strings, forgetting to close a file, leaking a
   task: all are compile errors.
 - **What matters is visible.** A function that can fail says `throws`; an
   error goes up by itself, and `try ... catch` handles it where it's

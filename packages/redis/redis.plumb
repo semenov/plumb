@@ -69,12 +69,12 @@ pub type Client {
   }
 
   pub fn set(self, key: String, value: String) throws {
-    let _ = self.command(["SET", key, value])
+    self.command(["SET", key, value])
   }
 
   // Set with an expiry: the key disappears after `seconds`.
   pub fn set_for(self, key: String, value: String, seconds: Int) throws {
-    let _ = self.command(["SET", key, value, "EX", "${seconds}"])
+    self.command(["SET", key, value, "EX", "${seconds}"])
   }
 
   // Set only if the key doesn't exist yet; true if it was set (a lock).
@@ -127,7 +127,7 @@ pub type Client {
   }
 
   pub fn hash_set(self, key: String, field: String, value: String) throws {
-    let _ = self.command(["HSET", key, field, value])
+    self.command(["HSET", key, field, value])
   }
 
   pub fn hash_get_all(self, key: String) throws -> Map<String, String> {
@@ -248,7 +248,7 @@ pub fn subscribe(address: String, channels: List<String>) throws -> Subscription
     sub.conn.write(encode(args))
     // one confirmation per channel
     for _ in channels {
-      let _ = read_reply(sub.conn)
+      read_reply(sub.conn)
     }
     return sub
   }
@@ -268,14 +268,14 @@ fn setup(conn: io.Stream, address: String) throws {
   let u = parse_address(address)
   if u.password is some(p) {
     if u.user is some(name) and not name.is_empty() {
-      let _ = send(conn, args: ["AUTH", name, p])
+      send(conn, args: ["AUTH", name, p])
     } else {
-      let _ = send(conn, args: ["AUTH", p])
+      send(conn, args: ["AUTH", p])
     }
   }
   let db = u.path.slice(from: 1, to: u.path.length)
   if not db.is_empty() {
-    let _ = send(conn, args: ["SELECT", db])
+    send(conn, args: ["SELECT", db])
   }
 }
 

@@ -1,0 +1,31 @@
+error: `sorted` returns a new value and changes nothing: the result is lost
+  --> results.plumb:17:3
+   |
+17 |   xs.sorted()
+   |   ^^^^^^^^^^^
+   = help: to change the list in place, write `xs.sort()`; or keep the new one: `xs = xs.sorted()`
+error: `trim` returns a new value and changes nothing: the result is lost
+  --> results.plumb:18:3
+   |
+18 |   name.trim()
+   |   ^^^^^^^^^^^
+   = help: keep the new value: `name = name.trim()`
+error: this `Int` is computed and never used
+  --> results.plumb:20:3
+   |
+20 |   xs.length + 1
+   |   ^^^^^^^^^^^^^
+   = help: use it, or remove it
+error: the task's result is never waited for
+  --> results.plumb:22:3
+   |
+22 |   spawn work()
+   |   ^^^^^^^^^^^^
+   = help: keep the task and `task.wait()` for its result
+error: `let _ =` isn't needed: a result may be left unused
+  --> results.plumb:24:7
+   |
+24 |   let _ = count(xs)
+   |       ^
+   = help: remove `let _ =`
+5 error(s)

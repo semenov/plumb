@@ -10,7 +10,7 @@ fn main() throws {
   print(zlib.inflate(g).text())
   let big = "abc".repeat(100000).bytes()
   print("${zlib.gunzip(zlib.gzip(big)).length} bytes back")
-  let _ = try zlib.gunzip(data) catch err {
+  try zlib.gunzip(data) catch err {
     print(err.message())
     return
   }

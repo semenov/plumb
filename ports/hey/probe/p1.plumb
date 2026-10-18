@@ -2,7 +2,7 @@ import http
 import time
 
 fn main() throws {
-  let _ = http.get("http://127.0.0.1:8099/conns")
+  http.get("http://127.0.0.1:8099/conns")
   let t = time.now()
   for i in 0..<20 {
     let r = http.get("http://127.0.0.1:8099/")

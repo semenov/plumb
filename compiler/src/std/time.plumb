@@ -223,7 +223,7 @@ pub fn timeout<R>(duration: Duration, work: fn() throws -> R) throws -> R {
     }
     throw err
   }
-  let _ = __deadline_stop(deadline)
+  __deadline_stop(deadline)
   return result
 }
 

@@ -167,12 +167,21 @@ Changing a value in place is done by a `mutating` method on your own type:
 (`accounts[id].balance -= x`) is allowed; a missing key is a bug, like
 `xs[i]` out of range.
 
-### Results must be used
+### Results may be left unused
 
-Ignoring a return value is a compile error. The explicit form for the rare
-exception is `let _ = f()`. As a result, a line `x.method(...)` without a
-used result is always a mutation or an action. The rule also catches the
-`sort()` / `sorted()` confusion.
+A call's result may be left unused: `emails.try_send(x)` on its own line.
+Until 2026-10-18 that was an error with `let _ = f()` as the way out; in
+agent-written code 202 lines said `let _ =`, almost all for results that
+are normal to ignore, and a reader can't tell why they're there (Vlad
+removed it). What stays an error is what is always a mistake:
+
+- a method that returns a new version of its receiver, dropped: the call
+  changes nothing (`xs.sorted()`, `name.trim()`); the error names
+  `xs.sort()` or `xs = xs.sorted()`;
+- a value computed and never used (`xs.length + 1` alone);
+- a task with a result that nobody waits for.
+
+`let _ = ...` is an error that says to remove it.
 
 ### Control flow
 
@@ -340,7 +349,7 @@ used result is always a mutation or an action. The rule also catches the
 - **Errors aren't lost.** An error arrives in `task.wait()`. If a task
   fails and nobody waits for it, the other tasks are cancelled and the error
   comes out of the function, so `spawn` of a failing call requires `throws`.
-- **Results must be used:** a `Task<T>` nobody waits for is an error.
+- **A task's result is waited for:** a `Task<T>` nobody waits for is an error.
   `spawn f()` for a function without a result is a plain statement (a
   background worker).
 - **At the end of the function, unfinished tasks are waited for**, not
@@ -427,7 +436,7 @@ used result is always a mutation or an action. The rule also catches the
   bodies. Same methods everywhere (`read`, `read_line`, `read_all`,
   `write`, `write_text`), so there's nothing to learn per source. There is
   no stream framework (pipes, transforms): `io.copy` and a loop cover it.
-- **Designed for "results must be used":** `conn.execute(sql, params)`
+- **A result only where it's usually needed:** `conn.execute(sql, params)`
   returns nothing (`execute_counting` returns the row count), `map.remove(k)`
   returns nothing (`map.take(k) -> V?` removes and returns). A result is
   returned only when it's usually needed.

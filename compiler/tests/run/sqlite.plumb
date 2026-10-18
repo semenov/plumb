@@ -17,8 +17,8 @@ fn main() throws {
   with conn = db.open(":memory:") {
     conn.execute("create table users (id integer primary key, name text not null, age integer, active integer, email text)", [])
     let ada = add(conn, name: "Ada", age: 36)
-    let _ = add(conn, name: "Alan", age: 41)
-    let _ = add(conn, name: "Grace", age: 85)
+    add(conn, name: "Alan", age: 41)
+    add(conn, name: "Grace", age: 85)
     print("ada is #${ada}")
     let adults = conn.query<User>("select id, name, age, active, email from users where age > ? order by age", [40])
     for u in adults {
@@ -28,11 +28,11 @@ fn main() throws {
     print("changed ${changed}")
     let one = conn.query<User>("select * from users where id = ?", [1])
     print("${one}")
-    let _ = try conn.query<User>("select nme from users", []) catch err {
+    try conn.query<User>("select nme from users", []) catch err {
       print(err.message())
       []
     }
-    let _ = try conn.transaction(() => {
+    try conn.transaction(() => {
       conn.execute("insert into users (name, age) values (?, ?)", ["Temp", 1])
       throw Failure(message: "changed my mind")
     }) catch err {
@@ -46,7 +46,7 @@ fn main() throws {
     print("newest: ${newest.length}")
     let count = conn.query<Count>("select count(*) as n from users", [])
     print("users: ${count[0].n}")
-    let _ = try conn.query<User>("select id, name from users", []) catch err {
+    try conn.query<User>("select id, name from users", []) catch err {
       print(err.message())
       []
     }

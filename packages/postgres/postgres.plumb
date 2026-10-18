@@ -36,7 +36,7 @@ pub type Connection {
 
   // A statement without rows: create, insert, update, delete.
   pub fn execute(self, query: sql.Query, params: List<sql.Value>) throws {
-    let _ = run(self.conn, query: query.value, params: params)
+    run(self.conn, query: query.value, params: params)
   }
 
   // The same, returning the number of rows it changed.

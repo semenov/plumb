@@ -12,6 +12,10 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
       `experiments/`, which keep what the agents wrote then)
   - [ ] the editor marks the calls that can fail (an LSP inlay hint or
         semantic token), since the line no longer says it
+- [x] **No `let _ =`: a result may be left unused** (Vlad, 2026-10-18).
+      Still errors: dropping a new version of the receiver (`xs.sorted()`,
+      `name.trim()`), a value computed and never used, a task nobody
+      waits for. `let _ =` itself is an error ("remove it")
 - [x] **No `type UserId = Int`** (Vlad, 2026-10-18): nobody declared one
       outside tests, and it read as an alias. `type X = fn(...)` stays; for
       a type of its own, a record `type UserId { value: Int }` (the error

@@ -23,7 +23,7 @@ fn main() throws {
     }
     http.text(200, shown)
   })
-  let _ = spawn http.serve(router, port: 8392)
+  spawn http.serve(router, port: 8392)
   time.sleep(time.millis(200))
   let a = http.get("http://127.0.0.1:8392/boom")
   print("boom: ${a.status}")

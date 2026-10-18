@@ -652,7 +652,7 @@ pub fn new_rng(seed: Int) -> Rng {
   }
   var r = Rng(state: s)
   for i in 0..<8 {
-    let _ = r.next()
+    r.next()
   }
   return r
 }

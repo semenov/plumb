@@ -13,7 +13,7 @@ fn main() throws {
     tasks.append(spawn slow(i))
   }
   for tk in tasks {
-    let _ = tk.wait()
+    tk.wait()
   }
   print("10 parallel slow: ${t.elapsed().seconds()}")
   let t2 = time.now()

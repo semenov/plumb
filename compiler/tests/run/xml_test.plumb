@@ -26,7 +26,7 @@ fn main() throws {
   print(xml.render(built))
   print(xml.parse(xml.render(built)).text())
   for bad in ["<a><b></a>", "<a>", "<a x=1/>", "<a>&nope;</a>", "<a/><b/>", "text", "<a>\n\n</b>"] {
-    let _ = try xml.parse(bad) catch err {
+    try xml.parse(bad) catch err {
       print(err.message())
       continue
     }

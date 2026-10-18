@@ -25,7 +25,7 @@ fn slow_query(conn: db.Connection) throws -> Int {
 fn main() throws {
   with conn = db.open("/tmp/serialized_queries.db") {
     let one = time.now()
-    let _ = slow_query(conn)
+    slow_query(conn)
     print("one query: ${one.elapsed()}")
 
     let many = time.now()
@@ -34,7 +34,7 @@ fn main() throws {
       tasks.append(spawn slow_query(conn))
     }
     for t in tasks {
-      let _ = t.wait()
+      t.wait()
     }
     print("8 queries in 8 tasks: ${many.elapsed()} (parallel would be close to one query)")
   }

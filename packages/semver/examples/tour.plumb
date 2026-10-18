@@ -12,7 +12,7 @@ fn main() throws {
     print("${c[0]} in ${c[1]}: ${semver.matches(c[0], range: c[1])}")
   }
   print("max: ${semver.max_matching(["1.0.0", "1.5.3", "1.5.10", "2.0.0"], range: "~1.5") ?? "none"}")
-  let _ = try semver.parse("1.2") catch err {
+  try semver.parse("1.2") catch err {
     print(err.message())
     semver.Version(major: 0, minor: 0, patch: 0)
   }

@@ -1021,7 +1021,7 @@ impl Checker {
             for (id, span) in self.fc().lets.clone() {
                 if !self.fc().used[id] {
                     let name = self.fc().locals[id].name.clone();
-                    self.err_help(span, format!("`{}` is never used", name), "remove it, or write `let _ = ...` to drop a value on purpose");
+                    self.err_help(span, format!("`{}` is never used", name), "remove it (to call a function for what it does, write the call alone)");
                 }
             }
         }
@@ -1621,32 +1621,56 @@ impl Checker {
             self.err_help(e.span, "the task's result is never waited for", "keep the task and `task.wait()` for its result");
             return;
         }
-        let mut help = "use the result, or write `let _ = ...` if you really don't need it".to_string();
-        if let ExprKind::Call { callee, .. } = &src.kind {
-            if let ExprKind::Field(_, name, _) = &callee.kind {
-                let alt = match name.as_str() {
-                    "sorted" => Some("sort()"),
-                    "sorted_by" => Some("sort_by(...)"),
-                    "reversed" => Some("reverse()"),
-                    "concat" => Some("append_all(...)"),
-                    _ => None,
-                };
-                if let Some(a) = alt {
-                    help = format!("`{}` returns a new value; to change the list in place, write `{}`", name, a);
+        // `try f() catch err { ... }` as a statement: judged by its call
+        if let (TK::Try { call, .. }, ExprKind::Try { expr, .. }) = (&e.kind, &src.kind) {
+            let (call, expr) = (call.clone(), expr.clone());
+            return self.check_unused(&call, &expr);
+        }
+        // a call's result may be left unused, unless the call only makes a
+        // new version of its receiver: `xs.sorted()` changes nothing
+        if let ExprKind::Call { callee, args, .. } = &src.kind {
+            let ExprKind::Field(base, name, _) = &callee.kind else { return };
+            // `module.f(x)` and `Type.f(x)` have no receiver
+            if let ExprKind::Ident(n) = &base.kind {
+                if self.lookup_local(n).is_none() {
+                    return;
                 }
             }
+            let same = match &e.kind {
+                TK::Call { args, .. } => args.first().map(|r| self.resolve(&r.ty) == t).unwrap_or(false),
+                _ => false,
+            };
+            if !same {
+                return;
+            }
+            let alt = match name.as_str() {
+                "sorted" => Some("sort()"),
+                "sorted_by" => Some("sort_by(...)"),
+                "reversed" => Some("reverse()"),
+                "concat" => Some("append_all(...)"),
+                _ => None,
+            };
+            let recv = match &base.kind {
+                ExprKind::Ident(n) => n.clone(),
+                _ => "x".to_string(),
+            };
+            let call = format!("{}({})", name, if args.is_empty() { "" } else { "..." });
+            let help = match alt {
+                Some(a) => format!("to change the list in place, write `{}.{}`; or keep the new one: `{r} = {r}.{}`", recv, a, call, r = recv),
+                None => format!("keep the new value: `{r} = {r}.{}`", call, r = recv),
+            };
+            self.err_help(e.span, format!("`{}` returns a new value and changes nothing: the result is lost", name), help);
+            return;
         }
         let ts = self.show(&t);
-        self.err_help(e.span, format!("the result (`{}`) is not used", ts), help);
+        self.err_help(e.span, format!("this `{}` is computed and never used", ts), "use it, or remove it");
     }
 
     fn stmt(&mut self, s: &Stmt) -> TStmt {
         match s {
             Stmt::Let { name, mutable, ty, value, span } => {
                 if name == "_" {
-                    if *mutable {
-                        self.err(*span, "write `let _ = ...`");
-                    }
+                    self.err_help(*span, "`let _ =` isn't needed: a result may be left unused", "remove `let _ =`");
                     let v = self.expr(value, None);
                     return TStmt::Discard(v);
                 }

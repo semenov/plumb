@@ -15,7 +15,7 @@ error: `r` is never used
    |
 14 |   let r = s.read()
    |       ^
-   = help: remove it, or write `let _ = ...` to drop a value on purpose
+   = help: remove it (to call a function for what it does, write the call alone)
 error: a lock is taken with `with`
   --> shared_read.plumb:14:11
    |

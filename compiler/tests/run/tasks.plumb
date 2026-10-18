@@ -38,7 +38,7 @@ fn main() throws {
     workers.append(spawn count_up(hits, 1000))
   }
   for t in workers {
-    let _ = t.wait()
+    t.wait()
   }
   with n = hits.lock() {
     print("hits: ${n}")

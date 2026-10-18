@@ -22,13 +22,13 @@ fn main() throws {
   }
   print("read ${n} lines, last: ${last}")
   // a file made by the system's gzip, two members concatenated
-  let _ = process.run("sh", ["-c", "printf 'a\\nb\\n' | gzip > /tmp/plumb-gz-test-two.gz; printf 'c\\n' | gzip >> /tmp/plumb-gz-test-two.gz"])
+  process.run("sh", ["-c", "printf 'a\\nb\\n' | gzip > /tmp/plumb-gz-test-two.gz; printf 'c\\n' | gzip >> /tmp/plumb-gz-test-two.gz"])
   with f = zlib.open_gzip("/tmp/plumb-gz-test-two.gz") {
     print("two members: ${f.read_all().text().lines()}")
   }
   files.write("/tmp/plumb-gz-test-not.gz", "plain text")
   with f = zlib.open_gzip("/tmp/plumb-gz-test-not.gz") {
-    let _ = try f.read_all() catch err {
+    try f.read_all() catch err {
       print(err.message())
       return
     }

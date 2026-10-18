@@ -218,7 +218,7 @@ type Parser {
     // trailing blank lines belong to the chomping, not the text
     var trailing = 0
     while not raw_lines.is_empty() and (raw_lines.last() ?? "").is_empty() {
-      let _ = raw_lines.pop()
+      raw_lines.pop()
       trailing += 1
     }
     var text = ""

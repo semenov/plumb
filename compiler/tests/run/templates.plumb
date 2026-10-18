@@ -32,11 +32,11 @@ fn main() throws {
   let empty = Menu(shop: "X", items: [], note: "", html_note: "")
   print(views.render("menu", data: empty))
   let t = template.compile("Hi {{nmae}}")
-  let _ = try t.render(Customer(name: "Ada")) catch err {
+  try t.render(Customer(name: "Ada")) catch err {
     print(err.message())
     ""
   }
-  let _ = try template.compile("{{#each items}} no end") catch err {
+  try template.compile("{{#each items}} no end") catch err {
     print(err.message())
     t
   }

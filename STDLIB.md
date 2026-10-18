@@ -153,7 +153,7 @@ while io.read_line() is some(line) {
 ```
 with from = files.open("big.iso") {
   with to = files.create("copy.iso") {
-    let _ = io.copy(from, to)
+    io.copy(from, to)
   }
 }
 ```

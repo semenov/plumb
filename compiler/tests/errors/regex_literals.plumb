@@ -3,13 +3,13 @@
 import regex
 
 fn main() throws {
-  let _ = regex.compile("(\\d+)-(\\d+)")
-  let _ = regex.compile("<(.+?)>")
-  let _ = regex.compile("(?:ab)+")
-  let _ = regex.compile("\\bword\\b")
-  let _ = regex.compile("(a|b")
-  let _ = regex.compile("[\\S]")
-  let _ = regex.compile("\\p{L}+")
+  regex.compile("(\\d+)-(\\d+)")
+  regex.compile("<(.+?)>")
+  regex.compile("(?:ab)+")
+  regex.compile("\\bword\\b")
+  regex.compile("(a|b")
+  regex.compile("[\\S]")
+  regex.compile("\\p{L}+")
   let text = "(?:x)"
-  let _ = regex.compile(text)
+  regex.compile(text)
 }

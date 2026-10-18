@@ -12,7 +12,7 @@
 //
 //   with from = files.open("big.iso") {
 //     with to = files.create("copy.iso") {
-//       let _ = io.copy(from, to)
+//       io.copy(from, to)
 //     }
 //   }
 

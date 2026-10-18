@@ -718,7 +718,7 @@ fn main() throws {
     workers.append(spawn run_worker(work, count: num.div(conc), results: results))
   }
   for w in workers {
-    let _ = w.wait()
+    w.wait()
   }
   results.close()
   let total = start.elapsed()

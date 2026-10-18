@@ -612,7 +612,7 @@ pub fn write(v: Value, style: Style) -> String {
         break
       }
       let closing = open[i].closing
-      let _ = open.pop()
+      open.pop()
       if style.indent {
         out.append("\n${"  ".repeat(open.length)}")
       }
@@ -719,7 +719,7 @@ test "strings: escapes, surrogates and bad UTF-8" {
 
 // The error decode_all gives for `text`, or "ok".
 fn decode_error(text: String) -> String {
-  let _ = try decode_all(text.bytes()) catch err { return err.message() }
+  try decode_all(text.bytes()) catch err { return err.message() }
   return "ok"
 }
 

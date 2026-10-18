@@ -63,7 +63,8 @@ fn main() throws {
   print("${first_item(p) ?? -1}")
   // a reader inside a writer's function and the other way round, one after
   // the other
-  let _ = (spawn writer(p, n: 1)).wait()
+  let w = spawn writer(p, n: 1)
+  w.wait()
   with v = p.read() {
     print("${v.a} ${v.name.length}")
   }

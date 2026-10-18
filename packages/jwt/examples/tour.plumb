@@ -15,12 +15,12 @@ fn main() throws {
   print("parts: ${token.split(".").length}")
   let c = jwt.verify<Claims>(token, secret: secret)
   print("hs256: ${c.sub} ${c.admin}")
-  let _ = try jwt.verify<Claims>(token, secret: "other") catch err {
+  try jwt.verify<Claims>(token, secret: "other") catch err {
     print(err.message())
     c
   }
   let old = jwt.sign(Claims(sub: "1", exp: time.unix_now() - 3600), secret: secret)
-  let _ = try jwt.verify<Claims>(old, secret: secret) catch err {
+  try jwt.verify<Claims>(old, secret: secret) catch err {
     print(err.message())
     c
   }
@@ -29,7 +29,7 @@ fn main() throws {
   let ec_token = jwt.sign_with(Claims(sub: "8", exp: time.unix_now() + 60), key: crypto.private_key(files.read("ec.pem")), algorithm: "ES256")
   print("es256: ${jwt.verify_with<Claims>(ec_token, key: crypto.public_key(files.read("ec_pub.pem"))).sub}")
   // HS256 token presented to a key-based check: refused
-  let _ = try jwt.verify_with<Claims>(token, key: crypto.public_key(files.read("rsa_pub.pem"))) catch err {
+  try jwt.verify_with<Claims>(token, key: crypto.public_key(files.read("rsa_pub.pem"))) catch err {
     print(err.message())
     c
   }

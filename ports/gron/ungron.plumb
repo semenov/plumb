@@ -195,7 +195,7 @@ pub type Lexer {
 
   // Keys in square braces.
   mutating fn lex_braces() -> State {
-    let _ = self.accept("[")
+    self.accept("[")
     self.emit(LBrace)
     let r = self.peek()
     if is_number(r) {
@@ -210,7 +210,7 @@ pub type Lexer {
 
   // Numeric keys in square braces.
   mutating fn lex_numeric_key() -> State {
-    let _ = self.accept("[")
+    self.accept("[")
     self.ignore()
     while is_number(self.next()) {
     }
@@ -228,11 +228,11 @@ pub type Lexer {
 
   // Quoted keys in square braces.
   mutating fn lex_quoted_key() -> State {
-    let _ = self.accept("[")
+    self.accept("[")
     self.ignore()
-    let _ = self.accept("\"")
+    self.accept("\"")
     self.accept_until_unescaped("\"")
-    let _ = self.accept("\"")
+    self.accept("\"")
     self.emit(QuotedKey)
     if self.accept("]") {
       self.emit(RBrace)
@@ -258,7 +258,7 @@ pub type Lexer {
 
     if self.accept("\"") {
       self.accept_until_unescaped("\"")
-      let _ = self.accept("\"")
+      self.accept("\"")
       self.emit(Str)
     } else if self.accept("t") {
       self.accept_run("rue")
@@ -270,10 +270,10 @@ pub type Lexer {
       self.accept_run("ul")
       self.emit(Null)
     } else if self.accept("[") {
-      let _ = self.accept("]")
+      self.accept("]")
       self.emit(EmptyArray)
     } else if self.accept("{") {
-      let _ = self.accept("}")
+      self.accept("}")
       self.emit(EmptyObject)
     } else {
       // Assume a number
@@ -369,7 +369,7 @@ pub fn ungron_tokens(ts: List<token.Token>) throws -> jsonraw.Value {
       break
     }
     if t.typ == token.TokenType.NumericKey {
-      let _ = try t.text.to_int() catch _ {
+      try t.text.to_int() catch _ {
         throw Failure(message: "invalid integer key `${t.text}`")
       }
     } else if t.typ != token.TokenType.Bare and t.typ != token.TokenType.QuotedKey {

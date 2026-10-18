@@ -16,7 +16,7 @@ fn main() throws {
   let worker = spawn send_emails(emails)
   var router = http.Router()
   router.post("/signup", req => {
-    let _ = emails.try_send(req.text())
+    emails.try_send(req.text())
     http.text(201, "welcome")
   })
   var req = http.request("POST", path: "/signup")

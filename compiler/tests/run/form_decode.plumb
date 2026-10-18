@@ -56,7 +56,7 @@ test "errors name the field" {
 fn __decode_check(body: String) throws -> String {
   var req = http.request("POST", "/signup")
   req.body = body.bytes()
-  let _ = try req.decode_form<SignUp>() catch err {
+  try req.decode_form<SignUp>() catch err {
     return err.message()
   }
   return "ok"

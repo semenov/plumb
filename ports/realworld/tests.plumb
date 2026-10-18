@@ -53,7 +53,7 @@ test "errors have the API's shape" {
     let missing = send(app, method: "GET", path: "/api/user", body: "", token: "")
     expect missing.status == 401
     expect (missing.text()) == "{\"errors\":{\"token\":[\"is missing\"]}}"
-    let _ = register(app, name: "ada")
+    register(app, name: "ada")
     let again = "{\"user\": {\"username\": \"ada\", \"email\": \"other@example.com\", \"password\": \"password123\"}}"
     let taken = send(app, method: "POST", path: "/api/users", body: again, token: "")
     expect taken.status == 409

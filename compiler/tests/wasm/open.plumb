@@ -4,5 +4,5 @@ fn main() throws {
   with res = http.open(http.ClientRequest(url: "https://example.com/")) {
     print("${res.status()}")
   }
-  let _ = http.download("https://example.com/", to: "page.html")
+  http.download("https://example.com/", to: "page.html")
 }

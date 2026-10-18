@@ -69,7 +69,7 @@ fn blocks(lines: List<String>, tight: Bool) -> List<String> {
         i += 1
       }
       while not code.is_empty() and (code.last() ?? "").trim().is_empty() {
-        let _ = code.pop()
+        code.pop()
       }
       out.append("<pre><code>${escape(code.join("\n"))}\n</code></pre>\n")
       continue
@@ -184,7 +184,7 @@ fn blocks(lines: List<String>, tight: Bool) -> List<String> {
           break
         }
         while not item.is_empty() and (item.last() ?? "").trim().is_empty() {
-          let _ = item.pop()
+          item.pop()
         }
         items.append(item)
         if blank_before and (i >= lines.length or marker(lines[i]) is none) {

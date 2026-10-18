@@ -18,12 +18,12 @@ fn main() throws {
   print("${email.matches("ada@example.com")} ${email.matches("not an email")}")
   // patterns made at run time are checked then (literals at compile time)
   let lazy = "a*?"
-  let _ = try regex.compile(lazy) catch err {
+  try regex.compile(lazy) catch err {
     print(err.message())
     word
   }
   let unclosed = "(unclosed"
-  let _ = try regex.compile(unclosed) catch err {
+  try regex.compile(unclosed) catch err {
     print(err.message())
     word
   }
