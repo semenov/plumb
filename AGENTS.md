@@ -30,8 +30,8 @@ reasons behind the rules are in `DESIGN.md`.
   and **`let` for fixed values**: `let max_retries = 5`,
   `pub let default_port = 8080`, `let usage = """..."""`. The value is
   made of literals, other top-level `let`s, and lists, maps and records of
-  them; no function calls. **There are no global variables**: state shared
-  between tasks is a `Shared<T>` made in `main` and passed along.
+  them; no function calls. **There are no global variables**: state that
+  changes is passed along, and state requests share is in the database.
 - Files: `files.read` / `write` / `append` (whole files), `files.open` /
   `create` / `open_append` (streams, with `with`), `list`, `walk`, `glob`,
   `exists`, `is_dir`, `make_dir`, `copy`, `rename`, `delete`, `delete_all`,
@@ -309,49 +309,20 @@ with conn = try postgres.connect(url) catch err {     // handle failure to open
   }
   ```
 
-## Concurrency
+## Several things at once, and work for later
+
+Code runs one step after another: there is no `spawn`, no tasks, locks
+or channels, and no `async`/`await`. What would need them is one call:
 
 ```
-let a = spawn fetch(url1)                 // a Task<T>, running in parallel
-let b = spawn fetch(url2)
-let pages = [a.wait(), b.wait()]
 let sizes = urls.parallel_map(limit: 8, transform: u => fetch(u).length)
-
-let counter = Shared<Int>(0)              // shared state: only through a lock
-with n = counter.lock() {                 // one task at a time: may change it
-  n += 1
-}
-with n = counter.read() {                 // readers at the same time: n can't
-  print("${n}")                           // change (like a `let`)
-}
-let jobs = Channel<String>(capacity: 100)   // passing data between tasks
+let answers = http.send_all([weather_request, news_request])   // at once, in order
 ```
 
-A task can't be returned, put in a record or captured by a lambda (so no
-`spawn` inside a lambda); a local list of tasks is fine:
-
-```
-var tasks: List<Task<http.Response>> = []
-for u in urls {
-  tasks.append(spawn http.get(u))
-}
-for t in tasks {
-  let res = t.wait()
-}
-```
-
-Every task, like `main`, has an 8 MB stack: recursion some 100,000 calls
-deep is fine; deeper stops the program with "stack overflow".
-
-A function waits for its tasks before it returns. No `async`/`await`:
-waiting code is written sequentially.
-
-**Ctrl-C and `kill`** (SIGINT, SIGTERM) cancel `main`'s task: waits
-(`sleep`, I/O, `wait()`) throw `Cancelled`, `with` blocks close their
-resources, `http.serve` stops, and the exit status is 130. A loop that
-doesn't wait checks `process.interrupted()`. A second Ctrl-C exits at once.
-(A program started with `&` from a script ignores SIGINT, as the shell
-asks; SIGTERM still works.)
+`parallel_map` runs up to `limit` items at a time (one by one on
+wasm-server); its lambda sees copies, so nothing is shared. `send_all`
+takes as long as the slowest request. State that requests share goes in
+the database, never in memory.
 
 Work after the response (a welcome email) and work on a schedule: a
 queue and cron, handled by the router (`plumb doc queue`):
@@ -375,20 +346,15 @@ A failed job comes back after 2, 4, 8 and 16 s, and may arrive twice
 waits first. Write queue names and schedules right in the call: the
 server learns them from the code on deploy. Cron is in UTC.
 
-Sending to many listeners (chat, live updates over WebSockets): one
-`Channel` per listener, kept in a `Shared` map. The sender uses
-`try_send`, so a slow listener loses messages instead of stalling everyone:
+`main` has an 8 MB stack: recursion some 100,000 calls deep is fine;
+deeper stops the program with "stack overflow".
 
-```
-let listeners = Shared<Map<Int, Channel<String>>>({})
-// a listener: register, then read its channel until it's closed
-// the sender (only reads the map: senders don't wait for each other):
-with ls = listeners.read() {
-  for entry in ls {
-    entry.value.try_send(text)           // false: that listener is full
-  }
-}
-```
+**Ctrl-C and `kill`** (SIGINT, SIGTERM) stop the program cleanly: waits
+(`sleep`, I/O) throw `Cancelled`, `with` blocks close their resources,
+`http.serve` stops, and the exit status is 130. A loop that doesn't wait
+checks `process.interrupted()`. A second Ctrl-C exits at once. (A program
+started with `&` from a script ignores SIGINT, as the shell asks; SIGTERM
+still works.)
 
 ## Data in and out: `decode<T>`
 
@@ -445,11 +411,9 @@ let api = http.send(http.ClientRequest(url: u, method: "POST",
   headers: {"authorization": "Bearer ${key}"}, body: json.encode(x).bytes()))
 
 // several at once: the time of the slowest, not the sum (on wasm-server too)
-let weather = http.start(http.ClientRequest(url: weather_url))
-let news = http.start(http.ClientRequest(url: news_url))
-let w = weather.wait()                                      // wait once each
-let n = news.wait()
-let answers = http.send_all(requests)                       // a list: answers in order
+let answers = http.send_all([http.ClientRequest(url: weather_url), http.ClientRequest(url: news_url)])
+let weather = answers[0]                                    // answers in order
+let news = answers[1]
 ```
 
 Routes: `get`, `post`, `put`, `patch`, `delete`, `any` (every method),
@@ -486,41 +450,37 @@ fills a `List`), the query: `req.decode_query<Search>()`. As a Map:
 Bodies are `Bytes`: `req.text()`, `res.text()` give them as text. A handler's error
 becomes a 500 and a log line. `http.serve` logs "listening on ..." itself.
 
-State shared by all requests goes in a `Shared<T>`, passed to the handlers
-through lambdas (there are no global variables):
+State shared by all requests goes in the database, passed to the
+handlers through lambdas (there are no global variables, and on
+wasm-server nothing stays in memory between requests):
 
 ```
-type Store {
-  todos: List<Todo> = []
-  next_id: Int = 1
-}
-
-fn add_todo(req: http.Request, store: Shared<Store>) throws -> http.Response {
+fn add_todo(req: http.Request, conn: db.Connection) throws -> http.Response {
   let input = json.decode<NewTodo>(req.text())
-  with s = store.lock() {               // fields change in place under the lock
-    let todo = Todo(id: s.next_id, title: input.title)
-    s.next_id += 1
-    s.todos.append(todo)
-    return http.json(201, todo)
-  }
+  let id = conn.insert("insert into todos (title) values (?)", [input.title])
+  return http.json(201, Todo(id: id, title: input.title))
 }
 
-fn make_router(store: Shared<Store>) -> http.Router {
+fn make_router(conn: db.Connection) -> http.Router {
   var router = http.Router()
-  router.post("/todos", req => add_todo(req, store))
+  router.post("/todos", req => add_todo(req, conn))
   return router
 }
 
 fn main() throws {
-  http.serve(make_router(Shared<Store>(Store())), port: 8080)
+  with conn = db.open("main") {
+    http.serve(make_router(conn), port: 8080)
+  }
 }
 
 test "adding a todo" {                  // handlers are tested without a network
-  let router = make_router(Shared<Store>(Store()))
-  var req = http.request("POST", "/todos")
-  req.body = "{\"title\": \"milk\"}".bytes()
-  let res = router.handle(req)
-  expect res.status == 201
+  with conn = db.open(":memory:") {     // a database of the test's own
+    conn.execute("create table todos (id integer primary key, title text)", [])
+    var req = http.request("POST", "/todos")
+    req.body = "{\"title\": \"milk\"}".bytes()
+    let res = make_router(conn).handle(req)
+    expect res.status == 201
+  }
 }
 ```
 
@@ -699,10 +659,9 @@ fn main() throws {
 - `http.get`, `http.send` and the rest of the client work: the host makes
   the connections (and keeps them). It refuses private and loopback
   addresses, and hosts outside the app's `outbound` list if it has one.
-- Not available (a compile error names them): `spawn`, `Shared`,
-  `Channel`, `parallel_map`, `http.open`, `http.download`, `net`, `zlib`,
-  public-key crypto. Several HTTP requests at once still work:
-  `http.start` / `wait()` and `http.send_all` (the host makes them). `http.file` and `http.stream` give a 500: the host
+- Not available (a compile error names them): `http.open`,
+  `http.download`, `net`, `zlib`, public-key crypto. Several HTTP requests
+  at once still work: `http.send_all` (the host makes them). `http.file` and `http.stream` give a 500: the host
   serves the app's static files itself. No processes.
 - A panic prints its message and line to the host's log, and the request
   gets a 500.
@@ -713,7 +672,7 @@ fn main() throws {
 |---|---|
 | `a \`Stream\` must be closed: get it with \`with\`` | `with f = ... { }` |
 | `/` on two `Int`s is not allowed | `a.div(b)` or `a.to_float() / b.to_float()` |
-| there are no global variables | a fixed value: top-level `let`; changing state: `Shared<T>` made in `main` |
+| there are no global variables | a fixed value: top-level `let`; shared state: the database |
 | a top-level `let` holds a fixed value | compute it in a function or in `main` |
 | `?.` can't change the value inside an optional | `var v = x ?? ...`, change `v`, then `x = v` |
 | `?.` reaches into an optional value, and this is a `T` | use `.` |

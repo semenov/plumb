@@ -1051,29 +1051,13 @@ pub fn send(request: ClientRequest) throws -> Response
 
 pub fn get(url: String) throws -> Response
 
-// Starts a request and returns at once; `wait()` gives its answer. Requests
-// started together run at the same time, so several APIs take as long as
-// the slowest, not the sum (on wasm-server too: the host makes them).
-//
-//   let weather = http.start(http.ClientRequest(url: weather_url))
-//   let news = http.start(http.ClientRequest(url: news_url))
-//   let w = weather.wait()
-//   let n = news.wait()
-//
-// A request that is never waited for is stopped when nothing holds it.
-pub fn start(request: ClientRequest) -> Pending
-
-// A request on its way (from `http.start`).
-pub builtin type Pending {
-  // Its answer, waiting for it if it hasn't come yet; a failure to reach
-  // the server throws, as `send` does. Wait once: a second time throws.
-  fn wait(self) throws -> Response
-}
-
 // Several requests at once: their answers in the same order, after the
-// slowest. The first failure (in that order) throws, and the requests
-// still on their way are stopped.
-//   let answers = http.send_all(urls.map(u => http.ClientRequest(url: u)))
+// slowest, not the sum (on wasm-server too: the host makes them). The
+// first failure (in that order) throws, and the requests still on their
+// way are stopped.
+//   let answers = http.send_all([http.ClientRequest(url: weather_url), http.ClientRequest(url: news_url)])
+//   let weather = answers[0]
+//   let news = answers[1]
 pub fn send_all(requests: List<ClientRequest>) throws -> List<Response>
 
 pub fn post(url: String, body: String) throws -> Response
@@ -2066,6 +2050,7 @@ builtin type List<T> {
   fn max_by<K>(self, key: fn(T) throws -> K) rethrows -> T?
   fn join(self, separator: String) -> String
   fn parallel_map<R>(self, limit: Int, transform: fn(T) throws -> R) rethrows -> List<R>
+  fn __parallel_batches<R>(self, limit: Int, transform: fn(T) throws -> R) rethrows -> List<R>
   fn group_by<K>(self, key: fn(T) throws -> K) rethrows -> Map<K, List<T>>
   fn count_each(self) -> Map<T, Int>
   mutating fn append(item: T)
@@ -2101,64 +2086,8 @@ builtin type Set<T> {
   mutating fn clear()
 }
 
-// A task started with `spawn`.
-builtin type Task<T> {
-  fn wait(self) throws -> T
-  fn cancel(self)
-}
-
-// State shared between tasks (and between HTTP requests):
-//
-//   let counter = Shared<Int>(0)
-//   with n = counter.lock() {
-//     n += 1                       // other tasks wait at `with`
-//   }
-//
-// Inside the block the value is used and changed like a variable, fields
-// and all (`s.todos.append(x)`); the lock is released at the end of the
-// block, even on an error. A lock directly inside another is an error.
-//
-// Readers that only look use `read()`: they run at the same time, and
-// `v` can't be changed (like a `let`):
-//
-//   with c = cache.read() {
-//     let hit = c[key]             // many readers at once; a `lock()`
-//   }                              // waits for them, and they for it
-//
-// A waiting `lock()` holds back new readers, and the readers that waited
-// during a `lock()` go before the next one: neither side starves.
-builtin type Shared<T> {
-  // for changing the value: one task at a time
-  fn lock(self) -> Locked<T>
-  // for reading it: readers run at the same time
-  fn read(self) -> Locked<T>
-}
-
-// What `lock()` and `read()` give: only for `with v = s.lock() { }`, where
-// `v` is the value itself.
-builtin type Locked<T> {
-}
-
-// A queue between tasks.
-builtin type Channel<T> {
-  // Waits while the channel is full; throws `ChannelClosed` once it's closed.
-  fn send(self, item: T) throws
-  // Sends without waiting: false (and the item is dropped) when the channel
-  // is full or closed.
-  fn try_send(self, item: T) -> Bool
-  fn receive(self) throws -> T?
-  // A value if one is waiting, without waiting; none otherwise.
-  fn try_receive(self) -> T?
-  fn close(self)
-}
-
 // Raised in a task that was cancelled, at its next wait.
 type Cancelled implements Error {
-  fn message(self) -> String
-}
-
-// Raised by `send` on a closed channel.
-type ChannelClosed implements Error {
   fn message(self) -> String
 }
 

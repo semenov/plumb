@@ -1,6 +1,0 @@
-fn main() throws {
-  let c = Channel<Int>(capacity: 4)
-  print("${c.try_receive() ?? -1}")
-  c.send(5)
-  print("${c.try_receive() ?? -1} ${c.try_receive() ?? -1}")
-}

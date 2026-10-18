@@ -102,7 +102,7 @@ pub fn register(req: http.Request, app: api.App) throws -> http.Response {
   }
   check_password(input.password)
   let hash = crypto.hash_password(input.password)
-  let id = app.write(() => {
+  let id = app.conn.transaction(() => {
     check_free(app, username: username, email: email, id: 0)
     app.conn.insert("insert into users (username, email, password_hash) values (?, ?, ?)", [username, email, hash])
   })
@@ -154,7 +154,7 @@ pub fn update(req: http.Request, app: api.App) throws -> http.Response {
     check_password(password)
     account.password_hash = crypto.hash_password(password)
   }
-  app.write(() => {
+  app.conn.transaction(() => {
     check_free(app, username: account.username, email: account.email, id: id)
     app.conn.execute(
       "update users set username = ?, email = ?, password_hash = ?, bio = ?, image = ? where id = ?",

@@ -462,6 +462,10 @@ impl Checker {
                 }
                 match self.lookup_global(name, md) {
                     Some(Global::Type(d)) => {
+                        if !self.tasks_allowed(md) && [self.prog.b.task, self.prog.b.shared, self.prog.b.channel].contains(&d) {
+                            self.no_tasks(*span, name);
+                            return Ty::Err;
+                        }
                         if let Some(p) = self.prim.get(&d) {
                             return p.clone();
                         }
@@ -1981,6 +1985,23 @@ impl Checker {
         e
     }
 
+    // The standard library runs on tasks; so may the compiler's own tests
+    // of the runtime (PLUMB_INTERNAL_TASKS=1, set by tests/run.sh).
+    fn tasks_allowed(&self, md: usize) -> bool {
+        self.modules[md].privileged || std::env::var_os("PLUMB_INTERNAL_TASKS").is_some()
+    }
+
+    // `spawn`, `Task`, `Shared` and `Channel` in user code (removed on
+    // 2026-10-18: code reads one step after another)
+    fn no_tasks(&mut self, span: Span, what: &str) {
+        let (msg, help) = match what {
+            "Shared" => ("`Shared` isn't in Plumb: requests don't share values in memory", "keep shared state in the database (`db.open(\"main\")`); on wasm-server nothing stays in memory between requests anyway"),
+            "Channel" => ("`Channel` isn't in Plumb", "work for later goes on a queue: `queue.send(name, payload)`, handled by `router.queue(name, job => ...)`"),
+            _ => ("tasks (`spawn`, `Task`) aren't in Plumb: code runs one step after another", "many items at once: `xs.parallel_map(limit: 8, transform: x => f(x))`; HTTP requests at once: `http.send_all(requests)`; work after the response: `queue.send(name, payload)`"),
+        };
+        self.err_help(span, msg, help);
+    }
+
     fn note_throw(&mut self, span: Span) {
         let fc = self.fcx();
         if let Some(l) = fc.lambdas.last_mut() {
@@ -2510,6 +2531,14 @@ impl Checker {
                 }
             }
             ExprKind::Spawn(x) => {
+                // tasks are the standard library's own: user code runs one
+                // step after another
+                let md = self.fc().module;
+                if !self.tasks_allowed(md) {
+                    self.no_tasks(span, "spawn");
+                    self.expr(x, None);
+                    return mk(TK::Unit, Ty::Err);
+                }
                 if !matches!(x.kind, ExprKind::Call { .. }) {
                     self.err_help(x.span, "`spawn` goes right before a call", "write `spawn f(x)`");
                     return self.expr(x, None);
@@ -3489,6 +3518,11 @@ impl Checker {
                     None => vec![],
                 };
                 TExpr { kind: TK::Record { def: d, fields }, ty, span }
+            }
+            TypeKind::Builtin if (d == self.prog.b.shared || d == self.prog.b.channel) && !self.tasks_allowed(self.fc().module) => {
+                let name = self.prog.defs[d].name.clone();
+                self.no_tasks(span, &name);
+                TExpr { kind: TK::Unit, ty: Ty::Err, span }
             }
             TypeKind::Builtin if d == self.prog.b.shared => {
                 if args.len() != 1 || args[0].name.is_some() {

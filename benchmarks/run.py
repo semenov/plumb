@@ -15,7 +15,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(ROOT, "bin")
-BENCHES = ["records", "trees", "sort", "words", "json", "maps", "csv", "nbody", "lines", "channels", "spawn"]
+BENCHES = ["records", "trees", "sort", "words", "json", "maps", "csv", "nbody", "lines"]
 # ONLY=Go,Plumb python3 run.py   to compare just those
 RUNTIMES = [r for r in ["Node", "Deno", "Bun", "Go", "Rust", "C", "Plumb"] if not os.environ.get("ONLY") or r in os.environ["ONLY"].split(",")]
 RUNS = int(os.environ.get("RUNS", "3"))

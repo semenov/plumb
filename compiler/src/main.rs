@@ -836,7 +836,8 @@ fn compile(opts: &Opts, tests: bool, optimize: bool, exe: &Path) -> bool {
         eprintln!("error: {} has no `fn main()`", opts.path);
         return false;
     }
-    let lowerer = lower::Lowerer::new(&prog, &sources, uf);
+    let mut lowerer = lower::Lowerer::new(&prog, &sources, uf);
+    lowerer.wasm = opts.target.is_some();
     let mut module = lowerer.run(tests);
     for f in module.funcs.iter_mut() {
         rc::insert_rc(f, &prog);

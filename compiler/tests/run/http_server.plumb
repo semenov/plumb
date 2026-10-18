@@ -1,3 +1,4 @@
+import db
 import http
 import json
 import log
@@ -13,29 +14,24 @@ type NewNote {
   text: String
 }
 
-type Store {
-  notes: Map<Int, Note> = {}
-  next_id: Int = 1
+// the state every request shares is in the database
+fn open_notes() throws -> db.Connection {
+  with conn = db.open(":memory:") {
+    conn.execute("create table notes (id integer primary key, title text not null, text text not null)", [])
+    return conn
+  }
 }
 
-fn create(store: Shared<Store>, req: http.Request) throws -> http.Response {
+fn create(conn: db.Connection, req: http.Request) throws -> http.Response {
   let input = json.decode<NewNote>(req.text())
-  var note = Note(id: 0, title: input.title, text: input.text)
-  with s = store.lock() {
-    note.id = s.next_id
-    s.next_id += 1
-    s.notes[note.id] = note
-  }
-  return http.json(201, note)
+  let id = conn.insert("insert into notes (title, text) values (?, ?)", [input.title, input.text])
+  return http.json(201, Note(id: id, title: input.title, text: input.text))
 }
 
-fn get(store: Shared<Store>, req: http.Request) throws -> http.Response {
+fn get(conn: db.Connection, req: http.Request) throws -> http.Response {
   let id = (req.param("id") ?? "").to_int()
-  var found: Note? = none
-  with s = store.lock() {
-    found = s.notes[id]
-  }
-  if found is some(note) {
+  let found = conn.query<Note>("select id, title, text from notes where id = ?", [id])
+  if found.first() is some(note) {
     return http.json(200, note)
   }
   return http.text(404, "no note ${id}")
@@ -46,33 +42,38 @@ fn crash(req: http.Request) -> http.Response {
   return http.text(200, "${items[5]}")
 }
 
-fn router(store: Shared<Store>) -> http.Router {
+fn router(conn: db.Connection) -> http.Router {
   var r = http.Router()
-  r.post("/notes", req => create(store, req))
-  r.get("/notes/:id", req => get(store, req))
+  r.post("/notes", req => create(conn, req))
+  r.get("/notes/:id", req => get(conn, req))
   r.get("/crash", crash)
   r.get("/hello", req => http.text(200, "hello ${req.query("name") ?? "you"}"))
   return r
 }
 
 test "a note that doesn't exist is a 404" {
-  let r = router(Shared(Store()))
-  let res = r.handle(http.request("GET", "/notes/9"))
-  expect res.status == 404
+  with conn = open_notes() {
+    let res = router(conn).handle(http.request("GET", "/notes/9"))
+    expect res.status == 404
+  }
 }
 
 test "created notes can be read back" {
-  let r = router(Shared(Store()))
-  var req = http.request("POST", "/notes")
-  req.body = "{\"title\": \"a\", \"text\": \"b\"}".bytes()
-  let created = r.handle(req)
-  expect created.status == 201
-  let res = r.handle(http.request("GET", "/notes/1"))
-  expect res.text() == "{\"id\":1,\"title\":\"a\",\"text\":\"b\"}"
+  with conn = open_notes() {
+    let r = router(conn)
+    var req = http.request("POST", "/notes")
+    req.body = "{\"title\": \"a\", \"text\": \"b\"}".bytes()
+    let created = r.handle(req)
+    expect created.status == 201
+    let res = r.handle(http.request("GET", "/notes/1"))
+    expect res.text() == "{\"id\":1,\"title\":\"a\",\"text\":\"b\"}"
+  }
 }
 
 fn main() throws {
-  http.serve(router(Shared(Store())), port: 18080)
+  with conn = open_notes() {
+    http.serve(router(conn), port: 18080)
+  }
   log.info("bye")
 }
 

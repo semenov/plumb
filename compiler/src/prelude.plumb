@@ -418,6 +418,13 @@ builtin type List<T> {
   }
   fn join(self, separator: String) -> String
   fn parallel_map<R>(self, limit: Int, transform: fn(T) throws -> R) rethrows -> List<R> {
+    if __has_tasks() {
+      return self.__parallel_batches(limit, transform: transform)
+    }
+    // on wasm-server: one by one
+    return self.map(transform)
+  }
+  fn __parallel_batches<R>(self, limit: Int, transform: fn(T) throws -> R) rethrows -> List<R> {
     var out: List<R> = __list_with_capacity(self.length)
     var start = 0
     let step = max(limit, 1)
@@ -489,68 +496,10 @@ builtin type Set<T> {
   mutating fn clear()
 }
 
-// A task started with `spawn`.
-builtin type Task<T> {
-  fn wait(self) throws -> T
-  fn cancel(self)
-}
-
-// State shared between tasks (and between HTTP requests):
-//
-//   let counter = Shared<Int>(0)
-//   with n = counter.lock() {
-//     n += 1                       // other tasks wait at `with`
-//   }
-//
-// Inside the block the value is used and changed like a variable, fields
-// and all (`s.todos.append(x)`); the lock is released at the end of the
-// block, even on an error. A lock directly inside another is an error.
-//
-// Readers that only look use `read()`: they run at the same time, and
-// `v` can't be changed (like a `let`):
-//
-//   with c = cache.read() {
-//     let hit = c[key]             // many readers at once; a `lock()`
-//   }                              // waits for them, and they for it
-//
-// A waiting `lock()` holds back new readers, and the readers that waited
-// during a `lock()` go before the next one: neither side starves.
-builtin type Shared<T> {
-  // for changing the value: one task at a time
-  fn lock(self) -> Locked<T>
-  // for reading it: readers run at the same time
-  fn read(self) -> Locked<T>
-}
-
-// What `lock()` and `read()` give: only for `with v = s.lock() { }`, where
-// `v` is the value itself.
-builtin type Locked<T> {
-}
-
-// A queue between tasks.
-builtin type Channel<T> {
-  // Waits while the channel is full; throws `ChannelClosed` once it's closed.
-  fn send(self, item: T) throws
-  // Sends without waiting: false (and the item is dropped) when the channel
-  // is full or closed.
-  fn try_send(self, item: T) -> Bool
-  fn receive(self) throws -> T?
-  // A value if one is waiting, without waiting; none otherwise.
-  fn try_receive(self) -> T?
-  fn close(self)
-}
-
 // Raised in a task that was cancelled, at its next wait.
 type Cancelled implements Error {
   fn message(self) -> String {
     return "the task was cancelled"
-  }
-}
-
-// Raised by `send` on a closed channel.
-type ChannelClosed implements Error {
-  fn message(self) -> String {
-    return "the channel is closed"
   }
 }
 
@@ -603,3 +552,42 @@ fn panic(message: String) -> Never
 
 fn __list_with_capacity<T>(capacity: Int) -> List<T>
 fn __less<T>(a: T, b: T) -> Bool
+
+// ---- internal: the standard library's own, not for programs ----
+
+// false on wasm-server, which has no tasks: there `if __has_tasks() { }`
+// is left out when compiling (lower.rs)
+fn __has_tasks() -> Bool
+// The runtime runs on tasks (parallel_map, time.timeout, the servers);
+// user code can't name these (check.rs `no_tasks`), and `plumb doc` stops
+// here.
+
+// a task started with `spawn`
+builtin type Task<T> {
+  fn wait(self) throws -> T
+  fn cancel(self)
+}
+
+// a value shared between tasks, under a lock (`with v = s.lock() { }`)
+builtin type Shared<T> {
+  fn lock(self) -> Locked<T>
+  fn read(self) -> Locked<T>
+}
+
+builtin type Locked<T> {
+}
+
+// a queue between tasks
+builtin type Channel<T> {
+  fn send(self, item: T) throws
+  fn try_send(self, item: T) -> Bool
+  fn receive(self) throws -> T?
+  fn try_receive(self) -> T?
+  fn close(self)
+}
+
+type ChannelClosed implements Error {
+  fn message(self) -> String {
+    return "the channel is closed"
+  }
+}

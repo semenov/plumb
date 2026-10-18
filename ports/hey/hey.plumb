@@ -382,15 +382,16 @@ fn make_request(w: Work) throws -> Result {
   }
 }
 
-fn run_worker(w: Work, count: Int, results: Channel<Result>) throws -> Int {
+// One of the `-c` workers: its requests one after another, and their results.
+fn run_worker(w: Work, count: Int) throws -> List<Result> {
   // Go: time.NewTicker(time.Duration(1e6/QPS) * time.Microsecond); the
   // first tick comes one period after the start, missed ticks are dropped.
   let period = if w.qps > 0.0 { (1000000.0 / w.qps).floor() * 1000 } else { 0 }
   var next_tick = time.now().nanos + period
-  var done = 0
+  var results: List<Result> = []
   for i in 0..<count {
     if w.deadline_nanos > 0 and w.start.elapsed().nanos >= w.deadline_nanos {
-      return done
+      return results
     }
     if period > 0 {
       let now = time.now().nanos
@@ -407,10 +408,9 @@ fn run_worker(w: Work, count: Int, results: Channel<Result>) throws -> Int {
     let result = try make_request(w) catch err {
       Result(error: err.message(), offset: since(w.start, at: s), duration: s.elapsed().seconds())
     }
-    results.send(result)
-    done += 1
+    results.append(result)
   }
-  return done
+  return results
 }
 
 // ---------------------------------------------------------------- report
@@ -429,9 +429,9 @@ type Collected {
   size_total: Int = 0
 }
 
-fn run_reporter(results: Channel<Result>) throws -> Collected {
+fn collect(workers: List<List<Result>>) -> Collected {
   var r = Collected()
-  while results.receive() is some(res) {
+  for res in workers.flat_map(rs => rs) {
     r.num_res += 1
     if res.error is some(message) {
       r.error_dist[message] = (r.error_dist[message] ?? 0) + 1
@@ -710,19 +710,14 @@ fn main() throws {
     deadline_nanos: o.z_nanos,
     follow_redirects: not o.disable_redirects,
   )
-  let results = Channel<Result>(capacity: min(conc * 1000, max_results()))
-  let reporter = spawn run_reporter(results)
-  var workers: List<Task<Int>> = []
-  // Ignore the case where n % c != 0 (as the original does).
+  // the -c workers at once; n % c requests are left out, as the original does
+  var ids: List<Int> = []
   for i in 0..<conc {
-    workers.append(spawn run_worker(work, count: num.div(conc), results: results))
+    ids.append(i)
   }
-  for w in workers {
-    w.wait()
-  }
-  results.close()
+  let results = ids.parallel_map(limit: conc, transform: i => run_worker(work, count: num.div(conc)))
   let total = start.elapsed()
-  let collected = reporter.wait()
+  let collected = collect(results)
   let text = if o.output == "csv" { csv(collected) } else { summary(collected, total: total) }
   with out = io.stdout() {
     out.write_text("${text}\n")

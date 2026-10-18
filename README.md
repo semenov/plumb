@@ -47,8 +47,8 @@ fn main() throws {
 }
 ```
 
-`plumb build notes.plumb` gives one native binary. It uses all cores, and every
-request runs in its own lightweight task.
+`plumb build notes.plumb` gives one native binary. It uses all cores:
+requests are served side by side.
 
 ## Why another language
 
@@ -59,18 +59,18 @@ here:
 - **One way to write each thing.** The syntax is the mainstream C-family
   one, and the rules are stricter than in mainstream languages.
 - **The compiler is the reviewer.** Every error names the fix. Dropping the
-  result of `xs.sorted()`, building SQL from strings, forgetting to close a file, leaking a
-  task: all are compile errors.
+  result of `xs.sorted()`, building SQL from strings, forgetting to close
+  a file: all are compile errors.
 - **What matters is visible.** A function that can fail says `throws`; an
   error goes up by itself, and `try ... catch` handles it where it's
   written (`try` never stands alone). A function never changes its
   arguments: `products = restock(products, name: "Widget", amount: 3)`.
 - **Values, not references.** Records, enums and lists are values with
   copy-on-write. There is no `null`, no inheritance and no shared mutable
-  state except `Shared<T>`, which you reach only through a lock.
-- **Concurrency without colors.** Code is sequential; `spawn f(x)` runs work
-  in parallel and returns a task that belongs to the function that started
-  it. There's no `async`/`await`.
+  state: what requests share is in the database.
+- **Sequential code only.** No `spawn`, locks, channels or `async`/`await`:
+  `xs.parallel_map(...)`, `http.send_all(...)` and `queue.send(...)` are
+  ordinary calls that do several things at once, or later.
 - **Batteries included.** A typical service or tool needs no third-party
   packages.
 
@@ -106,10 +106,10 @@ with f = files.create("out.txt") {
   f.write_text("hello\n")
 }
 
-// Parallel work
-let user = spawn load_user(id)
-let orders = spawn load_orders(id)
-let page = Dashboard(user: user.wait(), orders: orders.wait())
+// Several things at once, and later
+let sizes = urls.parallel_map(limit: 8, transform: u => fetch(u).length)
+let answers = http.send_all([weather_request, news_request])
+queue.send("emails", address)          // handled after the response
 
 // Lists
 let adults = users.filter(u => u.age >= 18).map(u => u.name)
@@ -217,8 +217,6 @@ reference counting that the compiler inserts, with no garbage collector.
 | CSV-like text processing | 0.61 s, 138 MB | 0.99 s, 164 MB |
 | n-body (floating point) | 0.23 s, 2 MB | 0.21 s, 4 MB |
 | writing and reading a file by lines | 0.96 s, 2 MB | 0.96 s, 11 MB |
-| channel, producer and consumer | 0.07 s, 2 MB | 0.13 s, 4 MB |
-| spawning 200k small tasks | 0.06 s, 7 MB | 0.06 s, 14 MB |
 | HTTP file server, 2 KB files | 75-93k req/s, 7 MB | 55k req/s, 27 MB |
 
 (`benchmarks/`: `ONLY=Go,Plumb python3 run.py`; median of 3 runs on an
@@ -235,13 +233,17 @@ change: `plumb check` 8 ms, `plumb run` 0.39 s, `plumb build` (optimized)
   pieces compiled side by side (one per CPU, up to 8). The benchmarks run
   as fast as when everything was one C file.
 
-## How tasks run
+## How the runtime does several things at once
 
-`spawn f(x)` starts a task: a function running on its own stack, in
-parallel with the others. Tasks run on a pool of OS threads, one per core
-(an M:N scheduler, like Go's). Everything that waits (a task's result, a
-channel, a lock, a timer, a socket) parks the task and lets its thread run
-another one; there is no `async`/`await`, and code reads top to bottom.
+Programs don't start tasks (there is no `spawn`); the native runtime does:
+`http.serve` runs each request and each WebSocket connection as a task,
+`parallel_map` its items, `http.send_all` its requests, `time.timeout`
+its work. (On wasm-server there are no tasks: each request is an instance
+of its own, and the host makes the HTTP requests.) A task is a function
+running on its own stack; tasks run on a pool of OS threads, one per core
+(an M:N scheduler, like Go's). Everything that waits (a timer, a socket,
+another task) parks the task and lets its thread run another one, so code
+reads top to bottom with no `async`/`await`.
 
 - **Switching** between tasks saves and restores only the callee-saved
   registers (a few dozen instructions of assembly).
@@ -277,10 +279,9 @@ another one; there is no `async`/`await`, and code reads top to bottom.
 - **Memory:** each thread has its own free lists for small objects; with
   tasks, reference counts change atomically.
 
-What it's good at: sequential-looking code for servers and pipelines,
-cheap tasks (a small one costs about 16 KB and a microsecond), channels as
-fast as Go's, no leaked tasks, and cancellation that always reaches the
-bottom of the call.
+What it's good at: sequential code for servers and pipelines, cheap tasks
+(a small one costs about 16 KB and a microsecond), no leaked tasks, and
+cancellation that always reaches the bottom of the call.
 
 Weak spots, known:
 
@@ -343,10 +344,12 @@ in a language meant to be simple and fast:
   is still used afterwards. It's what makes values safe to pass around;
   change values in place (`m[k].append(x)`, `xs[i].qty = 1`) instead of
   reading them out and writing them back.
-- **A function waits for the tasks it starts.** A handler that `spawn`s an
-  email waits for it before replying. Work after the response goes to a
-  worker started in `main`, through a channel (AGENTS.md shows it). In
-  exchange, no task is ever left running by accident.
+- **No `spawn`, no locks, no channels.** Code runs one step after another.
+  Doing several things at once is a call (`parallel_map`, `http.send_all`),
+  work after the response is `queue.send`, and state requests share is in
+  the database. Programs built around long-lived concurrency (a broadcast
+  chat, a load generator) are harder to write; in exchange nobody reads
+  or debugs a race or a deadlock.
 - **JSON keys match loosely.** `createdAt`, `created_at` and `CreatedAt` all
   fill the field `created_at`, so camelCase APIs need no mapping. A key
   written twice, or two keys filling the same field, is an error.

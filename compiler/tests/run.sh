@@ -12,6 +12,8 @@ trap 'rm -rf "$T"' EXIT
 export PLUMB_SPLIT_STRICT=1
 case $PLUMB_BIN in /*) ;; *) PLUMB_BIN=$(pwd)/$PLUMB_BIN ;; esac
 fail=0
+# tests of the runtime may start tasks of their own (user code can't)
+export PLUMB_INTERNAL_TASKS=1
 for f in *.plumb; do
   name=${f%.plumb}
   if [ -f "$name.out" ]; then
@@ -34,6 +36,7 @@ for f in *.plumb; do
 done
 # error messages: each program in errors/ with a .err file must give
 # exactly those messages
+unset PLUMB_INTERNAL_TASKS
 cd ../errors || exit 1
 for f in *.plumb; do
   [ -f "${f%.plumb}.err" ] || continue
@@ -44,6 +47,7 @@ for f in *.plumb; do
 done
 cd ../run || exit 1
 # over real connections: each script's output must match its .out
+export PLUMB_INTERNAL_TASKS=1
 cd ../wire || exit 1
 for f in *.sh; do
   out=$(PLUMB_BIN=$PLUMB_BIN ./"$f" 2>/dev/null)
@@ -51,8 +55,11 @@ for f in *.sh; do
     echo "FAIL wire/$f: output differs"; echo "$out"; fail=1
   fi
 done
-# wasm-server: tasks, http.open and http.download are refused by name; with wasi-sdk
-# (WASI_SDK, /opt/wasi-sdk or ~/wasi-sdk) an app builds into a component
+# wasm-server: spawn (as everywhere), http.open and http.download are refused by
+# name; with wasi-sdk
+# (WASI_SDK, /opt/wasi-sdk, ~/wasi-sdk or the one plumb downloaded) an app
+# builds into a component
+unset PLUMB_INTERNAL_TASKS
 cd ../wasm || exit 1
 for f in tasks open; do
   out=$($PLUMB_BIN build --target wasm-server $f.plumb -o $T/$f.wasm 2>&1)
@@ -60,7 +67,7 @@ for f in tasks open; do
     echo "FAIL wasm/$f.plumb: the message differs"; echo "$out"; fail=1
   fi
 done
-for sdk in "$WASI_SDK" /opt/wasi-sdk "$HOME/wasi-sdk"; do
+for sdk in "$WASI_SDK" /opt/wasi-sdk "$HOME/wasi-sdk" "$HOME"/.plumb/toolchains/wasi-sdk-*; do
   [ -n "$sdk" ] && [ -x "$sdk/bin/clang" ] || continue
   if ! WASI_SDK=$sdk $PLUMB_BIN build --target wasm-server app.plumb -o $T/app.wasm >$T/wasm-err 2>&1; then
     echo "FAIL wasm/app.plumb: doesn't build"; head -10 $T/wasm-err; fail=1

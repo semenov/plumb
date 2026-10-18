@@ -2,10 +2,6 @@ fn count(xs: List<Int>) -> Int {
   return xs.length
 }
 
-fn work() -> Int {
-  return 7
-}
-
 fn main() throws {
   var xs = [3, 1, 2]
   var name = " Ada "
@@ -18,8 +14,6 @@ fn main() throws {
   name.trim()
   // computed and never used
   xs.length + 1
-  // a task's result is still waited for
-  spawn work()
   // `let _ =` isn't needed
   let _ = count(xs)
   print("${xs} ${name}")

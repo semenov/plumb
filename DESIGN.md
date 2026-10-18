@@ -85,7 +85,8 @@ goes in a `with` around all of `main`.
 - There are no classes and no user-defined reference types.
 - Things with identity (connections, files, the HTTP server) are opaque
   handles from the standard library.
-- Shared mutable state uses only `Shared<T>`, which synchronizes access.
+- There is no shared mutable state in memory: what requests share is in
+  the database (until 2026-10-18 it was `Shared<T>`, under a lock).
 - Graphs and back-links use IDs in a `Map`, not pointers.
 - Changes through access paths (`orders[id].items.append(x)`) happen in
   place.
@@ -225,8 +226,8 @@ removed it). What stays an error is what is always a mistake:
   literals, other top-level `let`s, and lists, maps and records of them:
   no function calls, so nothing runs before `main`, and there is no
   initialization order to think about. `let` already means "can't change",
-  so there is no second keyword like `const`. Shared state is still a
-  `Shared<T>` made in `main`.
+  so there is no second keyword like `const`. Shared state is in the
+  database.
 - **Private by default:** without `pub`, a function, type, method or
   top-level `let` is visible only inside its file. Fields are visible wherever the type is.
 - **No cyclic imports:** the error shows the cycle (`a → b → a`) and
@@ -326,56 +327,42 @@ removed it). What stays an error is what is always a mistake:
 - `m[key]` returns `V?` (a missing key is normal). `xs.first()` returns
   `T?`.
 
-### Concurrency: sequential code plus `spawn`
+### Concurrency: sequential code only
 
-- No `async`/`await` (no function coloring). Code that waits (network,
-  database) is written sequentially; an HTTP server runs each request as its
-  own task, and waiting doesn't block other requests.
-- Parallel work is started with `spawn`, which returns a `Task<T>`:
-
-  ```
-  fn dashboard(id: Int) throws -> Dashboard {
-    let user = spawn load_user(id)
-    let orders = spawn load_orders(id)
-    return Dashboard(user: user.wait(), orders: orders.wait())
-  }
-  ```
-
-- **A task belongs to the function that started it.** The function doesn't
-  finish until all its tasks have finished, so tasks can't leak.
-- **A `Task` can't leave the function:** it can't be returned, stored in a
-  record or captured by a lambda (compile errors). Local variables and lists
-  are fine: `pending.append(spawn fetch(url))`.
-- **Errors aren't lost.** An error arrives in `task.wait()`. If a task
-  fails and nobody waits for it, the other tasks are cancelled and the error
-  comes out of the function, so `spawn` of a failing call requires `throws`.
-- **A task's result is waited for:** a `Task<T>` nobody waits for is an error.
-  `spawn f()` for a function without a result is a plain statement (a
-  background worker).
-- **At the end of the function, unfinished tasks are waited for**, not
-  cancelled: nothing is lost silently. A background worker is stopped
-  explicitly, e.g. by closing its queue. On an early exit (`return` or an
-  error before `wait`) unfinished tasks are cancelled, then waited for.
-- For lists: `urls.parallel_map(limit: 10, transform: url => fetch(url))`.
-- **All cores are used:** tasks run on a pool of threads (like Go), so `spawn`
-  and `parallel_map` speed up computation too, not only waiting.
-- Cancellation is automatic: a waiting operation in a cancelled task throws
-  `Cancelled`.
-- Tasks share data only through `Shared<T>` or pass it through `Channel<T>`.
-- Timeouts: `time.timeout(time.seconds(5), () => http.get(url))`
-  runs the work as a task and cancels it at the deadline (its own tasks
-  too); every wait is cancellable, including sockets and HTTP requests.
-- **Ctrl-C cancels `main`'s task.** Waits stop with `Cancelled`, `with`
+- No `async`/`await` (no function coloring), and since 2026-10-18 no
+  `spawn`, `Task`, `Shared`, `Channel` or `http.start` either (Vlad: "the
+  user sees simple sequential code"; tag `pre-sequential` is the state
+  before). They were the biggest and hardest chapter (locks, deadlocks,
+  what a lambda may capture), and none of it worked on wasm-server, the
+  main target, where each request is an instance of its own.
+- What took tasks is an ordinary call:
+  - many items at once: `xs.parallel_map(limit: 8, transform: x => f(x))`
+    (one by one on wasm-server: its lambda sees copies, so the result is
+    the same);
+  - HTTP requests at once: `http.send_all(requests)`, answers in order;
+  - work after the response: `queue.send(name, payload)`, handled by
+    `router.queue(name, job => ...)` with retries; on a schedule:
+    `router.cron(name, schedule: ..., handler: ...)`. On wasm-server
+    these are the server's durable queues and cron; natively the program
+    keeps the queue and `http.serve` runs it;
+  - state requests share: the database.
+- What's given up: native programs built around long-lived concurrency
+  (a chat that broadcasts through channels, a load generator's workers;
+  `hey` now runs its workers with `parallel_map`). WebSocket broadcast
+  waits for a platform call (PLATFORM.md).
+- The runtime still runs on tasks natively: `http.serve` runs requests and
+  WebSocket connections side by side, `parallel_map`, `send_all` and
+  `time.timeout` use them. User code can't name them (`check.rs`
+  `no_tasks`); the compiler's own runtime tests can, with
+  `PLUMB_INTERNAL_TASKS=1`. An error names the call to use instead.
+- **Ctrl-C cancels `main`.** Waits stop with `Cancelled`, `with`
   blocks close their resources, and the program ends with 130. A second
   Ctrl-C ends it at once. A loop that never waits checks
   `process.interrupted()`. So cleanup on Ctrl-C needs nothing new: it's the
   same path as any error.
-- **Rejected:**
-  - a `parallel` block where every line runs at the same time (it looks
-    sequential but isn't);
-  - task groups through `with` (`tasks.group()`, `group.run`): `spawn` gives
-    the same guarantees with one keyword instead of a group object;
-  - `async`/`await`.
+- Timeouts: `time.timeout(time.seconds(5), () => http.get(url))` cancels
+  the work at the deadline; every wait is cancellable, including sockets
+  and HTTP requests. (On wasm-server the host limits a request's time.)
 
 ### Tests and tooling
 
@@ -440,26 +427,6 @@ removed it). What stays an error is what is always a mistake:
   returns nothing (`execute_counting` returns the row count), `map.remove(k)`
   returns nothing (`map.take(k) -> V?` removes and returns). A result is
   returned only when it's usually needed.
-- **Shared state: `Shared<T>` is accessed only through a lock with `with`:**
-
-  ```
-  with views = app.views.lock() {
-    views[id] = (views[id] ?? 0) + 1
-  }
-  ```
-
-  Inside the block the value is changed like an ordinary variable; other
-  tasks wait at the entrance; the lock is released at the end of the block,
-  even on an error. There is no `update`. A `lock()` directly inside another
-  `lock()` is a compile error. A deadlock through function calls is
-  reported at runtime only when every task waits and nothing else (no
-  timer, no socket) could wake one; in a server, a lock cycle between two
-  requests just hangs them, so keep one lock at a time.
-  Readers use `with v = s.read() { ... }`: `v` can't be changed, and
-  readers run at the same time (a readers-writer lock; a read-mostly cache
-  is the most common shared state in a backend). Readers count themselves
-  per core, so they don't contend on one word; a waiting writer holds back
-  new readers, and the readers that waited go before the next writer.
 - **Processes:** `process.run("git", ["log", "-n", "5"])` takes a list of
   arguments, not a shell string.
 - **Time:** `Instant` and `Date` are different types. Time zones are always

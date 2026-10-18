@@ -121,6 +121,10 @@ pub fn parse(src: &str, prelude: bool) -> ModuleDoc {
     let mut open: Option<(Item, bool)> = None;
     for line in &lines[i..] {
         let s = line.trim();
+        // the prelude's internal part (tasks) isn't for programs
+        if s.starts_with("// ---- internal") {
+            break;
+        }
         let delta = brace_delta(s);
         if let Some(target) = skip_to {
             depth += delta;

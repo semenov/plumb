@@ -215,6 +215,14 @@ pub fn sleep_until(moment: Instant) throws {
 //
 //   let page = time.timeout(time.seconds(5), () => http.get(url))
 pub fn timeout<R>(duration: Duration, work: fn() throws -> R) throws -> R {
+  if __has_tasks() {
+    return timeout_task(duration, work: work)
+  }
+  // on wasm-server the host limits the request's time instead
+  return work()
+}
+
+fn timeout_task<R>(duration: Duration, work: fn() throws -> R) throws -> R {
   let task = spawn work()
   let deadline = __cancel_after(task, duration.nanos)
   let result = try task.wait() catch err {

@@ -1,1 +1,7 @@
-error: this program uses what a wasm-server app doesn't have: tasks (spawn, Shared, Channel, parallel_map)
+error: tasks (`spawn`, `Task`) aren't in Plumb: code runs one step after another
+  --> tasks.plumb:4:11
+  |
+4 |   let t = spawn http.get("https://example.com")
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: many items at once: `xs.parallel_map(limit: 8, transform: x => f(x))`; HTTP requests at once: `http.send_all(requests)`; work after the response: `queue.send(name, payload)`
+1 error(s)

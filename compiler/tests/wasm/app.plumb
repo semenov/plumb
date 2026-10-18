@@ -65,6 +65,12 @@ fn main() throws {
       let res = http.get(req.query("url") ?? "https://example.com/")
       http.text(res.status, res.text())
     })
+    // no tasks on wasm-server: parallel_map goes one by one, timeout just runs
+    router.get("/edge/squares", req => {
+      let squares = [1, 2, 3].parallel_map(limit: 2, transform: n => n * n)
+      let answer = time.timeout(time.seconds(1), () => "${squares}")
+      http.text(200, answer)
+    })
     http.serve(router, port: 8080)
   }
 }

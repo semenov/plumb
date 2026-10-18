@@ -23,9 +23,4 @@ fn main() throws {
   }
   print("${n}")
   print("${sum_or_zero(["1", "2", "3"])} ${sum_or_zero(["1", "?"])}")
-  let tasks = [spawn first_number(["7"]), spawn first_number(["no"])]
-  for t in tasks {
-    let v = try t.wait() catch err { 0 }
-    print("task: ${v}")
-  }
 }

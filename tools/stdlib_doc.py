@@ -75,6 +75,9 @@ def public_api(text: str, prelude: bool) -> tuple[str, str]:
     skipping_until = None  # depth at which a skipped body ends
     type_depth = None  # depth inside a public type's braces
     for line in lines[i:]:
+        # the prelude's internal part (tasks) isn't for programs
+        if line.strip().startswith("// ---- internal"):
+            break
         s = line.strip()
         opens, closes = braces(s)
         if skipping_until is not None:

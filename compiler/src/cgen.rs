@@ -3420,6 +3420,8 @@ static lt_err lt_http_call(lt_fn handler, {rqc} *req, {rsc} *resp) {{
             "process.find" => format!("lt_process_find({})", a[0]),
             "process.__run" => format!("({{ int64_t s_; lt_text *o_, *e_; lt_err r_ = lt_process_run_ex({}, {}, {}->data, {}, {}, &s_, &o_, &e_); if (!r_.obj) *{out} = (__typeof__(*{out})){{ s_, o_, e_ }}; r_; }})", a[0], a[1], a[2], a[3], a[4], out = a[5]),
             "env.__set" => format!("lt_env_set({}, {})", a[0], a[1]),
+            // only reached natively (lower.rs leaves its blocks out on wasm)
+            "__has_tasks" => "true".to_string(),
             // queues: the host's on wasm-server, the program's own elsewhere
             "queue.__send" => {
                 if self.wasm {

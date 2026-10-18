@@ -20,9 +20,21 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
         and cron (wasm-server: deployed apps get `queues` and `cron`,
         queue names kept per project), natively a queue in the program
         that `http.serve` runs every 200 ms
-  - [ ] step 2: rewrite what uses tasks, channels and Shared (tests,
-        examples, hey, the websocket chat)
-  - [ ] step 3: remove them from the language and the docs
+  - [x] step 2: rewritten: hey (workers through parallel_map), RealWorld
+        (no write lock: 200 concurrent signups and articles, all saved),
+        the http_server test (state in the database), http_parallel;
+        deleted: tests, benchmarks and repros of the removed features
+  - [x] step 3: spawn, Task, Shared and Channel are errors in user code
+        (with the call to use instead); http.start and Pending are
+        private to http; the types are the prelude's internal part, out of
+        `plumb doc`. parallel_map and time.timeout work on wasm-server
+        (`if __has_tasks()` is left out there). Runtime tests use them
+        with PLUMB_INTERNAL_TASKS=1
+  - [ ] cleanup: Shared and Channel are now unused by the standard
+        library: remove them from the checker, codegen and runtime (lock
+        rules, read(), contains_shared, lt_chan)
+  - [ ] bug (old): `hey -n 20000 -c 10` against a local server segfaults
+        (also with the version before; -n 3000 -c 10 is fine)
 - [ ] **Interfaces: keep or remove?** (Vlad, 2026-10-18: keep for now.)
       0 declared in 441 agent-written files; only `Error` is used; a record
       of functions (`type Mailer { send: fn(...) }`) covers fakes in tests,

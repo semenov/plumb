@@ -1,3 +1,6 @@
+// tasks of the runtime (the standard library's parallel_map and timeouts
+// run on them; user code can't start one)
+
 import time
 
 fn slow_square(n: Int) throws -> Int {
@@ -32,46 +35,9 @@ fn main() throws {
   let doubled = [1, 2, 3, 4].parallel_map(limit: 2, transform: n => slow_square(n))
   print("parallel_map: ${doubled}")
 
-  let hits = Shared(0)
-  var workers: List<Task<Int>> = []
-  for w in 0..<8 {
-    workers.append(spawn count_up(hits, 1000))
-  }
-  for t in workers {
-    t.wait()
-  }
-  with n = hits.lock() {
-    print("hits: ${n}")
-  }
-
-  let jobs = Channel<Int>(capacity: 10)
-  let results = Shared<List<Int>>([])
-  spawn consumer(jobs, results)
-  spawn consumer(jobs, results)
-  for i in 1..=20 {
-    jobs.send(i)
-  }
-  jobs.close()
   let err = try fails(1) catch e {
     print("caught: ${e.message()}")
     0
   }
   print("after catch: ${err}")
-}
-
-fn count_up(hits: Shared<Int>, times: Int) -> Int {
-  for i in 0..<times {
-    with n = hits.lock() {
-      n += 1
-    }
-  }
-  return times
-}
-
-fn consumer(jobs: Channel<Int>, results: Shared<List<Int>>) {
-  for j in jobs {
-    with r = results.lock() {
-      r.append(j * 10)
-    }
-  }
 }

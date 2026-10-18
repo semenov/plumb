@@ -270,7 +270,7 @@ pub fn create(req: http.Request, app: api.App) throws -> http.Response {
     throw api.blank("body")
   }
   let now = api.now()
-  let slug = app.write(() => app.conn.transaction(() => {
+  let slug = app.conn.transaction(() => {
     let slug = make_slug(app, title: input.title, id: 0)
     let id = app.conn.insert(
       "insert into articles (slug, title, description, body, author_id, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)",
@@ -278,7 +278,7 @@ pub fn create(req: http.Request, app: api.App) throws -> http.Response {
     )
     save_tags(app, article_id: id, tags: clean_tags(input.tag_list))
     slug
-  }))
+  })
   return answer(201, app: app, slug: slug, viewer: viewer)
 }
 
@@ -313,7 +313,7 @@ pub fn update(req: http.Request, app: api.App) throws -> http.Response {
   if fields["tagList"] is some(v) {
     tags = tag_list(v)
   }
-  let slug = app.write(() => app.conn.transaction(() => {
+  let slug = app.conn.transaction(() => {
     let slug = if title == row.title { row.slug } else { make_slug(app, title: title, id: row.id) }
     app.conn.execute(
       "update articles set slug = ?, title = ?, description = ?, body = ?, updated_at = ? where id = ?",
@@ -323,7 +323,7 @@ pub fn update(req: http.Request, app: api.App) throws -> http.Response {
       save_tags(app, article_id: row.id, tags: t)
     }
     slug
-  }))
+  })
   return answer(200, app: app, slug: slug, viewer: viewer)
 }
 
@@ -346,7 +346,7 @@ fn tag_list(value: json.Value) throws -> List<String> {
 pub fn delete(req: http.Request, app: api.App) throws -> http.Response {
   let viewer = auth.require(req, app)
   let row = own(req, app: app, viewer: viewer)
-  app.write(() => app.conn.execute("delete from articles where id = ?", [row.id]))
+  app.conn.execute("delete from articles where id = ?", [row.id])
   return http.text(204, "")
 }
 
@@ -354,7 +354,7 @@ pub fn delete(req: http.Request, app: api.App) throws -> http.Response {
 pub fn favorite(req: http.Request, app: api.App) throws -> http.Response {
   let viewer = auth.require(req, app)
   let row = find(app, slug: req.param("slug") ?? "", viewer: viewer)
-  app.write(() => app.conn.execute("insert or ignore into favorites (user_id, article_id) values (?, ?)", [viewer, row.id]))
+  app.conn.execute("insert or ignore into favorites (user_id, article_id) values (?, ?)", [viewer, row.id])
   return answer(200, app: app, slug: row.slug, viewer: viewer)
 }
 
@@ -362,7 +362,7 @@ pub fn favorite(req: http.Request, app: api.App) throws -> http.Response {
 pub fn unfavorite(req: http.Request, app: api.App) throws -> http.Response {
   let viewer = auth.require(req, app)
   let row = find(app, slug: req.param("slug") ?? "", viewer: viewer)
-  app.write(() => app.conn.execute("delete from favorites where user_id = ? and article_id = ?", [viewer, row.id]))
+  app.conn.execute("delete from favorites where user_id = ? and article_id = ?", [viewer, row.id])
   return answer(200, app: app, slug: row.slug, viewer: viewer)
 }
 

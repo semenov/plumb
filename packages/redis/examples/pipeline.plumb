@@ -1,0 +1,21 @@
+// 20000 SETs one by one, then in one pipeline.
+import redis
+import time
+
+fn main() throws {
+  with db = redis.connect("localhost:6379") {
+    let start = time.now()
+    for i in 0..<20000 {
+      db.set("k${i}", value: "v")
+    }
+    let ms = start.elapsed().millis()
+    print("20000 sets one by one: ${(20000 * 1000).div(ms + 1)} per second")
+    var batch: List<List<String>> = []
+    for i in 0..<20000 {
+      batch.append(["SET", "k${i}", "v"])
+    }
+    let s2 = time.now()
+    db.pipeline(batch)
+    print("20000 sets pipelined: ${(20000 * 1000).div(s2.elapsed().millis() + 1)} per second")
+  }
+}

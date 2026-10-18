@@ -101,6 +101,8 @@ pub struct Lowerer<'a> {
     shows: Vec<(Ty, usize)>,
     show_seen: HashSet<Ty>,
     decoded: std::collections::HashSet<Ty>,
+    // building for wasm-server: no tasks
+    pub wasm: bool,
 }
 
 pub fn iface_methods(prog: &Program, ids: &[DefId]) -> Vec<FnId> {
@@ -143,6 +145,7 @@ impl<'a> Lowerer<'a> {
             shows: vec![],
             show_seen: HashSet::new(),
             decoded: std::collections::HashSet::new(),
+            wasm: false,
         }
     }
 
@@ -1160,6 +1163,13 @@ impl<'a> Lowerer<'a> {
             }
             TK::Lambda { params, captures, body } => self.lambda(params, captures, body, &ty, e.span),
             TK::Block(b) => self.block(b),
+            // `if __has_tasks() { ... }` (prelude): on wasm-server, where
+            // there are no tasks, the block is left out, so what it reaches
+            // isn't compiled at all
+            TK::If { cond, then: _, els } if self.wasm && self.is_has_tasks(cond) => match els {
+                Some(x) => self.expr(x),
+                None => Op::Unit,
+            },
             TK::If { cond, then, els } => {
                 self.set_line(cond.span);
                 let c = self.expr(cond);
@@ -1972,6 +1982,12 @@ pub fn sanitize(s: &str) -> String {
 }
 
 // "print", "List.append", "files.read", "net.Connection.read"
+impl<'a> Lowerer<'a> {
+    fn is_has_tasks(&self, cond: &TExpr) -> bool {
+        matches!(&cond.kind, TK::Call { callee: Callee::Fn(id, _), .. } if self.prog.fns[*id].name == "__has_tasks" && self.prog.fns[*id].module == 0)
+    }
+}
+
 pub fn intrinsic_name(prog: &Program, f: &FnDef) -> String {
     match f.owner {
         Some(d) => {
