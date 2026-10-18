@@ -11,6 +11,9 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
+#if !defined(__APPLE__)
+#include <sys/random.h>
+#endif
 
 extern char **environ;
 
@@ -812,24 +815,22 @@ static void lt_log_named(lt_text *level, lt_text *msg, lt_texts *keys, lt_texts 
 
 // ---------------------------------------------------------------- random
 
+// Every random number comes from the operating system's secure generator
+// (wasm: WASI random_get), read 256 bytes at a time per thread.
 static uint64_t lt_random_u64(void) {
     uint64_t v;
 #if defined(__APPLE__)
     arc4random_buf(&v, sizeof v);
 #else
-    static __thread uint64_t s;
-    if (!s) {
-        FILE *f = fopen("/dev/urandom", "rb");
-        if (f) {
-            fread(&s, sizeof s, 1, f);
-            fclose(f);
-        }
-        s |= 1;
+    static __thread unsigned char buf[256];
+    static __thread size_t used = sizeof buf;
+    if (used == sizeof buf) {
+        if (getentropy(buf, sizeof buf) != 0) lt_panic_at("random: the operating system gave no random bytes", 0);
+        used = 0;
     }
-    s ^= s << 13;
-    s ^= s >> 7;
-    s ^= s << 17;
-    v = s;
+    memcpy(&v, buf + used, sizeof v);
+    memset(buf + used, 0, sizeof v);
+    used += sizeof v;
 #endif
     return v;
 }
