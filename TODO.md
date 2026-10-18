@@ -12,6 +12,13 @@ items stay (ticked) so nothing is lost. New requests are added as they come.
       `experiments/`, which keep what the agents wrote then)
   - [ ] the editor marks the calls that can fail (an LSP inlay hint or
         semantic token), since the line no longer says it
+- [x] **No `type UserId = Int`** (Vlad, 2026-10-18): nobody declared one
+      outside tests, and it read as an alias. `type X = fn(...)` stays; for
+      a type of its own, a record `type UserId { value: Int }` (the error
+      says so). Only std's `sql.Query` is still a new type
+  - [ ] cleanup: the checker, lowering and JSON/SQL code for new types over
+        ordered or plain values (ordering, `.value`, SQL parameters) now
+        serves only `sql.Query`; trim it or make `Query` a builtin
 - [x] `plumb init` instead of `plumb new` (the current directory becomes the
       project) (Vlad, 2026-09-29)
 - [x] **Compile time vs Go**: benchmark, fix what's slow (Vlad, 2026-09-29):

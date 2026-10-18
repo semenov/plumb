@@ -5,8 +5,7 @@
 //   Building SQL from pieces of text is a compile error, so SQL injection
 //   can't happen: values go in as parameters.
 // - Parameters are written as plain values: `[name, 36, true]` becomes a
-//   `List<Value>` by itself (Int, Float, String, Bool, Bytes, new types over
-//   them, and `none`).
+//   `List<Value>` by itself (Int, Float, String, Bool, Bytes and `none`).
 // - Rows become records by column name, like `json.decode`.
 
 // SQL text. Only a literal becomes a `Query`; a database package reads the

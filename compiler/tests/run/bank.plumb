@@ -1,29 +1,27 @@
-type AccountId = Int
-
 type Account {
-  id: AccountId
+  id: Int
   balance: Int
 }
 
 type AccountNotFound implements Error {
-  id: AccountId
+  id: Int
 
   fn message(self) -> String {
-    return "account ${self.id.value} does not exist"
+    return "account ${self.id} does not exist"
   }
 }
 
 type InsufficientFunds implements Error {
-  id: AccountId
+  id: Int
   balance: Int
   amount: Int
 
   fn message(self) -> String {
-    return "account ${self.id.value} has ${self.balance} but the transfer needs ${self.amount}"
+    return "account ${self.id} has ${self.balance} but the transfer needs ${self.amount}"
   }
 }
 
-fn transfer(accounts: Map<AccountId, Account>, from: AccountId, to: AccountId, amount: Int) throws -> Map<AccountId, Account> {
+fn transfer(accounts: Map<Int, Account>, from: Int, to: Int, amount: Int) throws -> Map<Int, Account> {
   if amount <= 0 {
     throw Failure(message: "the amount must be positive")
   }
@@ -41,24 +39,24 @@ fn transfer(accounts: Map<AccountId, Account>, from: AccountId, to: AccountId, a
 }
 
 fn main() {
-  var accounts: Map<AccountId, Account> = {}
-  accounts[AccountId(1)] = Account(id: AccountId(1), balance: 100)
-  accounts[AccountId(2)] = Account(id: AccountId(2), balance: 20)
-  accounts = try transfer(accounts, from: AccountId(1), to: AccountId(2), amount: 50) catch err {
+  var accounts: Map<Int, Account> = {}
+  accounts[1] = Account(id: 1, balance: 100)
+  accounts[2] = Account(id: 2, balance: 20)
+  accounts = try transfer(accounts, from: 1, to: 2, amount: 50) catch err {
     if err is InsufficientFunds {
       print("not enough money: ${err.balance} < ${err.amount}")
     } else if err is AccountNotFound {
-      print("no such account: ${err.id.value}")
+      print("no such account: ${err.id}")
     } else {
       print("transfer failed: ${err.message()}")
     }
     accounts
   }
-  let again = try transfer(accounts, from: AccountId(2), to: AccountId(1), amount: 500) catch err {
+  let again = try transfer(accounts, from: 2, to: 1, amount: 500) catch err {
     print(err.message())
     accounts
   }
   for entry in again {
-    print("${entry.key.value}: ${entry.value.balance}")
+    print("${entry.key}: ${entry.value.balance}")
   }
 }

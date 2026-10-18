@@ -567,10 +567,12 @@ impl Checker {
                 ast::Item::Newtype(n) => {
                     let d = self.def_id(&n.name, md);
                     let ty = self.resolve_texpr(&n.ty, &[], md);
-                    if let Ty::Adt(inner, _) = &ty {
-                        if let TypeKind::Newtype(_) = self.prog.defs[*inner].kind {
-                            self.err(n.span, "a new type can't wrap another new type");
-                        }
+                    // `type X = fn(...)` names a function type; over any other
+                    // type it only exists for `sql.Query` (SQL written right
+                    // in the call)
+                    let in_sql = self.prog.module_names.get(md).map(|m| m == "sql").unwrap_or(false);
+                    if !matches!(ty, Ty::Func(_) | Ty::Err) && !in_sql {
+                        self.err_help(n.span, format!("`type {} = ...` only names a function type", n.name), format!("for a type of its own, write a record: `type {} {{ value: {} }}`", n.name, self.show(&ty)));
                     }
                     self.prog.defs[d].kind = TypeKind::Newtype(ty);
                 }

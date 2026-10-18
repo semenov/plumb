@@ -1,0 +1,9 @@
+// `type X = T` only names a function type
+type Check = fn(Int) -> Bool
+
+type UserId = Int
+
+fn main() {
+  let positive: Check = n => n > 0
+  print("${positive(3)}")
+}

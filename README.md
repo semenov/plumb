@@ -79,9 +79,7 @@ The reasoning behind every decision is in [`DESIGN.md`](DESIGN.md).
 ## A short tour
 
 ```
-// Types: records, enums with data, new types, optional values
-type UserId = Int
-
+// Types: records, enums with data, optional values
 enum Shape {
   Circle(radius: Float)
   Rect(width: Float, height: Float)

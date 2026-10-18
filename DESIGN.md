@@ -114,18 +114,17 @@ Changing a value in place is done by a `mutating` method on your own type:
   that type inside the block (fields are accessible). After
   `if x is none { throw … }`, `x` is `T` for the rest of the block. A bare
   type test without parentheses (`err is InsufficientFunds`) is allowed.
-- **Named function types:** `type Rule = fn(Decimal) -> Decimal` is a new
-  type like any other `type X = …`. A lambda takes the expected type (as
-  `1.5` becomes a `Decimal` where one is expected; other new types are
-  written out: `UserId(7)`), and a `Rule` value is called directly:
-  `rule(total)`.
+- **Named function types:** `type Rule = fn(Decimal) -> Decimal`. A lambda
+  takes the expected type (as `1.5` becomes a `Decimal` where one is
+  expected), and a `Rule` value is called directly: `rule(total)`. This is
+  the only `type X = …`.
 
 - **Records, enums with data, exhaustive `match`.**
 - **Automatic equality and hashing.** `==` and hashing are structural for
   every type except functions and handles. Any record can be a `Map` key or a
   `Set` element. Ordering (`<`) is built in only for numbers, `String`,
   `Decimal`, time (`Duration`, `Date`, `DateTime`), lists of them (element
-  by element) and new types over them (`UserId`). Anything else is sorted
+  by element). Anything else is sorted
   with `sort_by(x => x.key)`.
 - **Generics without bounds.** `<T>` means "any type, the same one
   everywhere." It doesn't need bounds: `==`, hashing and `sort_by` work for
@@ -134,8 +133,12 @@ Changing a value in place is done by a `mutating` method on your own type:
   can differ": `List<Describable>`. This doesn't overlap with generics.
 - **Interfaces are implemented explicitly:** `type User implements
   Describable`. The compiler checks it.
-- **`type UserId = Int` creates a distinct type**, not an alias. Mixing up
-  `UserId` and `OrderId` is a compile error. There are no plain aliases.
+- **No new types over other types, and no aliases.** `type UserId = Int`
+  was a distinct type, but everyone read it as an alias, and in the ports,
+  the packages and 386 agent-written programs nobody declared one (Vlad
+  removed it, 2026-10-18). For a type of its own write a record,
+  `type UserId { value: Int }`; the error says so. The standard library
+  keeps one, `sql.Query`, which only SQL written in the call becomes.
 - **Missing values:** `T?`, `none`, `??`, `if x is some(v)`, `match`, and
   `?.` (Vlad, 2026-09-29: agents kept writing it). `user?.address?.city` is
   none if anything on the way is none; the rest of the chain after `?.` runs

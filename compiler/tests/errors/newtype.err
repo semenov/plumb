@@ -1,0 +1,7 @@
+error: `type UserId = ...` only names a function type
+  --> newtype.plumb:4:6
+  |
+4 | type UserId = Int
+  |      ^^^^^^
+  = help: for a type of its own, write a record: `type UserId { value: Int }`
+1 error(s)

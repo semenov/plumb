@@ -117,8 +117,6 @@ enum Status {                  // variants, with or without data
 let s = Published(at: "today")     // variants of your own enums: bare names
 let v = json.Value.Null            // from another module: module.Enum.Variant
 
-type UserId = Int              // a NEW type, not an alias: UserId(5), id.value
-
 type Money {
   cents: Int
   fn to_string(self) -> String {           // its text in "${m}" (also inside

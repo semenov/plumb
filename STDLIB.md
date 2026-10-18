@@ -1205,8 +1205,7 @@ can't happen: values go in as parameters.
 - Parameters are written as plain values: `[name, 36, true]` becomes a
 
 ```
-`List<Value>` by itself (Int, Float, String, Bool, Bytes, new types over
-them, and `none`).
+`List<Value>` by itself (Int, Float, String, Bool, Bytes and `none`).
 ```
 
 - Rows become records by column name, like `json.decode`.
@@ -1259,7 +1258,7 @@ with conn = db.open("app.db") {
 
 SQL is always a literal with `?` for values: building SQL from pieces of
 text is a compile error, so SQL injection can't happen. Parameters can be
-Int, Float, String, Bool and Bytes, and new types over them (see `sql`).
+Int, Float, String, Bool and Bytes (see `sql`).
 `query<T>` fills records by column name (like `json.decode`).
 
 Open a database once and share the connection: a server's requests all
